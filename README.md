@@ -155,7 +155,7 @@ Simply forward your order confirmation to `pro@tonalphoto.com` after purchase.
 
 You can also scan this QR code to contribute directly:
 
-![Buy Me a Coffee QR](bmc_qr.png)
+<img src="bmc_qr.png" alt="Buy Me a Coffee QR" width="250">
 
 ## Acknowledgments
 
