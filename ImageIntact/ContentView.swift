@@ -1,4 +1,5 @@
 import SwiftUI
+import Darwin
 
 struct ContentView: View {
     let sourceKey = "sourceBookmark"
@@ -13,7 +14,20 @@ struct ContentView: View {
     @State private var currentFile = ""
     @State private var failedFiles: [(file: String, destination: String, error: String)] = []
     @State var sessionID = UUID().uuidString  // Made internal for testing
+    @State private var logEntries: [LogEntry] = []
     @FocusState private var focusedField: FocusField?
+    
+    struct LogEntry {
+        let timestamp: Date
+        let sessionID: String
+        let action: String
+        let source: String
+        let destination: String
+        let checksum: String
+        let algorithm: String
+        let fileSize: Int64
+        let reason: String
+    }
     
     enum FocusField: Hashable {
         case source
@@ -236,6 +250,78 @@ struct ContentView: View {
         }
     }
     
+    func writeChecksumManifests(for destinations: [URL]) {
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyyMMdd_HHmmss"
+        let timestamp = dateFormatter.string(from: Date())
+        
+        for destination in destinations {
+            let manifestDir = destination.appendingPathComponent(".imageintact_checksums")
+            try? FileManager.default.createDirectory(at: manifestDir, withIntermediateDirectories: true)
+            try? FileManager.default.setAttributes([.extensionHidden: true], ofItemAtPath: manifestDir.path)
+            
+            let manifestFile = manifestDir.appendingPathComponent("manifest_\(timestamp)_\(sessionID).csv")
+            
+            // Filter log entries for this destination and successful actions
+            let relevantEntries = logEntries.filter { entry in
+                entry.destination.hasPrefix(destination.path) &&
+                (entry.action == "COPIED" || entry.action == "SKIPPED")
+            }
+            
+            // Write manifest header
+            var manifestContent = "file_path,checksum,algorithm,file_size,action,timestamp\n"
+            
+            // Add entries
+            for entry in relevantEntries {
+                let relativePath = entry.source.replacingOccurrences(of: sourceURL?.path ?? "", with: "").trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+                manifestContent += "\(relativePath),\(entry.checksum),\(entry.algorithm),\(entry.fileSize),\(entry.action),\(entry.timestamp.ISO8601Format())\n"
+            }
+            
+            // Write manifest
+            try? manifestContent.write(to: manifestFile, atomically: true, encoding: .utf8)
+            
+            print("✅ Wrote checksum manifest to: \(manifestFile.lastPathComponent)")
+        }
+    }
+    
+    func isNetworkVolume(at url: URL) -> Bool {
+        var stat = statfs()
+        guard statfs(url.path, &stat) == 0 else {
+            return false
+        }
+
+        let fsType = withUnsafePointer(to: &stat.f_fstypename) {
+            $0.withMemoryRebound(to: CChar.self, capacity: Int(MFSTYPENAMELEN)) {
+                String(cString: $0)
+            }
+        }
+
+        print("🔍 Volume at \(url.lastPathComponent) is of type: \(fsType)")
+        return ["smbfs", "afpfs", "webdav", "nfs", "fuse", "cifs"].contains(fsType.lowercased())
+    }
+    
+    func detectModifiedFiles(source: URL, destination: URL) throws -> Bool {
+        // Get file attributes
+        let sourceAttrs = try FileManager.default.attributesOfItem(atPath: source.path)
+        let destAttrs = try FileManager.default.attributesOfItem(atPath: destination.path)
+        
+        let sourceSize = sourceAttrs[.size] as? Int64 ?? 0
+        let destSize = destAttrs[.size] as? Int64 ?? 0
+        
+        // If sizes match, we still need to check checksums
+        if sourceSize == destSize {
+            let sourceChecksum = try sha256Checksum(for: source)
+            let destChecksum = try sha256Checksum(for: destination)
+            
+            if sourceChecksum != destChecksum {
+                print("⚠️ File has same size but different checksum: \(source.lastPathComponent)")
+                return true
+            }
+        }
+        
+        return false
+    }
+    
     func setupMenuCommands() {
         NotificationCenter.default.addObserver(
             forName: NSNotification.Name("SelectSourceFolder"),
@@ -397,6 +483,7 @@ struct ContentView: View {
         currentFile = ""
         failedFiles = []
         sessionID = UUID().uuidString
+        logEntries = []
 
         // Run the operation on a background thread
         DispatchQueue.global(qos: .userInitiated).async {
@@ -462,6 +549,14 @@ struct ContentView: View {
             let queue = DispatchQueue(label: "com.tonalphoto.imageintact", attributes: .concurrent)
             let progressQueue = DispatchQueue(label: "com.tonalphoto.imageintact.progress")
             
+            // Detect network volumes and create semaphore for throttling
+            let networkDestinations = Set(destinations.filter { isNetworkVolume(at: $0) })
+            let networkSemaphore = DispatchSemaphore(value: 2) // Max 2 concurrent operations for network volumes
+            
+            if !networkDestinations.isEmpty {
+                print("🌐 Detected \(networkDestinations.count) network destination(s), will throttle concurrent writes")
+            }
+            
             for fileURL in fileURLs {
                 group.enter()
                 queue.async {
@@ -482,6 +577,18 @@ struct ContentView: View {
                         let sourceChecksum = try self.sha256Checksum(for: fileURL)
 
                         for dest in destinations {
+                            // Throttle network destinations
+                            let isNetwork = networkDestinations.contains(dest)
+                            if isNetwork {
+                                networkSemaphore.wait()
+                            }
+                            
+                            defer {
+                                if isNetwork {
+                                    networkSemaphore.signal()
+                                }
+                            }
+                            
                             let destPath = dest.appendingPathComponent(relativePath)
                             let destDir = destPath.deletingLastPathComponent()
                             
@@ -493,16 +600,21 @@ struct ContentView: View {
                             // Check if file already exists and has matching checksum
                             var needsCopy = true
                             if fileManager.fileExists(atPath: destPath.path) {
-                                let existingChecksum = try self.sha256Checksum(for: destPath)
-                                if existingChecksum == sourceChecksum {
-                                    print("✅ \(relativePath) to \(dest.lastPathComponent): already exists with matching checksum, skipping.")
-                                    self.logAction(action: "SKIPPED", source: fileURL, destination: destPath, checksum: sourceChecksum, reason: "Already exists with matching checksum")
-                                    needsCopy = false
+                                // Check for modified files even with same size
+                                let isModified = try self.detectModifiedFiles(source: fileURL, destination: destPath)
+                                
+                                if !isModified {
+                                    let existingChecksum = try self.sha256Checksum(for: destPath)
+                                    if existingChecksum == sourceChecksum {
+                                        print("✅ \(relativePath) to \(dest.lastPathComponent): already exists with matching checksum, skipping.")
+                                        self.logAction(action: "SKIPPED", source: fileURL, destination: destPath, checksum: sourceChecksum, reason: "Already exists with matching checksum")
+                                        needsCopy = false
+                                    }
                                 } else {
-                                    print("⚠️  \(relativePath) to \(dest.lastPathComponent): exists but checksum differs, will quarantine and replace.")
+                                    print("⚠️  \(relativePath) to \(dest.lastPathComponent): exists with same size but different checksum, will quarantine and replace.")
                                     // Quarantine the existing file
                                     try self.quarantineFile(at: destPath, fileManager: fileManager)
-                                    self.logAction(action: "QUARANTINED", source: fileURL, destination: destPath, checksum: existingChecksum, reason: "Checksum mismatch")
+                                    self.logAction(action: "QUARANTINED", source: fileURL, destination: destPath, checksum: try self.sha256Checksum(for: destPath), reason: "Same size but checksum mismatch")
                                 }
                             }
                             
@@ -532,6 +644,11 @@ struct ContentView: View {
             }
 
             group.wait()
+            
+            // Write checksum manifests for each destination
+            DispatchQueue.main.async {
+                self.writeChecksumManifests(for: destinations)
+            }
         }
     }
 
@@ -543,28 +660,41 @@ struct ContentView: View {
     }
     
     func sha256Checksum(for fileURL: URL) throws -> String {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/shasum")
-        process.arguments = ["-a", "256", fileURL.path]
+        // Retry mechanism for network drives
+        var lastError: Error?
+        
+        for attempt in 1...5 {
+            do {
+                let process = Process()
+                process.executableURL = URL(fileURLWithPath: "/usr/bin/shasum")
+                process.arguments = ["-a", "256", fileURL.path]
 
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = Pipe()
+                let pipe = Pipe()
+                process.standardOutput = pipe
+                process.standardError = Pipe()
 
-        try process.run()
-        process.waitUntilExit()
+                try process.run()
+                process.waitUntilExit()
 
-        guard process.terminationStatus == 0 else {
-            throw NSError(domain: "ImageIntact", code: Int(process.terminationStatus), userInfo: [NSLocalizedDescriptionKey: "shasum failed for \(fileURL.path)"])
+                guard process.terminationStatus == 0 else {
+                    throw NSError(domain: "ImageIntact", code: Int(process.terminationStatus), userInfo: [NSLocalizedDescriptionKey: "shasum failed for \(fileURL.path)"])
+                }
+
+                let data = pipe.fileHandleForReading.readDataToEndOfFile()
+                guard let output = String(data: data, encoding: .utf8),
+                      let checksum = output.trimmingCharacters(in: .whitespacesAndNewlines).components(separatedBy: .whitespaces).first else {
+                    throw NSError(domain: "ImageIntact", code: 2, userInfo: [NSLocalizedDescriptionKey: "Checksum parsing failed for \(fileURL.path)"])
+                }
+
+                return checksum
+            } catch {
+                lastError = error
+                print("⏳ Checksum attempt \(attempt) failed for \(fileURL.lastPathComponent), retrying in \(attempt) seconds...")
+                Thread.sleep(forTimeInterval: TimeInterval(attempt))
+            }
         }
-
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        guard let output = String(data: data, encoding: .utf8),
-              let checksum = output.trimmingCharacters(in: .whitespacesAndNewlines).components(separatedBy: .whitespaces).first else {
-            throw NSError(domain: "ImageIntact", code: 2, userInfo: [NSLocalizedDescriptionKey: "Checksum parsing failed for \(fileURL.path)"])
-        }
-
-        return checksum
+        
+        throw lastError ?? NSError(domain: "ImageIntact", code: 3, userInfo: [NSLocalizedDescriptionKey: "Failed to calculate checksum after 5 attempts"])
     }
     
     func quarantineFile(at url: URL, fileManager: FileManager) throws {
@@ -614,11 +744,74 @@ struct ContentView: View {
     }
     
     func logAction(action: String, source: URL, destination: URL, checksum: String, reason: String = "") {
-        // This will be implemented in the next phase
-        let logEntry = """
-        \(Date().ISO8601Format()),\(sessionID),\(action),\(source.path),\(destination.path),\(checksum),SHA256,\(reason)
-        """
-        print("LOG: \(logEntry)")
+        // Get file size
+        let fileSize = (try? FileManager.default.attributesOfItem(atPath: source.path)[.size] as? Int64) ?? 0
+        
+        // Create log entry
+        let entry = LogEntry(
+            timestamp: Date(),
+            sessionID: sessionID,
+            action: action,
+            source: source.path,
+            destination: destination.path,
+            checksum: checksum,
+            algorithm: "SHA256",
+            fileSize: fileSize,
+            reason: reason
+        )
+        
+        // Add to in-memory log
+        DispatchQueue.main.async {
+            self.logEntries.append(entry)
+        }
+        
+        // Write to log file
+        writeLogEntry(entry, to: destination.deletingLastPathComponent())
+    }
+    
+    func writeLogEntry(_ entry: LogEntry, to baseDir: URL) {
+        let logDir = baseDir.appendingPathComponent(".imageintact_logs")
+        
+        // Create log directory if needed
+        try? FileManager.default.createDirectory(at: logDir, withIntermediateDirectories: true)
+        try? FileManager.default.setAttributes([.extensionHidden: true], ofItemAtPath: logDir.path)
+        
+        // Create log file name with date
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy-MM-dd"
+        let dateString = dateFormatter.string(from: Date())
+        let logFile = logDir.appendingPathComponent("imageintact_\(dateString).csv")
+        
+        // Create CSV header if file doesn't exist
+        if !FileManager.default.fileExists(atPath: logFile.path) {
+            let header = "timestamp,session_id,action,source,destination,checksum,algorithm,file_size,reason\n"
+            try? header.write(to: logFile, atomically: true, encoding: .utf8)
+        }
+        
+        // Format timestamp
+        let timestampFormatter = DateFormatter()
+        timestampFormatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        let timestampString = timestampFormatter.string(from: entry.timestamp)
+        
+        // Escape CSV fields
+        let escapedSource = entry.source.contains(",") ? "\"\(entry.source)\"" : entry.source
+        let escapedDest = entry.destination.contains(",") ? "\"\(entry.destination)\"" : entry.destination
+        let escapedReason = entry.reason.contains(",") ? "\"\(entry.reason)\"" : entry.reason
+        
+        // Create CSV line
+        let logLine = "\(timestampString),\(entry.sessionID),\(entry.action),\(escapedSource),\(escapedDest),\(entry.checksum),\(entry.algorithm),\(entry.fileSize),\(escapedReason)\n"
+        
+        // Append to log file
+        if let fileHandle = FileHandle(forWritingAtPath: logFile.path) {
+            fileHandle.seekToEndOfFile()
+            if let data = logLine.data(using: .utf8) {
+                fileHandle.write(data)
+            }
+            fileHandle.closeFile()
+        } else {
+            // File doesn't exist, write it
+            try? logLine.write(to: logFile, atomically: true, encoding: .utf8)
+        }
     }
 
     static func loadBookmark(forKey key: String) -> URL? {
