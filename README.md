@@ -128,7 +128,34 @@ Contributions are welcome! Please:
 
 ## License
 
+
 MIT License - see [LICENSE](LICENSE) file for details
+
+## Pro Features (Coming Soon)
+
+We're planning to introduce a Pro version of ImageIntact for users who want more customization and workflow enhancements. These features will always be optional, and the core backup functionality will remain free.
+
+Planned Pro features include:
+- **File Type Filtering** — Choose to back up only RAW files, exclude JPEGs, or define your own custom rules
+- **User Presets** — Save frequently-used source/destination/filter combinations for one-click setup
+- **Exportable Reports** — Generate backup summaries as PDF or HTML for verification and record-keeping
+- **Friendly Exclusion Rules** — Skip folders like “Smart Previews” or “Lightroom Backups” using clear, human-readable options
+- **Manifest Re-verification** — Recheck an existing backup session for bit-rot or data corruption
+
+## Support This Project
+
+If ImageIntact helps you, there are a few ways to support its development:
+
+- ☕ [Buy Me a Coffee](https://www.buymeacoffee.com/tonalphoto)
+- 🖼️ Buy a fine art print from [tonalphoto.com](https://www.tonalphoto.com)
+
+As a thank you:  
+🏆 Anyone who spends **$100 or more** on prints will receive a **lifetime Pro license** when Pro features launch.  
+Simply forward your order confirmation to `pro@tonalphoto.com` after purchase.
+
+You can also scan this QR code to contribute directly:
+
+![Buy Me a Coffee QR](bmc_qr.png)
 
 ## Acknowledgments
 
