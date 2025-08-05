@@ -546,8 +546,8 @@ struct ContentView: View {
             }
 
             let group = DispatchGroup()
-            let queue = DispatchQueue(label: "com.tonalphoto.imageintact", attributes: .concurrent)
-            let progressQueue = DispatchQueue(label: "com.tonalphoto.imageintact.progress")
+            let queue = DispatchQueue(label: "com.tonalphoto.imageintact", qos: .userInitiated, attributes: .concurrent)
+            let progressQueue = DispatchQueue(label: "com.tonalphoto.imageintact.progress", qos: .utility)
             
             // Detect network volumes and create semaphore for throttling
             let networkDestinations = Set(destinations.filter { isNetworkVolume(at: $0) })
@@ -559,7 +559,7 @@ struct ContentView: View {
             
             for fileURL in fileURLs {
                 group.enter()
-                queue.async {
+                queue.async(qos: .userInitiated) {
                     defer {
                         group.leave()
                         progressQueue.async {
