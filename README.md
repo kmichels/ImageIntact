@@ -151,7 +151,7 @@ If ImageIntact helps you, there are a few ways to support its development:
 
 As a thank you:  
 🏆 Anyone who spends **$100 or more** on prints will receive a **lifetime Pro license** when Pro features launch.  
-Simply forward your order confirmation to `pro@tonalphoto.com` after purchase.
+Simply forward your order confirmation to [info@tonalphoto.com](mailto:info@tonalphoto.com) after purchase.
 
 You can also scan this QR code to contribute directly:
 
