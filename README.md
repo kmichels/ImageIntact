@@ -27,7 +27,7 @@ A robust macOS backup utility designed by photographers, for photographers. Imag
 
 ## Installation
 
-1. Download the latest release from the [Releases](https://github.com/yourusername/ImageIntact/releases) page
+1. Download the latest release from the [Releases](https://github.com/kmichels/ImageIntact/releases) page
 2. Open the DMG and drag ImageIntact to your Applications folder
 3. On first launch, macOS will ask for permission to access folders - approve this
 

@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		7144148A2E4259F40038603A /* README.md in Resources */ = {isa = PBXBuildFile; fileRef = 714414892E4259F40038603A /* README.md */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		71CB2E012E3E6030004E9F48 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -17,6 +21,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		714414892E4259F40038603A /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
 		71592B802E3CE71600571AB3 /* ImageIntact.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ImageIntact.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		71CB2DFD2E3E6030004E9F48 /* ImageIntactTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ImageIntactTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -55,6 +60,7 @@
 		71592B772E3CE71600571AB3 = {
 			isa = PBXGroup;
 			children = (
+				714414892E4259F40038603A /* README.md */,
 				71592B822E3CE71600571AB3 /* ImageIntact */,
 				71CB2DFE2E3E6030004E9F48 /* ImageIntactTests */,
 				71592B812E3CE71600571AB3 /* Products */,
@@ -164,6 +170,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				7144148A2E4259F40038603A /* README.md in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
