@@ -117,30 +117,26 @@ Contributions are welcome! Please:
 3. Add tests for new functionality
 4. Submit a pull request
 
-## Future Enhancements
+## Planned Enhancements
 
-- [ ] Centralized logging option
-- [ ] Preset configurations
-- [ ] File type filtering
-- [ ] Scheduled backups
-- [ ] Verification-only mode
-- [ ] Export detailed reports
+We're actively improving ImageIntact based on user feedback. Some features we’re exploring next include:
+
+- Centralized logging option
+- Preset configurations
+- File type filtering
+- Smart image file type detection
+- Option to create date-stamped folders on destination
+- Verification-only mode
+- Exportable reports
+- Scheduled backups
+- Friendly exclusion rules for folders like Smart Previews or Lightroom Backups
+- Re-verification of backup sessions for integrity testing
+- Help file and documentation
 
 ## License
 
 
 MIT License - see [LICENSE](LICENSE) file for details
-
-## Pro Features (Coming Soon)
-
-We're planning to introduce a Pro version of ImageIntact for users who want more customization and workflow enhancements. These features will always be optional, and the core backup functionality will remain free.
-
-Planned Pro features include:
-- **File Type Filtering** — Choose to back up only RAW files, exclude JPEGs, or define your own custom rules
-- **User Presets** — Save frequently-used source/destination/filter combinations for one-click setup
-- **Exportable Reports** — Generate backup summaries as PDF or HTML for verification and record-keeping
-- **Friendly Exclusion Rules** — Skip folders like “Smart Previews” or “Lightroom Backups” using clear, human-readable options
-- **Manifest Re-verification** — Recheck an existing backup session for bit-rot or data corruption
 
 ## Support This Project
 
@@ -149,13 +145,11 @@ If ImageIntact helps you, there are a few ways to support its development:
 - ☕ [Buy Me a Coffee](https://www.buymeacoffee.com/tonalphoto)
 - 🖼️ Buy a fine art print from [tonalphoto.com](https://www.tonalphoto.com)
 
-As a thank you:  
-🏆 Anyone who spends **$100 or more** on prints will receive a **lifetime Pro license** when Pro features launch.  
-Simply forward your order confirmation to [info@tonalphoto.com](mailto:info@tonalphoto.com) after purchase.
-
 You can also scan this QR code to contribute directly:
 
 <img src="bmc_qr.png" alt="Buy Me a Coffee QR" width="250">
+
+ImageIntact is free and open-source — support helps us keep it that way.
 
 ## Acknowledgments
 
