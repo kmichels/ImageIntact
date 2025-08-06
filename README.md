@@ -6,6 +6,8 @@ A robust macOS backup utility designed by photographers, for photographers. Imag
 ![Swift](https://img.shields.io/badge/Swift-5.0%2B-orange)
 ![License](https://img.shields.io/badge/License-MIT-green)
 
+Born from 25+ years in Tech and a deep love for photography, as well as a desire to give back to the photography community, ImageIntact exists to take the stress and mystery out of keeping your images safe.
+
 ## Features
 
 ### 🛡️ Safety First
