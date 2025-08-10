@@ -2,28 +2,8 @@ import SwiftUI
 import Darwin
 
 struct ContentView: View {
-    let sourceKey = "sourceBookmark"
-    let destinationKeys = ["dest1Bookmark", "dest2Bookmark", "dest3Bookmark", "dest4Bookmark"]
-
-    @State private var sourceURL: URL? = ContentView.loadBookmark(forKey: "sourceBookmark")
-    @State private var destinationURLs: [URL?] = ContentView.loadDestinationBookmarks()
-    @State private var isProcessing = false
-    @State private var statusMessage = ""
-    @State private var totalFiles = 0
-    @State private var processedFiles = 0
-    @State private var currentFile = ""
-    @State private var failedFiles: [(file: String, destination: String, error: String)] = []
-    @State var sessionID = UUID().uuidString  // Made internal for testing
-    @State private var logEntries: [LogEntry] = []
+    @State private var backupManager = BackupManager()
     @FocusState private var focusedField: FocusField?
-    @State private var shouldCancel = false
-    @State private var currentOperation: DispatchWorkItem?
-    @State private var debugLog: [String] = []
-    @State private var hasWrittenDebugLog = false
-    @State private var lastDebugLogPath: URL?
-    
-    // Per-destination progress tracking
-    @State private var destinationProgress: [String: DestinationProgress] = [:]
     
     // First-run and help system
     @State private var showWelcomePopup = false
@@ -35,29 +15,6 @@ struct ContentView: View {
     @State private var isDownloadingUpdate = false
     @State private var downloadProgress: Double = 0.0
     @State private var downloadedUpdatePath: URL?
-    
-    struct DestinationProgress {
-        var processedFiles: Int = 0
-        var totalFiles: Int = 0
-        var currentFile: String = ""
-        var bytesProcessed: Int64 = 0
-        var startTime: Date = Date()
-        var isActive: Bool = false
-        var throughputMBps: Double = 0.0
-        var lastThroughputUpdate: Date = Date()
-    }
-    
-    struct LogEntry {
-        let timestamp: Date
-        let sessionID: String
-        let action: String
-        let source: String
-        let destination: String
-        let checksum: String
-        let algorithm: String
-        let fileSize: Int64
-        let reason: String
-    }
     
     struct UpdateInfo {
         let version: String
@@ -103,20 +60,19 @@ struct ContentView: View {
                         FolderRow(
                             title: "Select Source Folder",
                             selectedURL: Binding(
-                                get: { sourceURL },
+                                get: { backupManager.sourceURL },
                                 set: { newValue in
-                                    sourceURL = newValue
                                     if let url = newValue {
-                                        saveBookmark(url: url, key: sourceKey)
+                                        backupManager.setSource(url)
                                     }
                                 }
                             ),
                             onClear: {
-                                sourceURL = nil
-                                UserDefaults.standard.removeObject(forKey: sourceKey)
+                                backupManager.sourceURL = nil
+                                UserDefaults.standard.removeObject(forKey: backupManager.sourceKey)
                             },
                             onSelect: { url in
-                                tagSourceFolder(at: url)
+                                // Already handled in backupManager.setSource()
                             }
                         )
                         .focused($focusedField, equals: .source)
@@ -1663,327 +1619,6 @@ struct FolderRow: View {
                 selectedURL = url
                 onSelect?(url)
             }
-        }
-    }
-}
-
-// Welcome view for first-run experience
-struct WelcomeView: View {
-    @Binding var isPresented: Bool
-    
-    var body: some View {
-        VStack(spacing: 24) {
-            // Header
-            VStack(spacing: 12) {
-                Image(systemName: "photo.on.rectangle.angled")
-                    .font(.system(size: 48))
-                    .foregroundColor(.accentColor)
-                
-                Text("Welcome to ImageIntact")
-                    .font(.largeTitle)
-                    .fontWeight(.bold)
-                
-                Text("Your reliable photo backup companion")
-                    .font(.title2)
-                    .foregroundColor(.secondary)
-            }
-            .padding(.top, 20)
-            
-            // What it does
-            VStack(alignment: .leading, spacing: 16) {
-                Text("What ImageIntact Does:")
-                    .font(.headline)
-                    .foregroundColor(.primary)
-                
-                VStack(alignment: .leading, spacing: 12) {
-                    FeatureRow(icon: "checkmark.shield", 
-                              title: "Safe Backup", 
-                              description: "Verifies every file with checksums to ensure perfect copies")
-                    
-                    FeatureRow(icon: "arrow.triangle.branch", 
-                              title: "Multiple Destinations", 
-                              description: "Copy to up to 4 locations simultaneously for redundancy")
-                    
-                    FeatureRow(icon: "bolt", 
-                              title: "Fast & Smart", 
-                              description: "Uses xxHash for 30x faster verification when available")
-                    
-                    FeatureRow(icon: "shield.lefthalf.filled", 
-                              title: "Never Lose Data", 
-                              description: "Never deletes files - quarantines mismatched files safely")
-                }
-            }
-            .padding(.horizontal, 20)
-            
-            Divider()
-            
-            // How to use
-            VStack(alignment: .leading, spacing: 16) {
-                Text("How to Use:")
-                    .font(.headline)
-                    .foregroundColor(.primary)
-                
-                VStack(alignment: .leading, spacing: 8) {
-                    HowToRow(number: 1, text: "Select your source folder (where your photos are)")
-                    HowToRow(number: 2, text: "Choose one or more destination folders for backup")
-                    HowToRow(number: 3, text: "Click 'Run Backup' to start the process")
-                    HowToRow(number: 4, text: "Watch the progress and let ImageIntact work safely")
-                }
-            }
-            .padding(.horizontal, 20)
-            
-            Spacer()
-            
-            // Bottom buttons
-            HStack(spacing: 16) {
-                Button("Show Help") {
-                    isPresented = false
-                    NotificationCenter.default.post(name: NSNotification.Name("ShowHelp"), object: nil)
-                }
-                .buttonStyle(.borderless)
-                
-                Spacer()
-                
-                Button("Get Started") {
-                    isPresented = false
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-            }
-            .padding(.horizontal, 20)
-            .padding(.bottom, 20)
-        }
-        .frame(width: 500, height: 650)
-        .background(Color(NSColor.windowBackgroundColor))
-    }
-}
-
-// Feature row for welcome view
-struct FeatureRow: View {
-    let icon: String
-    let title: String
-    let description: String
-    
-    var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            Image(systemName: icon)
-                .foregroundColor(.accentColor)
-                .font(.system(size: 16, weight: .medium))
-                .frame(width: 20)
-            
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(.subheadline)
-                    .fontWeight(.medium)
-                
-                Text(description)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            
-            Spacer()
-        }
-    }
-}
-
-// How-to row for welcome view
-struct HowToRow: View {
-    let number: Int
-    let text: String
-    
-    var body: some View {
-        HStack(alignment: .top, spacing: 8) {
-            Text("\(number).")
-                .font(.subheadline)
-                .fontWeight(.medium)
-                .foregroundColor(.accentColor)
-                .frame(width: 16, alignment: .leading)
-            
-            Text(text)
-                .font(.subheadline)
-                .fixedSize(horizontal: false, vertical: true)
-            
-            Spacer()
-        }
-    }
-}
-
-// Help view
-struct HelpView: View {
-    @Binding var isPresented: Bool
-    
-    var body: some View {
-        VStack(spacing: 0) {
-            // Header
-            HStack {
-                Text("ImageIntact Help")
-                    .font(.largeTitle)
-                    .fontWeight(.bold)
-                
-                Spacer()
-                
-                Button("Close") {
-                    isPresented = false
-                }
-                .keyboardShortcut(.escape)
-            }
-            .padding(20)
-            
-            Divider()
-            
-            // Content
-            ScrollView {
-                VStack(alignment: .leading, spacing: 24) {
-                    // Getting Started
-                    HelpSection(title: "Getting Started") {
-                        VStack(alignment: .leading, spacing: 12) {
-                            Text("ImageIntact is designed to safely backup your photos to multiple destinations with verification.")
-                            
-                            Text("**Basic workflow:**")
-                                .fontWeight(.medium)
-                            
-                            VStack(alignment: .leading, spacing: 6) {
-                                Text("1. **Select Source**: Choose the folder containing your photos")
-                                Text("2. **Add Destinations**: Select up to 4 backup locations")
-                                Text("3. **Run Backup**: Click the backup button to start")
-                                Text("4. **Monitor Progress**: Watch real-time progress for each destination")
-                            }
-                            .font(.subheadline)
-                        }
-                    }
-                    
-                    // Safety Features
-                    HelpSection(title: "Safety Features") {
-                        VStack(alignment: .leading, spacing: 12) {
-                            Text("ImageIntact prioritizes data safety above all else:")
-                            
-                            VStack(alignment: .leading, spacing: 8) {
-                                HelpPoint(title: "Never Deletes Files", 
-                                         description: "Files are never deleted from any destination")
-                                
-                                HelpPoint(title: "Checksum Verification", 
-                                         description: "Every file is verified with checksums to ensure perfect copies")
-                                
-                                HelpPoint(title: "Smart Quarantine", 
-                                         description: "If a file exists with different content, it's moved to a quarantine folder before copying the new version")
-                                
-                                HelpPoint(title: "Source Protection", 
-                                         description: "Source folders are tagged to prevent accidental selection as destinations")
-                            }
-                        }
-                    }
-                    
-                    // Performance
-                    HelpSection(title: "Performance") {
-                        VStack(alignment: .leading, spacing: 12) {
-                            Text("ImageIntact automatically optimizes performance based on your destinations:")
-                            
-                            VStack(alignment: .leading, spacing: 8) {
-                                HelpPoint(title: "xxHash Support", 
-                                         description: "Uses ultra-fast xxHash128 when available (30x faster than SHA-256)")
-                                
-                                HelpPoint(title: "Smart Concurrency", 
-                                         description: "Adjusts parallel operations based on destination types (local, external, network)")
-                                
-                                HelpPoint(title: "Progress Monitoring", 
-                                         description: "Real-time throughput and progress tracking per destination")
-                            }
-                        }
-                    }
-                    
-                    // Keyboard Shortcuts
-                    HelpSection(title: "Keyboard Shortcuts") {
-                        VStack(alignment: .leading, spacing: 8) {
-                            HelpShortcut(key: "⌘1", action: "Select source folder")
-                            HelpShortcut(key: "⌘2", action: "Select first destination")
-                            HelpShortcut(key: "⌘+", action: "Add destination")
-                            HelpShortcut(key: "⌘R", action: "Run backup")
-                            HelpShortcut(key: "⌘K", action: "Clear all selections")
-                        }
-                    }
-                    
-                    // Troubleshooting
-                    HelpSection(title: "Troubleshooting") {
-                        VStack(alignment: .leading, spacing: 12) {
-                            HelpPoint(title: "Slow Performance", 
-                                     description: "Install xxhsum via Homebrew (brew install xxhash) for 30x faster checksums")
-                            
-                            HelpPoint(title: "Network Timeouts", 
-                                     description: "Network destinations have special handling - be patient with SMB/AFP volumes")
-                            
-                            HelpPoint(title: "Debug Information", 
-                                     description: "Use ImageIntact menu → Show Debug Log for detailed operation logs")
-                        }
-                    }
-                }
-                .padding(20)
-            }
-        }
-        .frame(width: 600, height: 700)
-        .background(Color(NSColor.windowBackgroundColor))
-    }
-}
-
-// Help section container
-struct HelpSection<Content: View>: View {
-    let title: String
-    let content: Content
-    
-    init(title: String, @ViewBuilder content: () -> Content) {
-        self.title = title
-        self.content = content()
-    }
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(title)
-                .font(.title2)
-                .fontWeight(.semibold)
-                .foregroundColor(.primary)
-            
-            content
-        }
-    }
-}
-
-// Help point for features
-struct HelpPoint: View {
-    let title: String
-    let description: String
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(title)
-                .font(.subheadline)
-                .fontWeight(.medium)
-            
-            Text(description)
-                .font(.caption)
-                .foregroundColor(.secondary)
-        }
-    }
-}
-
-// Help shortcut row
-struct HelpShortcut: View {
-    let key: String
-    let action: String
-    
-    var body: some View {
-        HStack {
-            Text(key)
-                .font(.system(.caption, design: .monospaced))
-                .padding(.horizontal, 8)
-                .padding(.vertical, 2)
-                .background(Color(NSColor.controlBackgroundColor))
-                .cornerRadius(4)
-            
-            Text(action)
-                .font(.caption)
-                .foregroundColor(.secondary)
-            
-            Spacer()
         }
     }
 }
