@@ -46,7 +46,7 @@ struct ContentView: View {
                     DestinationSection(backupManager: backupManager, focusedField: $focusedField)
                     
                     // Progress Section
-                    SimpleProgressSection(backupManager: backupManager)
+                    MultiDestinationProgressSection(backupManager: backupManager)
                     
                     // Add some bottom padding so content doesn't hide behind buttons
                     Color.clear.frame(height: 20)
@@ -317,6 +317,16 @@ struct ContentView: View {
         logContent += "Processed Files: \(backupManager.processedFiles)\n"
         logContent += "Failed Files: \(backupManager.failedFiles.count)\n"
         logContent += "Was Cancelled: \(backupManager.shouldCancel)\n\n"
+        
+        // Add detailed error information
+        if !backupManager.failedFiles.isEmpty {
+            logContent += "ERROR DETAILS:\n"
+            for (index, failure) in backupManager.failedFiles.enumerated() {
+                logContent += "\(index + 1). File: \(failure.file)\n"
+                logContent += "   Destination: \(failure.destination)\n"
+                logContent += "   Error: \(failure.error)\n\n"
+            }
+        }
         
         if !backupManager.debugLog.isEmpty {
             logContent += "Checksum Timings:\n"

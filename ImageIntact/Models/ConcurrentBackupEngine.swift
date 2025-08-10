@@ -63,6 +63,9 @@ extension BackupManager {
 
         print("🚀 Starting high-performance backup: \(fileURLs.count) files → \(destinations.count) destinations")
         
+        // Initialize destination progress tracking
+        initializeDestinations(destinations)
+        
         // Create a progress tracking system that works with concurrency
         let progressReporter = ProgressReporter(totalFiles: fileURLs.count, backupManager: self)
         
@@ -147,6 +150,7 @@ extension BackupManager {
                     if existingChecksum == sourceChecksum {
                         print("✅ \(relativePath) to \(destination.lastPathComponent): already exists with matching checksum")
                         logAction(action: "SKIPPED", source: fileURL, destination: destPath, checksum: sourceChecksum, reason: "Already exists with matching checksum")
+                        await progressReporter.incrementDestinationProgress(destination.lastPathComponent)
                         needsCopy = false
                     } else {
                         // Quarantine existing file
@@ -168,6 +172,7 @@ extension BackupManager {
                     if sourceChecksum == destChecksum {
                         print("✅ \(relativePath) to \(destination.lastPathComponent): copied successfully")
                         logAction(action: "COPIED", source: fileURL, destination: destPath, checksum: destChecksum, reason: "")
+                        await progressReporter.incrementDestinationProgress(destination.lastPathComponent)
                     } else {
                         print("❌ \(relativePath) to \(destination.lastPathComponent): checksum mismatch after copy")
                         logAction(action: "FAILED", source: fileURL, destination: destPath, checksum: destChecksum, reason: "Checksum mismatch after copy")
@@ -208,8 +213,18 @@ extension BackupManager {
                 let startTime = Date()
                 defer {
                     let elapsed = Date().timeIntervalSince(startTime)
+                    let logMessage = "Checksum for \(fileURL.lastPathComponent): \(String(format: "%.2f", elapsed))s"
+                    
+                    // Add to debug log for tracking
+                    Task { @MainActor in
+                        self.debugLog.append(logMessage)
+                        if self.debugLog.count > 100 {
+                            self.debugLog.removeFirst()
+                        }
+                    }
+                    
                     if elapsed > 2.0 {
-                        print("⚠️ SLOW CHECKSUM: \(fileURL.lastPathComponent) took \(String(format: "%.2f", elapsed))s")
+                        print("⚠️ SLOW CHECKSUM: \(logMessage)")
                     }
                 }
                 
@@ -377,7 +392,14 @@ extension BackupManager {
         let hasSlowOperations = debugLog.contains { $0.contains("SLOW CHECKSUM") }
         let hasErrors = !failedFiles.isEmpty || shouldCancel
         
-        if !hasSlowOperations && !hasErrors {
+        // Always write debug log if there are any failed files reported in UI
+        let errorCount = failedFiles.count
+        if errorCount > 0 {
+            print("📄 Writing debug log: \(errorCount) errors detected")
+        }
+        
+        if !hasSlowOperations && !hasErrors && errorCount == 0 {
+            print("📄 Skipping debug log: no slow operations or errors")
             return
         }
         
@@ -393,6 +415,17 @@ extension BackupManager {
         logContent += "Processed Files: \(processedFiles)\n"
         logContent += "Failed Files: \(failedFiles.count)\n"
         logContent += "Was Cancelled: \(shouldCancel)\n\n"
+        
+        // Add detailed error information
+        if !failedFiles.isEmpty {
+            logContent += "ERROR DETAILS:\n"
+            for (index, failure) in failedFiles.enumerated() {
+                logContent += "\(index + 1). File: \(failure.file)\n"
+                logContent += "   Destination: \(failure.destination)\n"
+                logContent += "   Error: \(failure.error)\n\n"
+            }
+        }
+        
         logContent += "Checksum Timings:\n"
         logContent += debugLog.joined(separator: "\n")
         
@@ -472,6 +505,10 @@ class ProgressReporter {
     
     func addError(file: String, destination: String, error: String) {
         backupManager.failedFiles.append((file: file, destination: destination, error: error))
+    }
+    
+    func incrementDestinationProgress(_ destinationName: String) {
+        backupManager.incrementDestinationProgress(destinationName)
     }
     
     func getCompletedCount() -> Int {
