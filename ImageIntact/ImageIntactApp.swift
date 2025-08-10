@@ -91,6 +91,13 @@ struct ImageIntactApp: App {
                 Button("Export Debug Log...") {
                     NotificationCenter.default.post(name: NSNotification.Name("ExportDebugLog"), object: nil)
                 }
+                
+                Divider()
+                
+                Button("Check for Updates...") {
+                    NotificationCenter.default.post(name: NSNotification.Name("CheckForUpdates"), object: nil)
+                }
+                
             }
             
             // Add Help menu
