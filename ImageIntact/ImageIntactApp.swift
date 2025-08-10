@@ -92,6 +92,14 @@ struct ImageIntactApp: App {
                     NotificationCenter.default.post(name: NSNotification.Name("ExportDebugLog"), object: nil)
                 }
             }
+            
+            // Add Help menu
+            CommandMenu("Help") {
+                Button("ImageIntact Help") {
+                    NotificationCenter.default.post(name: NSNotification.Name("ShowHelp"), object: nil)
+                }
+                .keyboardShortcut("?", modifiers: .command)
+            }
         }
     }
 }
