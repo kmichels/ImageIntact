@@ -20,6 +20,21 @@ struct ContentView: View {
     @State private var currentOperation: DispatchWorkItem?
     @State private var debugLog: [String] = []
     @State private var hasWrittenDebugLog = false
+    @State private var lastDebugLogPath: URL?
+    
+    // Per-destination progress tracking
+    @State private var destinationProgress: [String: DestinationProgress] = [:]
+    
+    struct DestinationProgress {
+        var processedFiles: Int = 0
+        var totalFiles: Int = 0
+        var currentFile: String = ""
+        var bytesProcessed: Int64 = 0
+        var startTime: Date = Date()
+        var isActive: Bool = false
+        var throughputMBps: Double = 0.0
+        var lastThroughputUpdate: Date = Date()
+    }
     
     struct LogEntry {
         let timestamp: Date
@@ -166,22 +181,13 @@ struct ContentView: View {
                                 .padding(.horizontal, 20)
                             
                             if isProcessing && totalFiles > 0 {
-                                // Progress bar
-                                VStack(alignment: .leading, spacing: 8) {
+                                // Per-destination progress
+                                VStack(alignment: .leading, spacing: 12) {
                                     HStack {
-                                        Text("Processing files...")
+                                        Text("Backup Progress")
                                             .font(.headline)
                                         
                                         Spacer()
-                                        
-                                        Text("\(processedFiles) of \(totalFiles)")
-                                            .font(.subheadline)
-                                            .foregroundColor(.secondary)
-                                    }
-                                    
-                                    HStack(spacing: 8) {
-                                        ProgressView(value: Double(processedFiles), total: Double(totalFiles))
-                                            .progressViewStyle(.linear)
                                         
                                         Button(action: {
                                             cancelOperation()
@@ -191,15 +197,61 @@ struct ContentView: View {
                                                 .imageScale(.large)
                                         }
                                         .buttonStyle(.plain)
-                                        .help("Cancel backup")
+                                        .help("Cancel all backups")
                                     }
                                     
-                                    if !currentFile.isEmpty {
-                                        Text(currentFile)
-                                            .font(.caption)
-                                            .foregroundColor(.secondary)
-                                            .lineLimit(1)
-                                            .truncationMode(.middle)
+                                    ForEach(destinationURLs.compactMap { $0 }, id: \.self) { destURL in
+                                        if let progress = destinationProgress[destURL.lastPathComponent] {
+                                            VStack(alignment: .leading, spacing: 6) {
+                                                HStack {
+                                                    Text(destURL.lastPathComponent)
+                                                        .font(.subheadline)
+                                                        .fontWeight(.medium)
+                                                    
+                                                    Spacer()
+                                                    
+                                                    VStack(alignment: .trailing, spacing: 2) {
+                                                        Text("\(progress.processedFiles)/\(progress.totalFiles)")
+                                                            .font(.caption)
+                                                            .foregroundColor(.secondary)
+                                                        
+                                                        if progress.throughputMBps > 0 {
+                                                            Text("\(String(format: "%.1f", progress.throughputMBps)) MB/s")
+                                                                .font(.caption2)
+                                                                .foregroundColor(.secondary)
+                                                        }
+                                                    }
+                                                    
+                                                    // Fixed width area for activity indicator to prevent layout jumping
+                                                    HStack {
+                                                        if progress.isActive {
+                                                            Circle()
+                                                                .fill(Color.green)
+                                                                .frame(width: 8, height: 8)
+                                                        } else {
+                                                            Circle()
+                                                                .fill(Color.clear)
+                                                                .frame(width: 8, height: 8)
+                                                        }
+                                                    }
+                                                    .frame(width: 8)
+                                                }
+                                                
+                                                ProgressView(value: Double(progress.processedFiles), total: Double(progress.totalFiles))
+                                                    .progressViewStyle(.linear)
+                                                
+                                                // Fixed height area for filename to prevent layout jumping
+                                                Text(progress.currentFile.isEmpty ? " " : progress.currentFile)
+                                                    .font(.caption2)
+                                                    .foregroundColor(progress.currentFile.isEmpty ? .clear : .secondary)
+                                                    .lineLimit(1)
+                                                    .truncationMode(.middle)
+                                                    .frame(minHeight: 12) // Fixed minimum height
+                                            }
+                                            .padding(12)
+                                            .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
+                                            .cornerRadius(6)
+                                        }
                                     }
                                 }
                                 .padding(.horizontal, 20)
@@ -263,6 +315,12 @@ struct ContentView: View {
         .onAppear {
             setupKeyboardShortcuts()
             setupMenuCommands()
+            // Check if bundled xxhsum is available
+            if Bundle.main.path(forResource: "xxhsum", ofType: nil) != nil {
+                print("⚡️ ImageIntact using bundled xxHash (30x faster than SHA-256!)")
+            } else {
+                print("🐢 Using SHA-256 checksums (xxhsum not bundled)")
+            }
         }
     }
     
@@ -336,8 +394,8 @@ struct ContentView: View {
         
         // If sizes match, we still need to check checksums
         if sourceSize == destSize {
-            let sourceChecksum = try fastChecksum(for: source)
-            let destChecksum = try fastChecksum(for: destination)
+            let sourceChecksum = try fastChecksum(for: source, context: "Comparing files")
+            let destChecksum = try fastChecksum(for: destination, context: "Comparing files")
             
             if sourceChecksum != destChecksum {
                 print("⚠️ File has same size but different checksum: \(source.lastPathComponent)")
@@ -393,6 +451,22 @@ struct ContentView: View {
             queue: .main
         ) { _ in
             clearAllSelections()
+        }
+        
+        NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("ShowDebugLog"),
+            object: nil,
+            queue: .main
+        ) { _ in
+            showDebugLog()
+        }
+        
+        NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("ExportDebugLog"),
+            object: nil,
+            queue: .main
+        ) { _ in
+            exportDebugLog()
         }
     }
     
@@ -481,6 +555,28 @@ struct ContentView: View {
         }
     }
     
+    func updateThroughput(for destination: String, bytesAdded: Int64) {
+        guard var progress = destinationProgress[destination] else { return }
+        
+        progress.bytesProcessed += bytesAdded
+        let now = Date()
+        let timeSinceLastUpdate = now.timeIntervalSince(progress.lastThroughputUpdate)
+        
+        // Update throughput every 3 seconds
+        if timeSinceLastUpdate >= 3.0 {
+            let totalTime = now.timeIntervalSince(progress.startTime)
+            if totalTime > 0 {
+                let mbProcessed = Double(progress.bytesProcessed) / (1024 * 1024)
+                progress.throughputMBps = mbProcessed / totalTime
+                progress.lastThroughputUpdate = now
+                
+                destinationProgress[destination] = progress
+            }
+        } else {
+            destinationProgress[destination] = progress
+        }
+    }
+    
     func cancelOperation() {
         guard !shouldCancel else { return }  // Prevent multiple cancellations
         shouldCancel = true
@@ -494,7 +590,7 @@ struct ContentView: View {
         guard !hasWrittenDebugLog else { return }
         
         // Only write debug log if there are slow operations or errors
-        let hasSlowOperations = debugLog.contains { $0.contains("SLOW CHECKSUM") }
+        let hasSlowOperations = debugLog.contains { $0.contains("SLOW CHECKSUM") || $0.contains("SLOW XXHASH") }
         let hasErrors = !failedFiles.isEmpty || shouldCancel
         
         if !hasSlowOperations && !hasErrors {
@@ -527,23 +623,97 @@ struct ContentView: View {
                 try logContent.write(to: logFile, atomically: true, encoding: .utf8)
                 print("📄 Debug log written to: \(logFile.path)")
                 
-                // If there were issues, notify the user
-                if hasSlowOperations || hasErrors {
-                    DispatchQueue.main.async {
-                        let alert = NSAlert()
-                        alert.messageText = "Debug Log Saved"
-                        alert.informativeText = "Performance issues were detected. A debug log has been saved to:\n\n\(logFile.path)\n\nWould you like to open the log file?"
-                        alert.alertStyle = .informational
-                        alert.addButton(withTitle: "Open Log")
-                        alert.addButton(withTitle: "OK")
-                        
-                        if alert.runModal() == .alertFirstButtonReturn {
-                            NSWorkspace.shared.open(logFile)
-                        }
-                    }
+                // Store the log path for menu access
+                DispatchQueue.main.async {
+                    self.lastDebugLogPath = logFile
                 }
             } catch {
                 print("❌ Failed to write debug log: \(error)")
+            }
+        }
+    }
+    
+    func showDebugLog() {
+        if let logPath = lastDebugLogPath {
+            NSWorkspace.shared.open(logPath)
+        } else {
+            // Create a temporary log file with current session data
+            let tempLogContent = generateCurrentSessionDebugLog()
+            let tempDir = FileManager.default.temporaryDirectory
+            let tempLogPath = tempDir.appendingPathComponent("ImageIntact_CurrentSession.log")
+            
+            do {
+                try tempLogContent.write(to: tempLogPath, atomically: true, encoding: .utf8)
+                NSWorkspace.shared.open(tempLogPath)
+            } catch {
+                let alert = NSAlert()
+                alert.messageText = "Cannot Show Debug Log"
+                alert.informativeText = "Could not create temporary debug log: \(error.localizedDescription)"
+                alert.alertStyle = .warning
+                alert.addButton(withTitle: "OK")
+                alert.runModal()
+            }
+        }
+    }
+    
+    func generateCurrentSessionDebugLog() -> String {
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy-MM-dd_HH-mm-ss"
+        let timestamp = dateFormatter.string(from: Date())
+        
+        var logContent = "ImageIntact Debug Log - \(timestamp)\n"
+        logContent += "Session ID: \(sessionID)\n"
+        logContent += "Total Files: \(totalFiles)\n"
+        logContent += "Processed Files: \(processedFiles)\n"
+        logContent += "Failed Files: \(failedFiles.count)\n"
+        logContent += "Was Cancelled: \(shouldCancel)\n\n"
+        
+        if !debugLog.isEmpty {
+            logContent += "Checksum Timings:\n"
+            logContent += debugLog.joined(separator: "\n")
+        } else {
+            logContent += "No timing data available yet.\n"
+        }
+        
+        return logContent
+    }
+    
+    func exportDebugLog() {
+        // Always generate a log with current session data
+        let logContent: String
+        if let logPath = lastDebugLogPath,
+           let existingContent = try? String(contentsOf: logPath) {
+            logContent = existingContent
+        } else {
+            // Generate debug log with current session data
+            logContent = generateCurrentSessionDebugLog()
+        }
+        
+        let savePanel = NSSavePanel()
+        savePanel.title = "Export Debug Log"
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy-MM-dd_HH-mm-ss"
+        savePanel.nameFieldStringValue = "ImageIntact_Debug_\(dateFormatter.string(from: Date())).txt"
+        savePanel.allowedContentTypes = [.plainText]
+        savePanel.canCreateDirectories = true
+        
+        if savePanel.runModal() == .OK, let exportURL = savePanel.url {
+            do {
+                try logContent.write(to: exportURL, atomically: true, encoding: .utf8)
+                
+                let alert = NSAlert()
+                alert.messageText = "Debug Log Exported"
+                alert.informativeText = "Debug log has been saved to:\n\n\(exportURL.path)"
+                alert.alertStyle = .informational
+                alert.addButton(withTitle: "OK")
+                alert.runModal()
+            } catch {
+                let alert = NSAlert()
+                alert.messageText = "Export Failed"
+                alert.informativeText = "Could not export debug log: \(error.localizedDescription)"
+                alert.alertStyle = .warning
+                alert.addButton(withTitle: "OK")
+                alert.runModal()
             }
         }
     }
@@ -580,6 +750,15 @@ struct ContentView: View {
         shouldCancel = false
         debugLog = []
         hasWrittenDebugLog = false
+        
+        // Initialize per-destination progress
+        destinationProgress.removeAll()
+        for dest in destinations {
+            destinationProgress[dest.lastPathComponent] = DestinationProgress(
+                totalFiles: 0, // Will be updated when we count files
+                startTime: Date()
+            )
+        }
 
         // Run the operation on a background thread
         DispatchQueue.global(qos: .userInitiated).async {
@@ -635,6 +814,11 @@ struct ContentView: View {
             DispatchQueue.main.async {
                 self.totalFiles = fileURLs.count
                 self.statusMessage = "Found \(fileURLs.count) files to process"
+                
+                // Update total files for each destination
+                for dest in destinations {
+                    self.destinationProgress[dest.lastPathComponent]?.totalFiles = fileURLs.count
+                }
             }
             
             // If no files found, exit early
@@ -663,8 +847,12 @@ struct ContentView: View {
                 }
             }
             
-            let networkSemaphore = DispatchSemaphore(value: 2) // Max 2 concurrent operations for network volumes
-            let externalSemaphore = DispatchSemaphore(value: 4) // Allow more concurrent ops for external SSDs
+            // Create dedicated queues for throttling instead of semaphores to avoid priority inversions
+            let hasNetworkDestinations = !networkDestinations.isEmpty
+            let networkQueue = DispatchQueue(label: "com.tonalphoto.imageintact.network", qos: .userInitiated, attributes: [])
+            let externalQueue = hasNetworkDestinations ? 
+                DispatchQueue(label: "com.tonalphoto.imageintact.external.conservative", qos: .userInitiated, attributes: []) :
+                DispatchQueue(label: "com.tonalphoto.imageintact.external", qos: .userInitiated, attributes: .concurrent)
             
             if !networkDestinations.isEmpty {
                 print("🌐 Detected \(networkDestinations.count) network destination(s), will throttle concurrent writes")
@@ -706,7 +894,7 @@ struct ContentView: View {
                     }
 
                     do {
-                        let sourceChecksum = try self.fastChecksum(for: fileURL)
+                        let sourceChecksum = try self.fastChecksum(for: fileURL, context: "Source file")
 
                         for dest in destinations {
                             // Check for cancellation before processing each destination
@@ -714,30 +902,28 @@ struct ContentView: View {
                                 return
                             }
                             
-                            // Throttle network and external destinations appropriately
+                            let destName = dest.lastPathComponent
                             let isNetwork = networkDestinations.contains(dest)
                             let isExternal = externalDestinations.contains(dest)
                             
-                            // Use timeout on semaphore waits to avoid indefinite blocking
-                            if isNetwork {
-                                let timeout = DispatchTime.now() + .seconds(30)
-                                if networkSemaphore.wait(timeout: timeout) == .timedOut {
-                                    print("⚠️ Network semaphore timeout for \(dest.lastPathComponent)")
-                                }
-                            } else if isExternal {
-                                let timeout = DispatchTime.now() + .seconds(30)
-                                if externalSemaphore.wait(timeout: timeout) == .timedOut {
-                                    print("⚠️ External semaphore timeout for \(dest.lastPathComponent)")
-                                }
-                            }
+                            // Choose appropriate queue for this destination type
+                            let destinationQueue = isNetwork ? networkQueue : (isExternal ? externalQueue : DispatchQueue.global(qos: .userInitiated))
                             
-                            defer {
-                                if isNetwork {
-                                    networkSemaphore.signal()
-                                } else if isExternal {
-                                    externalSemaphore.signal()
+                            // Perform destination-specific work on the appropriate queue
+                            try destinationQueue.sync {
+                                // Update destination as active
+                                DispatchQueue.main.async {
+                                    self.destinationProgress[destName]?.isActive = true
+                                    self.destinationProgress[destName]?.currentFile = fileURL.lastPathComponent
                                 }
-                            }
+                                
+                                defer {
+                                    // Mark destination as inactive when done with this file
+                                    DispatchQueue.main.async {
+                                        self.destinationProgress[destName]?.isActive = false
+                                        self.destinationProgress[destName]?.currentFile = ""
+                                    }
+                                }
                             
                             let destPath = dest.appendingPathComponent(relativePath)
                             let destDir = destPath.deletingLastPathComponent()
@@ -750,21 +936,43 @@ struct ContentView: View {
                             // Check if file already exists and has matching checksum
                             var needsCopy = true
                             if fileManager.fileExists(atPath: destPath.path) {
-                                // Check for modified files even with same size
-                                let isModified = try self.detectModifiedFiles(source: fileURL, destination: destPath)
-                                
-                                if !isModified {
-                                    let existingChecksum = try self.fastChecksum(for: destPath)
-                                    if existingChecksum == sourceChecksum {
-                                        print("✅ \(relativePath) to \(dest.lastPathComponent): already exists with matching checksum, skipping.")
-                                        self.logAction(action: "SKIPPED", source: fileURL, destination: destPath, checksum: sourceChecksum, reason: "Already exists with matching checksum")
-                                        needsCopy = false
+                                // Compare checksums directly
+                                let existingChecksum = try self.fastChecksum(for: destPath, context: "Checking existing file at \(destName)")
+                                if existingChecksum == sourceChecksum {
+                                    print("✅ \(relativePath) to \(dest.lastPathComponent): already exists with matching checksum, skipping.")
+                                    self.logAction(action: "SKIPPED", source: fileURL, destination: destPath, checksum: sourceChecksum, reason: "Already exists with matching checksum")
+                                    needsCopy = false
+                                    
+                                    // Update destination progress
+                                    DispatchQueue.main.async {
+                                        self.destinationProgress[destName]?.processedFiles += 1
                                     }
                                 } else {
-                                    print("⚠️  \(relativePath) to \(dest.lastPathComponent): exists with same size but different checksum, will quarantine and replace.")
-                                    // Quarantine the existing file
-                                    try self.quarantineFile(at: destPath, fileManager: fileManager)
-                                    self.logAction(action: "QUARANTINED", source: fileURL, destination: destPath, checksum: try self.fastChecksum(for: destPath), reason: "Same size but checksum mismatch")
+                                    // Checksums don't match - quarantine the existing file
+                                    let quarantineDir = dest.appendingPathComponent(".imageintact_quarantine")
+                                    try? fileManager.createDirectory(at: quarantineDir, withIntermediateDirectories: true)
+                                    try? fileManager.setAttributes([.extensionHidden: true], ofItemAtPath: quarantineDir.path)
+                                    
+                                    let dateFormatter = DateFormatter()
+                                    dateFormatter.dateFormat = "yyyyMMdd_HHmmss"
+                                    let timestamp = dateFormatter.string(from: Date())
+                                    let quarantineName = "\(fileURL.deletingPathExtension().lastPathComponent)_\(timestamp).\(fileURL.pathExtension)"
+                                    let quarantinePath = quarantineDir.appendingPathComponent(quarantineName)
+                                    
+                                    do {
+                                        try fileManager.moveItem(at: destPath, to: quarantinePath)
+                                        print("📦 \(relativePath) to \(dest.lastPathComponent): checksum mismatch, quarantined existing file")
+                                        self.logAction(action: "QUARANTINED", source: fileURL, destination: destPath, checksum: existingChecksum, reason: "Checksum mismatch - moved to quarantine")
+                                        needsCopy = true
+                                    } catch {
+                                        print("❌ Failed to quarantine \(relativePath): \(error.localizedDescription)")
+                                        needsCopy = false
+                                        DispatchQueue.main.async {
+                                            self.failedFiles.append((file: relativePath, destination: dest.lastPathComponent, error: "Could not quarantine: \(error.localizedDescription)"))
+                                            // Count as processed (though failed)
+                                            self.destinationProgress[destName]?.processedFiles += 1
+                                        }
+                                    }
                                 }
                             }
                             
@@ -777,23 +985,38 @@ struct ContentView: View {
                                 
                                 try fileManager.copyItem(at: fileURL, to: destPath)
                                 
+                                // Update throughput tracking
+                                if let fileSize = try? fileManager.attributesOfItem(atPath: fileURL.path)[.size] as? Int64 {
+                                    DispatchQueue.main.async {
+                                        self.updateThroughput(for: destName, bytesAdded: fileSize)
+                                    }
+                                }
+                                
                                 // Check for cancellation before checksum verification
                                 if self.shouldCancel {
                                     return
                                 }
                                 
-                                let destChecksum = try self.fastChecksum(for: destPath)
+                                let destChecksum = try self.fastChecksum(for: destPath, context: "Verifying copy at \(destName)")
                                 if sourceChecksum == destChecksum {
                                     print("✅ \(relativePath) to \(dest.lastPathComponent): copied successfully, checksums match.")
                                     self.logAction(action: "COPIED", source: fileURL, destination: destPath, checksum: destChecksum, reason: "")
+                                    
+                                    // Update destination progress
+                                    DispatchQueue.main.async {
+                                        self.destinationProgress[destName]?.processedFiles += 1
+                                    }
                                 } else {
                                     print("❌ \(relativePath) to \(dest.lastPathComponent): checksum mismatch after copy!")
                                     self.logAction(action: "FAILED", source: fileURL, destination: destPath, checksum: destChecksum, reason: "Checksum mismatch after copy")
                                     DispatchQueue.main.async {
                                         self.failedFiles.append((file: relativePath, destination: dest.lastPathComponent, error: "Checksum mismatch after copy"))
+                                        // Still count as processed (though failed)
+                                        self.destinationProgress[destName]?.processedFiles += 1
                                     }
                                 }
                             }
+                            } // End destinationQueue.sync
                         }
                     } catch {
                         print("Error processing \(relativePath): \(error.localizedDescription)")
@@ -813,43 +1036,28 @@ struct ContentView: View {
         }
     }
 
-    private static var xxhsumAvailable: Bool? = nil
     
-    func fastChecksum(for fileURL: URL) throws -> String {
-        // Check if xxhsum is available on first run
-        if ContentView.xxhsumAvailable == nil {
-            ContentView.xxhsumAvailable = checkXxhsumAvailability()
-        }
-        
-        if ContentView.xxhsumAvailable == true {
-            return try xxhsumChecksum(for: fileURL)
-        } else {
-            return try sha256Checksum(for: fileURL)
+    func fastChecksum(for fileURL: URL, context: String = "") throws -> String {
+        // Try bundled xxhsum first, then fall back to SHA-256
+        do {
+            return try bundledXxHashChecksum(for: fileURL, context: context)
+        } catch {
+            // Fall back to SHA-256 if xxhsum fails
+            return try sha256Checksum(for: fileURL, context: context)
         }
     }
     
-    private func checkXxhsumAvailability() -> Bool {
-        let commonPaths = [
-            "/usr/local/bin/xxhsum",    // Homebrew Intel
-            "/opt/homebrew/bin/xxhsum", // Homebrew Apple Silicon
-            "/opt/local/bin/xxhsum",    // MacPorts
-            "/usr/bin/xxhsum"           // System install
-        ]
-        
-        for path in commonPaths {
-            if FileManager.default.fileExists(atPath: path) {
-                print("⚡️ xxhsum found at \(path) - using fast checksums (30x faster!)")
-                return true
-            }
+    
+    func bundledXxHashChecksum(for fileURL: URL, context: String = "") throws -> String {
+        // Check for cancellation
+        if self.shouldCancel {
+            throw NSError(domain: "ImageIntact", code: 6, userInfo: [NSLocalizedDescriptionKey: "Checksum cancelled by user"])
         }
         
-        print("🐢 xxhsum not found - using SHA-256 checksums")
-        print("   ➡️  Install with: brew install xxhash")
-        print("   ➡️  For 30x faster checksum verification!")
-        return false
-    }
-    
-    func xxhsumChecksum(for fileURL: URL) throws -> String {
+        // Find bundled xxhsum binary
+        guard let xxhsumPath = Bundle.main.path(forResource: "xxhsum", ofType: nil) else {
+            throw NSError(domain: "ImageIntact", code: 5, userInfo: [NSLocalizedDescriptionKey: "Bundled xxhsum not found"])
+        }
         let startTime = Date()
         defer {
             let elapsed = Date().timeIntervalSince(startTime)
@@ -861,7 +1069,8 @@ struct ContentView: View {
                 }
             }
             if elapsed > 1.0 {  // Lower threshold for xxHash since it should be much faster
-                print("⚠️ SLOW XXHASH: \(logMessage)")
+                let contextInfo = context.isEmpty ? "" : " (\(context))"
+                print("⚠️ SLOW XXHASH: \(logMessage)\(contextInfo)")
             }
         }
         
@@ -871,18 +1080,6 @@ struct ContentView: View {
         for attempt in 1...3 {
             do {
                 let process = Process()
-                
-                // Find the actual xxhsum path
-                let commonPaths = [
-                    "/usr/local/bin/xxhsum",
-                    "/opt/homebrew/bin/xxhsum", 
-                    "/opt/local/bin/xxhsum",
-                    "/usr/bin/xxhsum"
-                ]
-                
-                guard let xxhsumPath = commonPaths.first(where: { FileManager.default.fileExists(atPath: $0) }) else {
-                    throw NSError(domain: "ImageIntact", code: 5, userInfo: [NSLocalizedDescriptionKey: "xxhsum not found in expected paths"])
-                }
                 
                 process.executableURL = URL(fileURLWithPath: xxhsumPath)
                 process.arguments = ["-H128", fileURL.path]  // 128-bit xxHash
@@ -960,10 +1157,10 @@ struct ContentView: View {
     
     func xxh128Checksum(for fileURL: URL) throws -> String {
         // Legacy function - now uses the smart fastChecksum
-        return try fastChecksum(for: fileURL)
+        return try fastChecksum(for: fileURL, context: "Legacy function")
     }
     
-    func sha256Checksum(for fileURL: URL) throws -> String {
+    func sha256Checksum(for fileURL: URL, context: String = "") throws -> String {
         let startTime = Date()
         defer {
             let elapsed = Date().timeIntervalSince(startTime)
@@ -975,7 +1172,8 @@ struct ContentView: View {
                 }
             }
             if elapsed > 2.0 {
-                print("⚠️ SLOW CHECKSUM: \(logMessage)")
+                let contextInfo = context.isEmpty ? "" : " (\(context))"
+                print("⚠️ SLOW CHECKSUM: \(logMessage)\(contextInfo)")
             }
         }
         

@@ -81,6 +81,16 @@ struct ImageIntactApp: App {
                     NotificationCenter.default.post(name: NSNotification.Name("ClearAll"), object: nil)
                 }
                 .keyboardShortcut("k", modifiers: .command)
+                
+                Divider()
+                
+                Button("Show Debug Log") {
+                    NotificationCenter.default.post(name: NSNotification.Name("ShowDebugLog"), object: nil)
+                }
+                
+                Button("Export Debug Log...") {
+                    NotificationCenter.default.post(name: NSNotification.Name("ExportDebugLog"), object: nil)
+                }
             }
         }
     }
