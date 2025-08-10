@@ -72,7 +72,7 @@ extension BackupManager {
         // Process files with controlled concurrency using TaskGroup's built-in limiting
         await withTaskGroup(of: Void.self) { taskGroup in
             var activeTaskCount = 0
-            let maxConcurrentTasks = min(8, fileURLs.count)
+            let maxConcurrentTasks = min(4, fileURLs.count)  // Reduced from 8 to 4 for stability
             
             for fileURL in fileURLs {
                 guard !shouldCancel else { 
@@ -117,11 +117,21 @@ extension BackupManager {
         
         print("🔍 Starting checksum for: \(fileName)")
         
-        // Calculate checksum once for all destinations
+        // Calculate checksum once for all destinations with verification
         let sourceChecksum: String
         do {
-            sourceChecksum = try await calculateChecksum(for: fileURL)
-            print("🔐 Checksum calculated for: \(fileName)")
+            // Calculate checksum twice to ensure source file consistency under concurrent access
+            let checksum1 = try await calculateChecksum(for: fileURL)
+            let checksum2 = try await calculateChecksum(for: fileURL)
+            
+            if checksum1 == checksum2 {
+                sourceChecksum = checksum1
+                print("🔐 Checksum verified for: \(fileName)")
+            } else {
+                print("❌ Source file checksum inconsistent for: \(fileName) - \(checksum1.prefix(8)) vs \(checksum2.prefix(8))")
+                await progressReporter.fileCompleted(fileName: fileName, error: "Source file checksum inconsistent - possible corruption or concurrent access issue")
+                return
+            }
         } catch {
             print("❌ Checksum failed for: \(fileName) - \(error)")
             await progressReporter.fileCompleted(fileName: fileName, error: "Checksum failed: \(error.localizedDescription)")
@@ -165,18 +175,57 @@ extension BackupManager {
                     
                     let fileSize = (try? FileManager.default.attributesOfItem(atPath: fileURL.path)[.size] as? Int64) ?? 0
                     
-                    try FileManager.default.copyItem(at: fileURL, to: destPath)
-                    await progressReporter.bytesProcessed(fileSize)
+                    // Retry logic for copy operations with checksum verification
+                    var copySucceeded = false
+                    var lastError = ""
                     
-                    let destChecksum = try await calculateChecksum(for: destPath)
-                    if sourceChecksum == destChecksum {
-                        print("✅ \(relativePath) to \(destination.lastPathComponent): copied successfully")
-                        logAction(action: "COPIED", source: fileURL, destination: destPath, checksum: destChecksum, reason: "")
-                        await progressReporter.incrementDestinationProgress(destination.lastPathComponent)
-                    } else {
-                        print("❌ \(relativePath) to \(destination.lastPathComponent): checksum mismatch after copy")
-                        logAction(action: "FAILED", source: fileURL, destination: destPath, checksum: destChecksum, reason: "Checksum mismatch after copy")
-                        await progressReporter.addError(file: relativePath, destination: destination.lastPathComponent, error: "Checksum mismatch after copy")
+                    for attempt in 1...3 {
+                        do {
+                            // Remove any previous failed copy
+                            if FileManager.default.fileExists(atPath: destPath.path) {
+                                try FileManager.default.removeItem(at: destPath)
+                            }
+                            
+                            // Copy file
+                            try FileManager.default.copyItem(at: fileURL, to: destPath)
+                            await progressReporter.bytesProcessed(fileSize)
+                            
+                            // Small delay to ensure file system consistency
+                            try await Task.sleep(nanoseconds: 100_000_000) // 0.1 seconds
+                            
+                            // Verify checksum
+                            let destChecksum = try await calculateChecksum(for: destPath)
+                            
+                            if sourceChecksum == destChecksum {
+                                print("✅ \(relativePath) to \(destination.lastPathComponent): copied successfully\(attempt > 1 ? " (retry \(attempt))" : "")")
+                                logAction(action: "COPIED", source: fileURL, destination: destPath, checksum: destChecksum, reason: attempt > 1 ? "Succeeded after \(attempt) attempts" : "")
+                                await progressReporter.incrementDestinationProgress(destination.lastPathComponent)
+                                copySucceeded = true
+                                break
+                            } else {
+                                lastError = "Checksum mismatch: source=\(sourceChecksum.prefix(8))..., dest=\(destChecksum.prefix(8))..."
+                                print("⚠️ \(relativePath) to \(destination.lastPathComponent): \(lastError) (attempt \(attempt)/3)")
+                                
+                                if attempt < 3 {
+                                    // Wait longer between retries for larger files
+                                    let delaySeconds = Double(attempt) * 0.5 + (fileSize > 50_000_000 ? 1.0 : 0.0)
+                                    try await Task.sleep(nanoseconds: UInt64(delaySeconds * 1_000_000_000))
+                                }
+                            }
+                        } catch {
+                            lastError = "Copy failed: \(error.localizedDescription)"
+                            print("⚠️ \(relativePath) to \(destination.lastPathComponent): \(lastError) (attempt \(attempt)/3)")
+                            
+                            if attempt < 3 {
+                                try await Task.sleep(nanoseconds: UInt64(Double(attempt) * 500_000_000)) // 0.5s * attempt
+                            }
+                        }
+                    }
+                    
+                    if !copySucceeded {
+                        print("❌ \(relativePath) to \(destination.lastPathComponent): failed after 3 attempts - \(lastError)")
+                        logAction(action: "FAILED", source: fileURL, destination: destPath, checksum: "N/A", reason: "Failed after 3 attempts: \(lastError)")
+                        await progressReporter.addError(file: relativePath, destination: destination.lastPathComponent, error: "Failed after 3 attempts: \(lastError)")
                     }
                 }
             } catch {
