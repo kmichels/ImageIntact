@@ -177,9 +177,30 @@ extension BackupManager {
                     try FileManager.default.copyItem(at: fileURL, to: destPath)
                     await progressReporter.bytesProcessed(fileSize)
                     
+                    // Wait a moment for file system to settle after copy
+                    try await Task.sleep(nanoseconds: 200_000_000) // 0.2 seconds
+                    
+                    // Verify destination file exists and has correct size
+                    guard FileManager.default.fileExists(atPath: destPath.path) else {
+                        print("❌ \(relativePath) to \(destination.lastPathComponent): destination file missing after copy")
+                        await progressReporter.addError(file: relativePath, destination: destination.lastPathComponent, error: "Destination file missing after copy")
+                        return
+                    }
+                    
+                    let destAttributes = try? FileManager.default.attributesOfItem(atPath: destPath.path)
+                    let destSize = destAttributes?[.size] as? Int64 ?? 0
+                    
+                    if destSize != fileSize {
+                        print("❌ \(relativePath) to \(destination.lastPathComponent): size mismatch - source: \(fileSize), dest: \(destSize)")
+                        await progressReporter.addError(file: relativePath, destination: destination.lastPathComponent, error: "Size mismatch: source=\(fileSize), dest=\(destSize)")
+                        return
+                    }
+                    
                     // Try to calculate destination checksum with better error handling
                     do {
+                        print("🔍 Calculating destination checksum for: \(fileName) → \(destination.lastPathComponent)")
                         let destChecksum = try await calculateChecksum(for: destPath)
+                        print("🔐 Destination checksum: \(destChecksum.prefix(8))... for: \(fileName)")
                         
                         if sourceChecksum == destChecksum {
                             print("✅ \(relativePath) to \(destination.lastPathComponent): copied successfully")
@@ -190,12 +211,17 @@ extension BackupManager {
                             print("   Source:  \(sourceChecksum)")
                             print("   Dest:    \(destChecksum)")
                             print("   Size:    \(fileSize) bytes")
+                            print("   Dest exists: \(FileManager.default.fileExists(atPath: destPath.path))")
+                            print("   Dest path: \(destPath.path)")
                             
                             logAction(action: "FAILED", source: fileURL, destination: destPath, checksum: destChecksum, reason: "Checksum mismatch after copy")
                             await progressReporter.addError(file: relativePath, destination: destination.lastPathComponent, error: "Checksum mismatch: source=\(sourceChecksum.prefix(8))..., dest=\(destChecksum.prefix(8))...")
                         }
                     } catch {
                         print("❌ \(relativePath) to \(destination.lastPathComponent): failed to calculate destination checksum - \(error)")
+                        print("   Dest exists: \(FileManager.default.fileExists(atPath: destPath.path))")
+                        print("   Dest path: \(destPath.path)")
+                        print("   Dest size: \(destSize)")
                         logAction(action: "FAILED", source: fileURL, destination: destPath, checksum: "N/A", reason: "Destination checksum failed: \(error.localizedDescription)")
                         await progressReporter.addError(file: relativePath, destination: destination.lastPathComponent, error: "Dest checksum failed: \(error.localizedDescription)")
                     }
