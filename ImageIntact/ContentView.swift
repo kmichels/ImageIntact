@@ -19,6 +19,7 @@ struct ContentView: View {
     @State private var shouldCancel = false
     @State private var currentOperation: DispatchWorkItem?
     @State private var debugLog: [String] = []
+    @State private var hasWrittenDebugLog = false
     
     struct LogEntry {
         let timestamp: Date
@@ -311,8 +312,18 @@ struct ContentView: View {
             }
         }
 
-        print("🔍 Volume at \(url.lastPathComponent) is of type: \(fsType)")
+        let volumeName = url.lastPathComponent.isEmpty ? url.path : url.lastPathComponent
+        print("🔍 Volume at \(volumeName) is of type: \(fsType)")
         return ["smbfs", "afpfs", "webdav", "nfs", "fuse", "cifs"].contains(fsType.lowercased())
+    }
+    
+    func isExternalVolume(at url: URL) -> Bool {
+        // Check if volume is mounted under /Volumes (typical for external drives on macOS)
+        // but not a network volume
+        if url.path.starts(with: "/Volumes/") && !isNetworkVolume(at: url) {
+            return true
+        }
+        return false
     }
     
     func detectModifiedFiles(source: URL, destination: URL) throws -> Bool {
@@ -325,8 +336,8 @@ struct ContentView: View {
         
         // If sizes match, we still need to check checksums
         if sourceSize == destSize {
-            let sourceChecksum = try sha256Checksum(for: source)
-            let destChecksum = try sha256Checksum(for: destination)
+            let sourceChecksum = try fastChecksum(for: source)
+            let destChecksum = try fastChecksum(for: destination)
             
             if sourceChecksum != destChecksum {
                 print("⚠️ File has same size but different checksum: \(source.lastPathComponent)")
@@ -471,15 +482,17 @@ struct ContentView: View {
     }
     
     func cancelOperation() {
+        guard !shouldCancel else { return }  // Prevent multiple cancellations
         shouldCancel = true
         statusMessage = "Cancelling backup..."
         currentOperation?.cancel()
-        
-        // Write debug log to file
-        writeDebugLog()
+        // Don't write debug log here - it will be written once when operation completes
     }
     
     func writeDebugLog() {
+        // Prevent multiple log writes
+        guard !hasWrittenDebugLog else { return }
+        
         // Only write debug log if there are slow operations or errors
         let hasSlowOperations = debugLog.contains { $0.contains("SLOW CHECKSUM") }
         let hasErrors = !failedFiles.isEmpty || shouldCancel
@@ -487,6 +500,8 @@ struct ContentView: View {
         if !hasSlowOperations && !hasErrors {
             return  // Nothing interesting to log
         }
+        
+        hasWrittenDebugLog = true
         
         let dateFormatter = DateFormatter()
         dateFormatter.dateFormat = "yyyy-MM-dd_HH-mm-ss"
@@ -564,6 +579,7 @@ struct ContentView: View {
         logEntries = []
         shouldCancel = false
         debugLog = []
+        hasWrittenDebugLog = false
 
         // Run the operation on a background thread
         DispatchQueue.global(qos: .userInitiated).async {
@@ -631,15 +647,32 @@ struct ContentView: View {
 
             let group = DispatchGroup()
             let queue = DispatchQueue(label: "com.tonalphoto.imageintact", qos: .userInitiated, attributes: .concurrent)
-            let progressQueue = DispatchQueue(label: "com.tonalphoto.imageintact.progress", qos: .utility)
+            let progressQueue = DispatchQueue(label: "com.tonalphoto.imageintact.progress", qos: .userInitiated)
             
-            // Detect network volumes and create semaphore for throttling
-            let networkDestinations = Set(destinations.filter { isNetworkVolume(at: $0) })
+            // Detect network volumes and external drives for appropriate throttling
+            print("\n🔍 Analyzing destination volumes...")
+            var networkDestinations = Set<URL>()
+            var externalDestinations = Set<URL>()
+            
+            // Check each destination once to avoid duplicate logging
+            for destination in destinations {
+                if isNetworkVolume(at: destination) {
+                    networkDestinations.insert(destination)
+                } else if isExternalVolume(at: destination) {
+                    externalDestinations.insert(destination)
+                }
+            }
+            
             let networkSemaphore = DispatchSemaphore(value: 2) // Max 2 concurrent operations for network volumes
+            let externalSemaphore = DispatchSemaphore(value: 4) // Allow more concurrent ops for external SSDs
             
             if !networkDestinations.isEmpty {
                 print("🌐 Detected \(networkDestinations.count) network destination(s), will throttle concurrent writes")
             }
+            if !externalDestinations.isEmpty {
+                print("💾 Detected \(externalDestinations.count) external destination(s) under /Volumes")
+            }
+            print("")  // Empty line for readability
             
             for fileURL in fileURLs {
                 // Check for cancellation before processing each file
@@ -673,18 +706,36 @@ struct ContentView: View {
                     }
 
                     do {
-                        let sourceChecksum = try self.sha256Checksum(for: fileURL)
+                        let sourceChecksum = try self.fastChecksum(for: fileURL)
 
                         for dest in destinations {
-                            // Throttle network destinations
+                            // Check for cancellation before processing each destination
+                            if self.shouldCancel {
+                                return
+                            }
+                            
+                            // Throttle network and external destinations appropriately
                             let isNetwork = networkDestinations.contains(dest)
+                            let isExternal = externalDestinations.contains(dest)
+                            
+                            // Use timeout on semaphore waits to avoid indefinite blocking
                             if isNetwork {
-                                networkSemaphore.wait()
+                                let timeout = DispatchTime.now() + .seconds(30)
+                                if networkSemaphore.wait(timeout: timeout) == .timedOut {
+                                    print("⚠️ Network semaphore timeout for \(dest.lastPathComponent)")
+                                }
+                            } else if isExternal {
+                                let timeout = DispatchTime.now() + .seconds(30)
+                                if externalSemaphore.wait(timeout: timeout) == .timedOut {
+                                    print("⚠️ External semaphore timeout for \(dest.lastPathComponent)")
+                                }
                             }
                             
                             defer {
                                 if isNetwork {
                                     networkSemaphore.signal()
+                                } else if isExternal {
+                                    externalSemaphore.signal()
                                 }
                             }
                             
@@ -703,7 +754,7 @@ struct ContentView: View {
                                 let isModified = try self.detectModifiedFiles(source: fileURL, destination: destPath)
                                 
                                 if !isModified {
-                                    let existingChecksum = try self.sha256Checksum(for: destPath)
+                                    let existingChecksum = try self.fastChecksum(for: destPath)
                                     if existingChecksum == sourceChecksum {
                                         print("✅ \(relativePath) to \(dest.lastPathComponent): already exists with matching checksum, skipping.")
                                         self.logAction(action: "SKIPPED", source: fileURL, destination: destPath, checksum: sourceChecksum, reason: "Already exists with matching checksum")
@@ -713,14 +764,25 @@ struct ContentView: View {
                                     print("⚠️  \(relativePath) to \(dest.lastPathComponent): exists with same size but different checksum, will quarantine and replace.")
                                     // Quarantine the existing file
                                     try self.quarantineFile(at: destPath, fileManager: fileManager)
-                                    self.logAction(action: "QUARANTINED", source: fileURL, destination: destPath, checksum: try self.sha256Checksum(for: destPath), reason: "Same size but checksum mismatch")
+                                    self.logAction(action: "QUARANTINED", source: fileURL, destination: destPath, checksum: try self.fastChecksum(for: destPath), reason: "Same size but checksum mismatch")
                                 }
                             }
                             
                             // Only copy if needed
                             if needsCopy {
+                                // Check for cancellation before expensive operations
+                                if self.shouldCancel {
+                                    return
+                                }
+                                
                                 try fileManager.copyItem(at: fileURL, to: destPath)
-                                let destChecksum = try self.sha256Checksum(for: destPath)
+                                
+                                // Check for cancellation before checksum verification
+                                if self.shouldCancel {
+                                    return
+                                }
+                                
+                                let destChecksum = try self.fastChecksum(for: destPath)
                                 if sourceChecksum == destChecksum {
                                     print("✅ \(relativePath) to \(dest.lastPathComponent): copied successfully, checksums match.")
                                     self.logAction(action: "COPIED", source: fileURL, destination: destPath, checksum: destChecksum, reason: "")
@@ -751,11 +813,154 @@ struct ContentView: View {
         }
     }
 
+    private static var xxhsumAvailable: Bool? = nil
+    
+    func fastChecksum(for fileURL: URL) throws -> String {
+        // Check if xxhsum is available on first run
+        if ContentView.xxhsumAvailable == nil {
+            ContentView.xxhsumAvailable = checkXxhsumAvailability()
+        }
+        
+        if ContentView.xxhsumAvailable == true {
+            return try xxhsumChecksum(for: fileURL)
+        } else {
+            return try sha256Checksum(for: fileURL)
+        }
+    }
+    
+    private func checkXxhsumAvailability() -> Bool {
+        let commonPaths = [
+            "/usr/local/bin/xxhsum",    // Homebrew Intel
+            "/opt/homebrew/bin/xxhsum", // Homebrew Apple Silicon
+            "/opt/local/bin/xxhsum",    // MacPorts
+            "/usr/bin/xxhsum"           // System install
+        ]
+        
+        for path in commonPaths {
+            if FileManager.default.fileExists(atPath: path) {
+                print("⚡️ xxhsum found at \(path) - using fast checksums (30x faster!)")
+                return true
+            }
+        }
+        
+        print("🐢 xxhsum not found - using SHA-256 checksums")
+        print("   ➡️  Install with: brew install xxhash")
+        print("   ➡️  For 30x faster checksum verification!")
+        return false
+    }
+    
+    func xxhsumChecksum(for fileURL: URL) throws -> String {
+        let startTime = Date()
+        defer {
+            let elapsed = Date().timeIntervalSince(startTime)
+            let logMessage = "xxHash for \(fileURL.lastPathComponent): \(String(format: "%.3f", elapsed))s"
+            DispatchQueue.main.async {
+                self.debugLog.append(logMessage)
+                if self.debugLog.count > 100 {
+                    self.debugLog.removeFirst()
+                }
+            }
+            if elapsed > 1.0 {  // Lower threshold for xxHash since it should be much faster
+                print("⚠️ SLOW XXHASH: \(logMessage)")
+            }
+        }
+        
+        // Retry mechanism for network drives
+        var lastError: Error?
+        
+        for attempt in 1...3 {
+            do {
+                let process = Process()
+                
+                // Find the actual xxhsum path
+                let commonPaths = [
+                    "/usr/local/bin/xxhsum",
+                    "/opt/homebrew/bin/xxhsum", 
+                    "/opt/local/bin/xxhsum",
+                    "/usr/bin/xxhsum"
+                ]
+                
+                guard let xxhsumPath = commonPaths.first(where: { FileManager.default.fileExists(atPath: $0) }) else {
+                    throw NSError(domain: "ImageIntact", code: 5, userInfo: [NSLocalizedDescriptionKey: "xxhsum not found in expected paths"])
+                }
+                
+                process.executableURL = URL(fileURLWithPath: xxhsumPath)
+                process.arguments = ["-H128", fileURL.path]  // 128-bit xxHash
+
+                let pipe = Pipe()
+                let errorPipe = Pipe()
+                process.standardOutput = pipe
+                process.standardError = errorPipe
+                
+                let outputHandle = pipe.fileHandleForReading
+                let errorHandle = errorPipe.fileHandleForReading
+
+                try process.run()
+                
+                // Shorter timeout for xxHash since it should be much faster
+                let timeoutSeconds: TimeInterval = 15.0
+                let deadline = Date().addingTimeInterval(timeoutSeconds)
+                
+                while process.isRunning && Date() < deadline && !self.shouldCancel {
+                    Thread.sleep(forTimeInterval: 0.05)  // Check more frequently
+                }
+                
+                // If cancelled, terminate the process immediately
+                if self.shouldCancel {
+                    process.terminate()
+                    Thread.sleep(forTimeInterval: 0.2)
+                    if process.isRunning {
+                        process.interrupt()
+                    }
+                    try? outputHandle.close()
+                    try? errorHandle.close()
+                    throw NSError(domain: "ImageIntact", code: 6, userInfo: [NSLocalizedDescriptionKey: "xxHash cancelled by user"])
+                }
+                
+                if process.isRunning {
+                    process.terminate()
+                    Thread.sleep(forTimeInterval: 0.3)
+                    if process.isRunning {
+                        process.interrupt()
+                    }
+                    try? outputHandle.close()
+                    try? errorHandle.close()
+                    throw NSError(domain: "ImageIntact", code: 4, userInfo: [NSLocalizedDescriptionKey: "xxHash timed out after \(timeoutSeconds) seconds"])
+                }
+
+                guard process.terminationStatus == 0 else {
+                    let errorData = errorHandle.readDataToEndOfFile()
+                    let errorOutput = String(data: errorData, encoding: .utf8) ?? "Unknown error"
+                    try? outputHandle.close()
+                    try? errorHandle.close()
+                    throw NSError(domain: "ImageIntact", code: Int(process.terminationStatus), userInfo: [NSLocalizedDescriptionKey: "xxhsum failed: \(errorOutput)"])
+                }
+
+                let data = outputHandle.readDataToEndOfFile()
+                try? outputHandle.close()
+                try? errorHandle.close()
+                
+                guard let output = String(data: data, encoding: .utf8),
+                      let checksum = output.trimmingCharacters(in: .whitespacesAndNewlines).components(separatedBy: .whitespaces).first else {
+                    throw NSError(domain: "ImageIntact", code: 2, userInfo: [NSLocalizedDescriptionKey: "xxHash parsing failed"])
+                }
+
+                return checksum
+            } catch {
+                lastError = error
+                print("⏳ xxHash attempt \(attempt) failed: \(error.localizedDescription)")
+                if attempt < 3 {
+                    Thread.sleep(forTimeInterval: Double(attempt) * 0.3)
+                }
+            }
+        }
+        
+        throw lastError ?? NSError(domain: "ImageIntact", code: 3, userInfo: [NSLocalizedDescriptionKey: "Failed to calculate xxHash after 3 attempts"])
+    }
+    
     func xxh128Checksum(for fileURL: URL) throws -> String {
-        // The xxHash-Swift package uses a different API structure
-        // We need to use xxHash_Swift as the module name
-        // For now, let's fall back to SHA256 until we figure out the exact API
-        return try sha256Checksum(for: fileURL)
+        // Legacy function - now uses the smart fastChecksum
+        return try fastChecksum(for: fileURL)
     }
     
     func sha256Checksum(for fileURL: URL) throws -> String {
@@ -798,8 +1003,20 @@ struct ContentView: View {
                 let timeoutSeconds: TimeInterval = 30.0
                 let deadline = Date().addingTimeInterval(timeoutSeconds)
                 
-                while process.isRunning && Date() < deadline {
+                while process.isRunning && Date() < deadline && !self.shouldCancel {
                     Thread.sleep(forTimeInterval: 0.1)
+                }
+                
+                // If cancelled, terminate the process immediately
+                if self.shouldCancel {
+                    process.terminate()
+                    Thread.sleep(forTimeInterval: 0.2)
+                    if process.isRunning {
+                        process.interrupt()
+                    }
+                    try? outputHandle.close()
+                    try? errorHandle.close()
+                    throw NSError(domain: "ImageIntact", code: 6, userInfo: [NSLocalizedDescriptionKey: "Checksum cancelled by user"])
                 }
                 
                 if process.isRunning {
