@@ -4,8 +4,8 @@ import Darwin
 @Observable
 class BackupManager {
     // MARK: - Published Properties
-    var sourceURL: URL? = ContentView.loadBookmark(forKey: "sourceBookmark")
-    var destinationURLs: [URL?] = ContentView.loadDestinationBookmarks()
+    var sourceURL: URL? = BackupManager.loadBookmark(forKey: "sourceBookmark")
+    var destinationURLs: [URL?] = BackupManager.loadDestinationBookmarks()
     var isProcessing = false
     var statusMessage = ""
     var totalFiles = 0
@@ -18,24 +18,18 @@ class BackupManager {
     var hasWrittenDebugLog = false
     var lastDebugLogPath: URL?
     
-    // Per-destination progress tracking
-    var destinationProgress: [String: DestinationProgress] = [:]
+    // Simple progress tracking
+    var currentFileIndex: Int = 0
+    var currentDestinationName: String = ""
+    var currentFileName: String = ""
+    var copySpeed: Double = 0.0 // MB/s
+    private var copyStartTime: Date = Date()
+    private var totalBytesCopied: Int64 = 0
+    private var atomicFileCounter = 0
     
     // MARK: - Constants
     let sourceKey = "sourceBookmark"
     let destinationKeys = ["dest1Bookmark", "dest2Bookmark", "dest3Bookmark", "dest4Bookmark"]
-    
-    // MARK: - Data Structures
-    struct DestinationProgress {
-        var processedFiles: Int = 0
-        var totalFiles: Int = 0
-        var currentFile: String = ""
-        var bytesProcessed: Int64 = 0
-        var startTime: Date = Date()
-        var isActive: Bool = false
-        var throughputMBps: Double = 0.0
-        var lastThroughputUpdate: Date = Date()
-    }
     
     struct LogEntry {
         let timestamp: Date
@@ -49,7 +43,7 @@ class BackupManager {
         let reason: String
     }
     
-    private var logEntries: [LogEntry] = []
+    var logEntries: [LogEntry] = []
     private var currentOperation: DispatchWorkItem?
     
     // MARK: - Public Methods
@@ -131,18 +125,9 @@ class BackupManager {
         debugLog = []
         hasWrittenDebugLog = false
         
-        // Initialize per-destination progress
-        destinationProgress.removeAll()
-        for dest in destinations {
-            destinationProgress[dest.lastPathComponent] = DestinationProgress(
-                totalFiles: 0, // Will be updated when we count files
-                startTime: Date()
-            )
-        }
-
-        // Run the operation on a background thread
+        // Run the new concurrent backup operation
         Task {
-            await performBackup(source: source, destinations: destinations)
+            await performConcurrentBackup(source: source, destinations: destinations)
         }
     }
     
@@ -216,6 +201,36 @@ class BackupManager {
     private func checkForSourceTag(at url: URL) -> Bool {
         let tagFile = url.appendingPathComponent(".imageintact_source")
         return FileManager.default.fileExists(atPath: tagFile.path)
+    }
+    
+    // MARK: - Simple Progress Updates
+    @MainActor
+    func updateProgress(fileName: String, destinationName: String) {
+        // Thread-safe increment
+        atomicFileCounter += 1
+        currentFileIndex = atomicFileCounter
+        currentFileName = fileName
+        currentDestinationName = destinationName
+    }
+    
+    @MainActor
+    func updateCopySpeed(bytesAdded: Int64) {
+        totalBytesCopied += bytesAdded
+        let elapsed = Date().timeIntervalSince(copyStartTime)
+        if elapsed > 0 {
+            copySpeed = Double(totalBytesCopied) / (1024 * 1024) / elapsed
+        }
+    }
+    
+    @MainActor
+    func resetProgress() {
+        currentFileIndex = 0
+        currentFileName = ""
+        currentDestinationName = ""
+        copySpeed = 0.0
+        copyStartTime = Date()
+        totalBytesCopied = 0
+        atomicFileCounter = 0
     }
 }
 
