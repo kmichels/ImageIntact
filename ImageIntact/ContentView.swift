@@ -336,12 +336,7 @@ struct ContentView: View {
             setupKeyboardShortcuts()
             setupMenuCommands()
             
-            // Check if bundled xxhsum is available
-            if Bundle.main.path(forResource: "xxhsum", ofType: nil) != nil {
-                print("⚡️ ImageIntact using bundled xxHash (30x faster than SHA-256!)")
-            } else {
-                print("🐢 Using SHA-256 checksums (xxhsum not bundled)")
-            }
+            print("🔐 Using SHA-256 checksums for maximum compatibility")
             
             // Check for first run
             checkFirstRun()
@@ -1129,127 +1124,10 @@ struct ContentView: View {
 
     
     func fastChecksum(for fileURL: URL, context: String = "") throws -> String {
-        // Try bundled xxhsum first, then fall back to SHA-256
-        do {
-            return try bundledXxHashChecksum(for: fileURL, context: context)
-        } catch {
-            // Fall back to SHA-256 if xxhsum fails
-            return try sha256Checksum(for: fileURL, context: context)
-        }
+        // Use SHA-256 for all checksums (reliable and compatible)
+        return try sha256Checksum(for: fileURL, context: context)
     }
     
-    
-    func bundledXxHashChecksum(for fileURL: URL, context: String = "") throws -> String {
-        // Check for cancellation
-        if self.shouldCancel {
-            throw NSError(domain: "ImageIntact", code: 6, userInfo: [NSLocalizedDescriptionKey: "Checksum cancelled by user"])
-        }
-        
-        // Find bundled xxhsum binary
-        guard let xxhsumPath = Bundle.main.path(forResource: "xxhsum", ofType: nil) else {
-            throw NSError(domain: "ImageIntact", code: 5, userInfo: [NSLocalizedDescriptionKey: "Bundled xxhsum not found"])
-        }
-        let startTime = Date()
-        defer {
-            let elapsed = Date().timeIntervalSince(startTime)
-            let logMessage = "xxHash for \(fileURL.lastPathComponent): \(String(format: "%.3f", elapsed))s"
-            DispatchQueue.main.async {
-                self.debugLog.append(logMessage)
-                if self.debugLog.count > 100 {
-                    self.debugLog.removeFirst()
-                }
-            }
-            if elapsed > 1.0 {  // Lower threshold for xxHash since it should be much faster
-                let contextInfo = context.isEmpty ? "" : " (\(context))"
-                print("⚠️ SLOW XXHASH: \(logMessage)\(contextInfo)")
-            }
-        }
-        
-        // Retry mechanism for network drives
-        var lastError: Error?
-        
-        for attempt in 1...3 {
-            do {
-                let process = Process()
-                
-                process.executableURL = URL(fileURLWithPath: xxhsumPath)
-                process.arguments = ["-H128", fileURL.path]  // 128-bit xxHash
-
-                let pipe = Pipe()
-                let errorPipe = Pipe()
-                process.standardOutput = pipe
-                process.standardError = errorPipe
-                
-                let outputHandle = pipe.fileHandleForReading
-                let errorHandle = errorPipe.fileHandleForReading
-
-                try process.run()
-                
-                // Shorter timeout for xxHash since it should be much faster
-                let timeoutSeconds: TimeInterval = 15.0
-                let deadline = Date().addingTimeInterval(timeoutSeconds)
-                
-                while process.isRunning && Date() < deadline && !self.shouldCancel {
-                    Thread.sleep(forTimeInterval: 0.05)  // Check more frequently
-                }
-                
-                // If cancelled, terminate the process immediately
-                if self.shouldCancel {
-                    process.terminate()
-                    Thread.sleep(forTimeInterval: 0.2)
-                    if process.isRunning {
-                        process.interrupt()
-                    }
-                    try? outputHandle.close()
-                    try? errorHandle.close()
-                    throw NSError(domain: "ImageIntact", code: 6, userInfo: [NSLocalizedDescriptionKey: "xxHash cancelled by user"])
-                }
-                
-                if process.isRunning {
-                    process.terminate()
-                    Thread.sleep(forTimeInterval: 0.3)
-                    if process.isRunning {
-                        process.interrupt()
-                    }
-                    try? outputHandle.close()
-                    try? errorHandle.close()
-                    throw NSError(domain: "ImageIntact", code: 4, userInfo: [NSLocalizedDescriptionKey: "xxHash timed out after \(timeoutSeconds) seconds"])
-                }
-
-                guard process.terminationStatus == 0 else {
-                    let errorData = errorHandle.readDataToEndOfFile()
-                    let errorOutput = String(data: errorData, encoding: .utf8) ?? "Unknown error"
-                    try? outputHandle.close()
-                    try? errorHandle.close()
-                    throw NSError(domain: "ImageIntact", code: Int(process.terminationStatus), userInfo: [NSLocalizedDescriptionKey: "xxhsum failed: \(errorOutput)"])
-                }
-
-                let data = outputHandle.readDataToEndOfFile()
-                try? outputHandle.close()
-                try? errorHandle.close()
-                
-                guard let output = String(data: data, encoding: .utf8),
-                      let checksum = output.trimmingCharacters(in: .whitespacesAndNewlines).components(separatedBy: .whitespaces).first else {
-                    throw NSError(domain: "ImageIntact", code: 2, userInfo: [NSLocalizedDescriptionKey: "xxHash parsing failed"])
-                }
-
-                return checksum
-            } catch {
-                lastError = error
-                print("⏳ xxHash attempt \(attempt) failed: \(error.localizedDescription)")
-                if attempt < 3 {
-                    Thread.sleep(forTimeInterval: Double(attempt) * 0.3)
-                }
-            }
-        }
-        
-        throw lastError ?? NSError(domain: "ImageIntact", code: 3, userInfo: [NSLocalizedDescriptionKey: "Failed to calculate xxHash after 3 attempts"])
-    }
-    
-    func xxh128Checksum(for fileURL: URL) throws -> String {
-        // Legacy function - now uses the smart fastChecksum
-        return try fastChecksum(for: fileURL, context: "Legacy function")
-    }
     
     func sha256Checksum(for fileURL: URL, context: String = "") throws -> String {
         let startTime = Date()
