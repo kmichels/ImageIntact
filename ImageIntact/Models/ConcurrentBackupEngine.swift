@@ -68,12 +68,11 @@ extension BackupManager {
         
         // Create a progress tracking system that works with concurrency
         let progressReporter = ProgressReporter(totalFiles: fileURLs.count, backupManager: self)
-        let fileCoordinator = FileAccessCoordinator()
         
         // Process files with controlled concurrency using TaskGroup's built-in limiting
         await withTaskGroup(of: Void.self) { taskGroup in
             var activeTaskCount = 0
-            let maxConcurrentTasks = min(6, fileURLs.count)  // Restored higher concurrency with file locking
+            let maxConcurrentTasks = min(4, fileURLs.count)  // Conservative concurrency like original
             
             for fileURL in fileURLs {
                 guard !shouldCancel else { 
@@ -93,8 +92,7 @@ extension BackupManager {
                         fileURL: fileURL, 
                         source: source, 
                         destinations: destinations, 
-                        progressReporter: progressReporter,
-                        fileCoordinator: fileCoordinator
+                        progressReporter: progressReporter
                     )
                 }
                 activeTaskCount += 1
@@ -105,7 +103,7 @@ extension BackupManager {
         writeChecksumManifests(for: destinations)
     }
     
-    private func processFileToAllDestinations(fileURL: URL, source: URL, destinations: [URL], progressReporter: ProgressReporter, fileCoordinator: FileAccessCoordinator) async {
+    private func processFileToAllDestinations(fileURL: URL, source: URL, destinations: [URL], progressReporter: ProgressReporter) async {
         let fileName = fileURL.lastPathComponent
         let relativePath = fileURL.path.replacingOccurrences(of: source.path + "/", with: "")
         
@@ -119,25 +117,18 @@ extension BackupManager {
         
         print("🔍 Starting checksum for: \(fileName)")
         
-        // Wait for exclusive access to this source file
-        await fileCoordinator.waitForAccess(to: fileURL.path)
-        
-        // Calculate checksum once for all destinations with exclusive access
+        // Calculate checksum once for all destinations
         let sourceChecksum: String
         do {
             sourceChecksum = try await calculateChecksum(for: fileURL)
             print("🔐 Checksum calculated for: \(fileName)")
         } catch {
             print("❌ Checksum failed for: \(fileName) - \(error)")
-            await fileCoordinator.releaseAccess(for: fileURL.path)
             await progressReporter.fileCompleted(fileName: fileName, error: "Checksum failed: \(error.localizedDescription)")
             return
         }
         
-        // Release access to source file after checksum calculation
-        await fileCoordinator.releaseAccess(for: fileURL.path)
-        
-        // Process each destination for this file
+        // Process each destination for this file SEQUENTIALLY (like original)
         for destination in destinations {
             guard !shouldCancel else { return }
             
@@ -177,53 +168,15 @@ extension BackupManager {
                     try FileManager.default.copyItem(at: fileURL, to: destPath)
                     await progressReporter.bytesProcessed(fileSize)
                     
-                    // Wait a moment for file system to settle after copy
-                    try await Task.sleep(nanoseconds: 200_000_000) // 0.2 seconds
-                    
-                    // Verify destination file exists and has correct size
-                    guard FileManager.default.fileExists(atPath: destPath.path) else {
-                        print("❌ \(relativePath) to \(destination.lastPathComponent): destination file missing after copy")
-                        await progressReporter.addError(file: relativePath, destination: destination.lastPathComponent, error: "Destination file missing after copy")
-                        return
-                    }
-                    
-                    let destAttributes = try? FileManager.default.attributesOfItem(atPath: destPath.path)
-                    let destSize = destAttributes?[.size] as? Int64 ?? 0
-                    
-                    if destSize != fileSize {
-                        print("❌ \(relativePath) to \(destination.lastPathComponent): size mismatch - source: \(fileSize), dest: \(destSize)")
-                        await progressReporter.addError(file: relativePath, destination: destination.lastPathComponent, error: "Size mismatch: source=\(fileSize), dest=\(destSize)")
-                        return
-                    }
-                    
-                    // Try to calculate destination checksum with better error handling
-                    do {
-                        print("🔍 Calculating destination checksum for: \(fileName) → \(destination.lastPathComponent)")
-                        let destChecksum = try await calculateChecksum(for: destPath)
-                        print("🔐 Destination checksum: \(destChecksum.prefix(8))... for: \(fileName)")
-                        
-                        if sourceChecksum == destChecksum {
-                            print("✅ \(relativePath) to \(destination.lastPathComponent): copied successfully")
-                            logAction(action: "COPIED", source: fileURL, destination: destPath, checksum: destChecksum, reason: "")
-                            await progressReporter.incrementDestinationProgress(destination.lastPathComponent)
-                        } else {
-                            print("❌ \(relativePath) to \(destination.lastPathComponent): checksum mismatch")
-                            print("   Source:  \(sourceChecksum)")
-                            print("   Dest:    \(destChecksum)")
-                            print("   Size:    \(fileSize) bytes")
-                            print("   Dest exists: \(FileManager.default.fileExists(atPath: destPath.path))")
-                            print("   Dest path: \(destPath.path)")
-                            
-                            logAction(action: "FAILED", source: fileURL, destination: destPath, checksum: destChecksum, reason: "Checksum mismatch after copy")
-                            await progressReporter.addError(file: relativePath, destination: destination.lastPathComponent, error: "Checksum mismatch: source=\(sourceChecksum.prefix(8))..., dest=\(destChecksum.prefix(8))...")
-                        }
-                    } catch {
-                        print("❌ \(relativePath) to \(destination.lastPathComponent): failed to calculate destination checksum - \(error)")
-                        print("   Dest exists: \(FileManager.default.fileExists(atPath: destPath.path))")
-                        print("   Dest path: \(destPath.path)")
-                        print("   Dest size: \(destSize)")
-                        logAction(action: "FAILED", source: fileURL, destination: destPath, checksum: "N/A", reason: "Destination checksum failed: \(error.localizedDescription)")
-                        await progressReporter.addError(file: relativePath, destination: destination.lastPathComponent, error: "Dest checksum failed: \(error.localizedDescription)")
+                    let destChecksum = try await calculateChecksum(for: destPath)
+                    if sourceChecksum == destChecksum {
+                        print("✅ \(relativePath) to \(destination.lastPathComponent): copied successfully")
+                        logAction(action: "COPIED", source: fileURL, destination: destPath, checksum: destChecksum, reason: "")
+                        await progressReporter.incrementDestinationProgress(destination.lastPathComponent)
+                    } else {
+                        print("❌ \(relativePath) to \(destination.lastPathComponent): checksum mismatch - src:\(sourceChecksum.prefix(8)) dst:\(destChecksum.prefix(8))")
+                        logAction(action: "FAILED", source: fileURL, destination: destPath, checksum: destChecksum, reason: "Checksum mismatch after copy")
+                        await progressReporter.addError(file: relativePath, destination: destination.lastPathComponent, error: "Checksum mismatch: source=\(sourceChecksum.prefix(8))..., dest=\(destChecksum.prefix(8))...")
                     }
                 }
             } catch {
@@ -493,31 +446,6 @@ extension BackupManager {
                 print("❌ Failed to write debug log: \(error)")
             }
         }
-    }
-}
-
-// MARK: - Progress Reporter
-// MARK: - File Access Coordinator
-actor FileAccessCoordinator {
-    private var activeFiles: Set<String> = []
-    
-    func requestAccess(for filePath: String) async -> Bool {
-        if activeFiles.contains(filePath) {
-            return false  // File is being processed by another task
-        }
-        activeFiles.insert(filePath)
-        return true
-    }
-    
-    func releaseAccess(for filePath: String) {
-        activeFiles.remove(filePath)
-    }
-    
-    func waitForAccess(to filePath: String) async {
-        while activeFiles.contains(filePath) {
-            try? await Task.sleep(nanoseconds: 50_000_000) // 0.05 seconds
-        }
-        activeFiles.insert(filePath)
     }
 }
 
