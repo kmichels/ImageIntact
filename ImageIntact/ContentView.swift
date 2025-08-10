@@ -16,6 +16,9 @@ struct ContentView: View {
     @State var sessionID = UUID().uuidString  // Made internal for testing
     @State private var logEntries: [LogEntry] = []
     @FocusState private var focusedField: FocusField?
+    @State private var shouldCancel = false
+    @State private var currentOperation: DispatchWorkItem?
+    @State private var debugLog: [String] = []
     
     struct LogEntry {
         let timestamp: Date
@@ -175,8 +178,20 @@ struct ContentView: View {
                                             .foregroundColor(.secondary)
                                     }
                                     
-                                    ProgressView(value: Double(processedFiles), total: Double(totalFiles))
-                                        .progressViewStyle(.linear)
+                                    HStack(spacing: 8) {
+                                        ProgressView(value: Double(processedFiles), total: Double(totalFiles))
+                                            .progressViewStyle(.linear)
+                                        
+                                        Button(action: {
+                                            cancelOperation()
+                                        }) {
+                                            Image(systemName: "xmark.circle.fill")
+                                                .foregroundColor(.red)
+                                                .imageScale(.large)
+                                        }
+                                        .buttonStyle(.plain)
+                                        .help("Cancel backup")
+                                    }
                                     
                                     if !currentFile.isEmpty {
                                         Text(currentFile)
@@ -455,6 +470,69 @@ struct ContentView: View {
         }
     }
     
+    func cancelOperation() {
+        shouldCancel = true
+        statusMessage = "Cancelling backup..."
+        currentOperation?.cancel()
+        
+        // Write debug log to file
+        writeDebugLog()
+    }
+    
+    func writeDebugLog() {
+        // Only write debug log if there are slow operations or errors
+        let hasSlowOperations = debugLog.contains { $0.contains("SLOW CHECKSUM") }
+        let hasErrors = !failedFiles.isEmpty || shouldCancel
+        
+        if !hasSlowOperations && !hasErrors {
+            return  // Nothing interesting to log
+        }
+        
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy-MM-dd_HH-mm-ss"
+        let timestamp = dateFormatter.string(from: Date())
+        
+        var logContent = "ImageIntact Debug Log - \(timestamp)\n"
+        logContent += "Session ID: \(sessionID)\n"
+        logContent += "Total Files: \(totalFiles)\n"
+        logContent += "Processed Files: \(processedFiles)\n"
+        logContent += "Failed Files: \(failedFiles.count)\n"
+        logContent += "Was Cancelled: \(shouldCancel)\n\n"
+        logContent += "Checksum Timings:\n"
+        logContent += debugLog.joined(separator: "\n")
+        
+        // Write to app's Documents folder which we have access to
+        if let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first {
+            let logDir = documentsURL.appendingPathComponent("ImageIntact_Logs")
+            try? FileManager.default.createDirectory(at: logDir, withIntermediateDirectories: true)
+            
+            let logFile = logDir.appendingPathComponent("Debug_\(timestamp).log")
+            
+            do {
+                try logContent.write(to: logFile, atomically: true, encoding: .utf8)
+                print("📄 Debug log written to: \(logFile.path)")
+                
+                // If there were issues, notify the user
+                if hasSlowOperations || hasErrors {
+                    DispatchQueue.main.async {
+                        let alert = NSAlert()
+                        alert.messageText = "Debug Log Saved"
+                        alert.informativeText = "Performance issues were detected. A debug log has been saved to:\n\n\(logFile.path)\n\nWould you like to open the log file?"
+                        alert.alertStyle = .informational
+                        alert.addButton(withTitle: "Open Log")
+                        alert.addButton(withTitle: "OK")
+                        
+                        if alert.runModal() == .alertFirstButtonReturn {
+                            NSWorkspace.shared.open(logFile)
+                        }
+                    }
+                }
+            } catch {
+                print("❌ Failed to write debug log: \(error)")
+            }
+        }
+    }
+    
     func clearAllSelections() {
         sourceURL = nil
         UserDefaults.standard.removeObject(forKey: sourceKey)
@@ -484,6 +562,8 @@ struct ContentView: View {
         failedFiles = []
         sessionID = UUID().uuidString
         logEntries = []
+        shouldCancel = false
+        debugLog = []
 
         // Run the operation on a background thread
         DispatchQueue.global(qos: .userInitiated).async {
@@ -502,6 +582,10 @@ struct ContentView: View {
 
                 DispatchQueue.main.async {
                     self.isProcessing = false
+                    self.shouldCancel = false
+                    if !self.debugLog.isEmpty {
+                        self.writeDebugLog()
+                    }
                     let dateFormatter = DateFormatter()
                     dateFormatter.dateStyle = .none
                     dateFormatter.timeStyle = .medium
@@ -558,6 +642,15 @@ struct ContentView: View {
             }
             
             for fileURL in fileURLs {
+                // Check for cancellation before processing each file
+                if self.shouldCancel {
+                    DispatchQueue.main.async {
+                        self.statusMessage = "Backup cancelled by user"
+                        self.isProcessing = false
+                    }
+                    break
+                }
+                
                 group.enter()
                 queue.async(qos: .userInitiated) {
                     defer {
@@ -566,6 +659,12 @@ struct ContentView: View {
                             self.processedFiles += 1
                         }
                     }
+                    
+                    // Check for cancellation at start of each file operation
+                    if self.shouldCancel {
+                        return
+                    }
+                    
                     let relativePath = fileURL.path.replacingOccurrences(of: source.path + "/", with: "")
                     
                     // Update current file
@@ -660,41 +759,93 @@ struct ContentView: View {
     }
     
     func sha256Checksum(for fileURL: URL) throws -> String {
+        let startTime = Date()
+        defer {
+            let elapsed = Date().timeIntervalSince(startTime)
+            let logMessage = "Checksum for \(fileURL.lastPathComponent): \(String(format: "%.2f", elapsed))s"
+            DispatchQueue.main.async {
+                self.debugLog.append(logMessage)
+                if self.debugLog.count > 100 {
+                    self.debugLog.removeFirst()
+                }
+            }
+            if elapsed > 2.0 {
+                print("⚠️ SLOW CHECKSUM: \(logMessage)")
+            }
+        }
+        
         // Retry mechanism for network drives
         var lastError: Error?
         
-        for attempt in 1...5 {
+        for attempt in 1...3 {  // Reduced from 5 to 3 attempts
             do {
                 let process = Process()
                 process.executableURL = URL(fileURLWithPath: "/usr/bin/shasum")
                 process.arguments = ["-a", "256", fileURL.path]
 
                 let pipe = Pipe()
+                let errorPipe = Pipe()
                 process.standardOutput = pipe
-                process.standardError = Pipe()
+                process.standardError = errorPipe
+                
+                // Set up file handles before running process
+                let outputHandle = pipe.fileHandleForReading
+                let errorHandle = errorPipe.fileHandleForReading
 
                 try process.run()
-                process.waitUntilExit()
-
-                guard process.terminationStatus == 0 else {
-                    throw NSError(domain: "ImageIntact", code: Int(process.terminationStatus), userInfo: [NSLocalizedDescriptionKey: "shasum failed for \(fileURL.path)"])
+                
+                // Add timeout mechanism - 30 seconds max per checksum
+                let timeoutSeconds: TimeInterval = 30.0
+                let deadline = Date().addingTimeInterval(timeoutSeconds)
+                
+                while process.isRunning && Date() < deadline {
+                    Thread.sleep(forTimeInterval: 0.1)
+                }
+                
+                if process.isRunning {
+                    process.terminate()
+                    // Give it a moment to terminate gracefully
+                    Thread.sleep(forTimeInterval: 0.5)
+                    if process.isRunning {
+                        process.interrupt()  // Force kill if needed
+                    }
+                    // Clean up file handles
+                    try? outputHandle.close()
+                    try? errorHandle.close()
+                    throw NSError(domain: "ImageIntact", code: 4, userInfo: [NSLocalizedDescriptionKey: "Checksum timed out after \(timeoutSeconds) seconds for \(fileURL.lastPathComponent)"])
                 }
 
-                let data = pipe.fileHandleForReading.readDataToEndOfFile()
+                guard process.terminationStatus == 0 else {
+                    let errorData = errorHandle.readDataToEndOfFile()
+                    let errorOutput = String(data: errorData, encoding: .utf8) ?? "Unknown error"
+                    // Clean up file handles
+                    try? outputHandle.close()
+                    try? errorHandle.close()
+                    throw NSError(domain: "ImageIntact", code: Int(process.terminationStatus), userInfo: [NSLocalizedDescriptionKey: "shasum failed: \(errorOutput)"])
+                }
+
+                let data = outputHandle.readDataToEndOfFile()
+                // Clean up file handles
+                try? outputHandle.close()
+                try? errorHandle.close()
+                
                 guard let output = String(data: data, encoding: .utf8),
                       let checksum = output.trimmingCharacters(in: .whitespacesAndNewlines).components(separatedBy: .whitespaces).first else {
-                    throw NSError(domain: "ImageIntact", code: 2, userInfo: [NSLocalizedDescriptionKey: "Checksum parsing failed for \(fileURL.path)"])
+                    throw NSError(domain: "ImageIntact", code: 2, userInfo: [NSLocalizedDescriptionKey: "Checksum parsing failed"])
                 }
 
                 return checksum
             } catch {
                 lastError = error
-                print("⏳ Checksum attempt \(attempt) failed for \(fileURL.lastPathComponent), retrying in \(attempt) seconds...")
-                Thread.sleep(forTimeInterval: TimeInterval(attempt))
+                print("⏳ Checksum attempt \(attempt) failed for \(fileURL.lastPathComponent): \(error.localizedDescription)")
+                if attempt < 3 {
+                    // Use async sleep instead of blocking Thread.sleep
+                    Thread.sleep(forTimeInterval: Double(attempt) * 0.5)  // Shorter delays
+                }
             }
         }
         
-        throw lastError ?? NSError(domain: "ImageIntact", code: 3, userInfo: [NSLocalizedDescriptionKey: "Failed to calculate checksum after 5 attempts"])
+        throw lastError ?? NSError(domain: "ImageIntact", code: 3, userInfo: [NSLocalizedDescriptionKey: "Failed to calculate checksum after 3 attempts"])
     }
     
     func quarantineFile(at url: URL, fileManager: FileManager) throws {
