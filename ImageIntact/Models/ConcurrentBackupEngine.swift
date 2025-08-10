@@ -68,12 +68,12 @@ extension BackupManager {
         
         // Create a progress tracking system that works with concurrency
         let progressReporter = ProgressReporter(totalFiles: fileURLs.count, backupManager: self)
+        let fileCoordinator = FileAccessCoordinator()
         
         // Process files with controlled concurrency using TaskGroup's built-in limiting
         await withTaskGroup(of: Void.self) { taskGroup in
             var activeTaskCount = 0
-            // TEMPORARY: Set to 1 for debugging checksum issues, normally 6
-            let maxConcurrentTasks = min(1, fileURLs.count)  // Sequential processing for debugging
+            let maxConcurrentTasks = min(6, fileURLs.count)  // Restored higher concurrency with file locking
             
             for fileURL in fileURLs {
                 guard !shouldCancel else { 
@@ -93,7 +93,8 @@ extension BackupManager {
                         fileURL: fileURL, 
                         source: source, 
                         destinations: destinations, 
-                        progressReporter: progressReporter
+                        progressReporter: progressReporter,
+                        fileCoordinator: fileCoordinator
                     )
                 }
                 activeTaskCount += 1
@@ -104,7 +105,7 @@ extension BackupManager {
         writeChecksumManifests(for: destinations)
     }
     
-    private func processFileToAllDestinations(fileURL: URL, source: URL, destinations: [URL], progressReporter: ProgressReporter) async {
+    private func processFileToAllDestinations(fileURL: URL, source: URL, destinations: [URL], progressReporter: ProgressReporter, fileCoordinator: FileAccessCoordinator) async {
         let fileName = fileURL.lastPathComponent
         let relativePath = fileURL.path.replacingOccurrences(of: source.path + "/", with: "")
         
@@ -118,16 +119,23 @@ extension BackupManager {
         
         print("🔍 Starting checksum for: \(fileName)")
         
-        // Calculate checksum once for all destinations
+        // Wait for exclusive access to this source file
+        await fileCoordinator.waitForAccess(to: fileURL.path)
+        
+        // Calculate checksum once for all destinations with exclusive access
         let sourceChecksum: String
         do {
             sourceChecksum = try await calculateChecksum(for: fileURL)
             print("🔐 Checksum calculated for: \(fileName)")
         } catch {
             print("❌ Checksum failed for: \(fileName) - \(error)")
+            await fileCoordinator.releaseAccess(for: fileURL.path)
             await progressReporter.fileCompleted(fileName: fileName, error: "Checksum failed: \(error.localizedDescription)")
             return
         }
+        
+        // Release access to source file after checksum calculation
+        await fileCoordinator.releaseAccess(for: fileURL.path)
         
         // Process each destination for this file
         for destination in destinations {
@@ -459,6 +467,31 @@ extension BackupManager {
                 print("❌ Failed to write debug log: \(error)")
             }
         }
+    }
+}
+
+// MARK: - Progress Reporter
+// MARK: - File Access Coordinator
+actor FileAccessCoordinator {
+    private var activeFiles: Set<String> = []
+    
+    func requestAccess(for filePath: String) async -> Bool {
+        if activeFiles.contains(filePath) {
+            return false  // File is being processed by another task
+        }
+        activeFiles.insert(filePath)
+        return true
+    }
+    
+    func releaseAccess(for filePath: String) {
+        activeFiles.remove(filePath)
+    }
+    
+    func waitForAccess(to filePath: String) async {
+        while activeFiles.contains(filePath) {
+            try? await Task.sleep(nanoseconds: 50_000_000) // 0.05 seconds
+        }
+        activeFiles.insert(filePath)
     }
 }
 
