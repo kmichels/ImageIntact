@@ -55,13 +55,16 @@ class PhaseBasedBackupTests: XCTestCase {
         // Create expectation for async operation
         let expectation = XCTestExpectation(description: "Backup completes")
         
+        // Capture backupManager strongly to avoid nil reference
+        let manager = backupManager!
+        
         Task { @MainActor in
             // Track phase changes by polling
             Task {
                 var lastPhase = BackupPhase.idle
                 while lastPhase != .complete {
-                    if backupManager.currentPhase != lastPhase {
-                        lastPhase = backupManager.currentPhase
+                    if manager.currentPhase != lastPhase {
+                        lastPhase = manager.currentPhase
                         observedPhases.append(lastPhase)
                     }
                     try? await Task.sleep(nanoseconds: 10_000_000) // 0.01 seconds
@@ -70,7 +73,7 @@ class PhaseBasedBackupTests: XCTestCase {
             }
             
             // Start backup
-            await backupManager.performPhaseBasedBackup(
+            await manager.performPhaseBasedBackup(
                 source: testSourceDir,
                 destinations: [testDestDir1]
             )
@@ -113,7 +116,7 @@ class PhaseBasedBackupTests: XCTestCase {
         let checksum = try BackupManager.sha256ChecksumStatic(for: testFile, shouldCancel: false)
         let elapsed = Date().timeIntervalSince(startTime)
         
-        XCTAssertEqual(checksum.count, 40, "SHA1 should be 40 characters")
+        XCTAssertEqual(checksum.count, 64, "SHA256 should be 64 characters")
         XCTAssertLessThan(elapsed, 2.0, "1MB file should checksum in under 2 seconds")
     }
     
@@ -183,13 +186,16 @@ class PhaseBasedBackupTests: XCTestCase {
         var progressUpdates = 0
         let expectation = XCTestExpectation(description: "Progress updates")
         
+        // Capture backupManager strongly to avoid nil reference
+        let manager = backupManager!
+        
         Task { @MainActor in
             // Track progress changes by polling
             Task {
                 var lastProgress: Double = 0
                 while lastProgress < 1.0 {
-                    if backupManager.overallProgress != lastProgress {
-                        lastProgress = backupManager.overallProgress
+                    if manager.overallProgress != lastProgress {
+                        lastProgress = manager.overallProgress
                         if lastProgress > 0 {
                             progressUpdates += 1
                         }
@@ -199,7 +205,7 @@ class PhaseBasedBackupTests: XCTestCase {
                 expectation.fulfill()
             }
             
-            await backupManager.performPhaseBasedBackup(
+            await manager.performPhaseBasedBackup(
                 source: testSourceDir,
                 destinations: [testDestDir1]
             )

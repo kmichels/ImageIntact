@@ -202,7 +202,7 @@ final class BackupIntegrationTests: XCTestCase {
         
         await backupManager.performPhaseBasedBackup(source: sourceDir, destinations: [destDir1])
         
-        wait(for: [expectation], timeout: 10.0)
+        await fulfillment(of: [expectation], timeout: 10.0)
         
         // Verify we went through expected phases
         XCTAssertTrue(phasesObserved.contains(.analyzingSource))

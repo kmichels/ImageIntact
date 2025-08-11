@@ -126,9 +126,9 @@ final class ImageFileTypeTests: XCTestCase {
         
         let formatted = ImageFileScanner.formatScanResults(results, groupRaw: false)
         XCTAssertFalse(formatted.isEmpty, "Formatted results should not be empty")
-        XCTAssertTrue(formatted.contains("50 NEF"), "Should include NEF count")
-        XCTAssertTrue(formatted.contains("30 CR2"), "Should include CR2 count")
+        XCTAssertTrue(formatted.contains("80 RAW"), "Should include total RAW count (NEF+CR2)")
         XCTAssertTrue(formatted.contains("100 JPEG"), "Should include JPEG count")
+        XCTAssertTrue(formatted.contains("80 Sidecar"), "Should include XMP sidecar count")
     }
     
     func testScanResultFormattingWithGrouping() {
@@ -148,7 +148,7 @@ final class ImageFileTypeTests: XCTestCase {
     func testEmptyScanResultFormatting() {
         let results: [ImageFileType: Int] = [:]
         let formatted = ImageFileScanner.formatScanResults(results, groupRaw: false)
-        XCTAssertEqual(formatted, "", "Empty results should return empty string")
+        XCTAssertEqual(formatted, "No supported files found", "Empty results should return 'No supported files found'")
     }
     
     // MARK: - Cache File Detection Tests

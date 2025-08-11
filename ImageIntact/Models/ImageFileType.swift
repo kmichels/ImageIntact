@@ -26,9 +26,16 @@ enum ImageFileType: String, CaseIterable {
     case mpg = "MPG"
     case mts = "MTS"  // AVCHD
     case m2ts = "M2TS"  // AVCHD
+    case wmv = "WMV"
+    case flv = "FLV"
+    case webm = "WebM"
+    case mkv = "MKV"
+    case mpeg = "MPEG"
     
     // Sidecar and metadata files
     case xmp = "XMP"  // Adobe sidecar
+    case aae = "AAE"  // Apple sidecar
+    case thm = "THM"  // Thumbnail file
     case dop = "DOP"  // DxO PhotoLab
     case cos = "COS"  // Capture One settings
     case pp3 = "PP3"  // RawTherapee
@@ -54,6 +61,9 @@ enum ImageFileType: String, CaseIterable {
     case arw = "ARW"
     case srf = "SRF"
     case sr2 = "SR2"
+    
+    // Samsung
+    case srw = "SRW"
     
     // Fujifilm
     case raf = "RAF"
@@ -190,14 +200,30 @@ enum ImageFileType: String, CaseIterable {
             return ["erf"]
         case .mrw:
             return ["mrw"]
+        case .srw:
+            return ["srw"]
+        case .wmv:
+            return ["wmv"]
+        case .flv:
+            return ["flv", "f4v", "f4p"]
+        case .webm:
+            return ["webm"]
+        case .mkv:
+            return ["mkv"]
+        case .mpeg:
+            return ["mpeg", "mpg", "mpe"]
+        case .aae:
+            return ["aae"]
+        case .thm:
+            return ["thm"]
         }
     }
     
     var isRaw: Bool {
         switch self {
         case .jpeg, .tiff, .png, .heic, .heif, .webp, .bmp, .gif,
-             .mov, .mp4, .avi, .m4v, .mpg, .mts, .m2ts,
-             .xmp, .dop, .cos, .pp3, .arp, .lrcat, .lrdata, .cocatalog, .cocatalogdb:
+             .mov, .mp4, .avi, .m4v, .mpg, .mts, .m2ts, .wmv, .flv, .webm, .mkv, .mpeg,
+             .xmp, .dop, .cos, .pp3, .arp, .aae, .thm, .lrcat, .lrdata, .cocatalog, .cocatalogdb:
             return false
         default:
             return true
@@ -206,7 +232,7 @@ enum ImageFileType: String, CaseIterable {
     
     var isVideo: Bool {
         switch self {
-        case .mov, .mp4, .avi, .m4v, .mpg, .mts, .m2ts:
+        case .mov, .mp4, .avi, .m4v, .mpg, .mts, .m2ts, .wmv, .flv, .webm, .mkv, .mpeg:
             return true
         default:
             return false
@@ -215,7 +241,7 @@ enum ImageFileType: String, CaseIterable {
     
     var isSidecar: Bool {
         switch self {
-        case .xmp, .dop, .cos, .pp3, .arp, .lrcat, .lrdata, .cocatalog, .cocatalogdb:
+        case .xmp, .dop, .cos, .pp3, .arp, .aae, .thm, .lrcat, .lrdata, .cocatalog, .cocatalogdb:
             return true
         default:
             return false
