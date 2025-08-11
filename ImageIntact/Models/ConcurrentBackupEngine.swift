@@ -4,21 +4,26 @@ import Darwin
 extension BackupManager {
     @MainActor
     func performConcurrentBackup(source: URL, destinations: [URL]) async {
+        let backupStartTime = Date()
+        var totalDataSize: Int64 = 0
+        
         defer {
             isProcessing = false
             shouldCancel = false
             if !debugLog.isEmpty {
                 writeDebugLog()
             }
-            let dateFormatter = DateFormatter()
-            dateFormatter.dateStyle = .none
-            dateFormatter.timeStyle = .medium
-            let timeString = dateFormatter.string(from: Date())
+            
+            // Calculate total time and format the completion message
+            let totalTime = Date().timeIntervalSince(backupStartTime)
+            let timeString = formatTime(totalTime)
+            let dataSizeString = formatDataSize(totalDataSize)
+            let destinationCount = destinations.count
             
             if failedFiles.isEmpty {
-                statusMessage = "✅ Backup completed at \(timeString)"
+                statusMessage = "✅ \(processedFiles) files (\(dataSizeString)) copied and verified to \(destinationCount) destination\(destinationCount == 1 ? "" : "s") in \(timeString)"
             } else {
-                statusMessage = "⚠️ Backup completed at \(timeString) with \(failedFiles.count) errors"
+                statusMessage = "⚠️ \(processedFiles) files (\(dataSizeString)) to \(destinationCount) destination\(destinationCount == 1 ? "" : "s") in \(timeString) - \(failedFiles.count) error\(failedFiles.count == 1 ? "" : "s")"
             }
         }
         
@@ -100,6 +105,15 @@ extension BackupManager {
         }
         
         processedFiles = progressReporter.getCompletedCount()
+        
+        // Calculate total data size from processed files
+        for fileURL in fileURLs {
+            if let attributes = try? FileManager.default.attributesOfItem(atPath: fileURL.path),
+               let size = attributes[.size] as? Int64 {
+                totalDataSize += size
+            }
+        }
+        
         writeChecksumManifests(for: destinations)
     }
     
@@ -511,5 +525,25 @@ class ProgressReporter {
     
     func getCompletedCount() -> Int {
         return completedFiles
+    }
+}
+
+// MARK: - Formatting Extensions
+extension BackupManager {
+    func formatTime(_ seconds: TimeInterval) -> String {
+        if seconds < 60 {
+            return String(format: "%.1f seconds", seconds)
+        } else {
+            let minutes = Int(seconds) / 60
+            let remainingSeconds = Int(seconds) % 60
+            return String(format: "%d:%02d", minutes, remainingSeconds)
+        }
+    }
+    
+    func formatDataSize(_ bytes: Int64) -> String {
+        let formatter = ByteCountFormatter()
+        formatter.countStyle = .decimal
+        formatter.allowedUnits = [.useGB, .useMB]
+        return formatter.string(fromByteCount: bytes)
     }
 }

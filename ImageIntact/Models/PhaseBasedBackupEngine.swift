@@ -14,6 +14,10 @@ extension BackupManager {
     
     @MainActor
     func performPhaseBasedBackup(source: URL, destinations: [URL]) async {
+        let backupStartTime = Date()
+        var totalDataSize: Int64 = 0
+        var filesProcessed = 0
+        
         defer {
             isProcessing = false
             shouldCancel = false
@@ -21,15 +25,16 @@ extension BackupManager {
                 writeDebugLog()
             }
             
-            let dateFormatter = DateFormatter()
-            dateFormatter.dateStyle = .none
-            dateFormatter.timeStyle = .medium
-            let timeString = dateFormatter.string(from: Date())
+            // Calculate total time and format the completion message
+            let totalTime = Date().timeIntervalSince(backupStartTime)
+            let timeString = formatTime(totalTime)
+            let dataSizeString = formatDataSize(totalDataSize)
+            let destinationCount = destinations.count
             
             if failedFiles.isEmpty {
-                statusMessage = "✅ Backup completed at \(timeString)"
+                statusMessage = "✅ \(filesProcessed) files (\(dataSizeString)) copied and verified to \(destinationCount) destination\(destinationCount == 1 ? "" : "s") in \(timeString)"
             } else {
-                statusMessage = "⚠️ Backup completed at \(timeString) with \(failedFiles.count) errors"
+                statusMessage = "⚠️ \(filesProcessed) files (\(dataSizeString)) to \(destinationCount) destination\(destinationCount == 1 ? "" : "s") in \(timeString) - \(failedFiles.count) error\(failedFiles.count == 1 ? "" : "s")"
             }
         }
         
@@ -409,6 +414,10 @@ extension BackupManager {
         // Update final status
         currentPhase = .complete
         processedFiles = manifest.count
+        filesProcessed = manifest.count
+        
+        // Calculate total data size
+        totalDataSize = manifest.reduce(0) { $0 + $1.size }
         
         let totalTime = manifestBuildTime + copyTime + flushTime + verifyTime
         print("\n📊 Backup Summary:")
@@ -495,5 +504,24 @@ extension BackupManager {
         case .failure(let error):
             throw error
         }
+    }
+    
+    // MARK: - Formatting Helpers
+    
+    private func formatTime(_ seconds: TimeInterval) -> String {
+        if seconds < 60 {
+            return String(format: "%.1f seconds", seconds)
+        } else {
+            let minutes = Int(seconds) / 60
+            let remainingSeconds = Int(seconds) % 60
+            return String(format: "%d:%02d", minutes, remainingSeconds)
+        }
+    }
+    
+    private func formatDataSize(_ bytes: Int64) -> String {
+        let formatter = ByteCountFormatter()
+        formatter.countStyle = .decimal
+        formatter.allowedUnits = [.useGB, .useMB]
+        return formatter.string(fromByteCount: bytes)
     }
 }
