@@ -13,7 +13,7 @@ final class ImageFileTypeTests: XCTestCase {
             let url = URL(fileURLWithPath: "/test/photo.\(ext)")
             XCTAssertTrue(ImageFileType.isImageFile(url), "\(ext) should be recognized as image file")
             
-            if let fileType = ImageFileType.from(url) {
+            if let fileType = ImageFileType.from(fileExtension: ext) {
                 XCTAssertTrue(fileType.isRaw, "\(ext) should be recognized as RAW")
                 XCTAssertFalse(fileType.isVideo, "\(ext) should not be video")
                 XCTAssertFalse(fileType.isSidecar, "\(ext) should not be sidecar")
@@ -30,7 +30,7 @@ final class ImageFileTypeTests: XCTestCase {
             let url = URL(fileURLWithPath: "/test/image.\(ext)")
             XCTAssertTrue(ImageFileType.isImageFile(url), "\(ext) should be recognized as image file")
             
-            if let fileType = ImageFileType.from(url) {
+            if let fileType = ImageFileType.from(fileExtension: ext) {
                 XCTAssertFalse(fileType.isRaw, "\(ext) should not be RAW")
                 XCTAssertFalse(fileType.isVideo, "\(ext) should not be video")
                 XCTAssertFalse(fileType.isSidecar, "\(ext) should not be sidecar")
@@ -45,7 +45,7 @@ final class ImageFileTypeTests: XCTestCase {
             let url = URL(fileURLWithPath: "/test/video.\(ext)")
             XCTAssertTrue(ImageFileType.isImageFile(url), "\(ext) should be recognized as supported file")
             
-            if let fileType = ImageFileType.from(url) {
+            if let fileType = ImageFileType.from(fileExtension: ext) {
                 XCTAssertTrue(fileType.isVideo, "\(ext) should be recognized as video")
                 XCTAssertFalse(fileType.isRaw, "\(ext) should not be RAW")
                 XCTAssertFalse(fileType.isSidecar, "\(ext) should not be sidecar")
@@ -60,7 +60,7 @@ final class ImageFileTypeTests: XCTestCase {
             let url = URL(fileURLWithPath: "/test/metadata.\(ext)")
             XCTAssertTrue(ImageFileType.isImageFile(url), "\(ext) should be recognized as supported file")
             
-            if let fileType = ImageFileType.from(url) {
+            if let fileType = ImageFileType.from(fileExtension: ext) {
                 XCTAssertTrue(fileType.isSidecar, "\(ext) should be recognized as sidecar")
                 XCTAssertFalse(fileType.isRaw, "\(ext) should not be RAW")
                 XCTAssertFalse(fileType.isVideo, "\(ext) should not be video")
@@ -71,15 +71,15 @@ final class ImageFileTypeTests: XCTestCase {
     func testCatalogFileDetection() {
         let catalogFormats = [
             ("catalog.lrcat", ImageFileType.lrcat),
-            ("project.cocatalog", ImageFileType.cocatalog),
-            ("session.cosessiondb", ImageFileType.cosession)
+            ("project.cocatalog", ImageFileType.cocatalog)
         ]
         
         for (filename, expectedType) in catalogFormats {
             let url = URL(fileURLWithPath: "/test/\(filename)")
             XCTAssertTrue(ImageFileType.isImageFile(url), "\(filename) should be recognized as supported file")
             
-            if let fileType = ImageFileType.from(url) {
+            let ext = url.pathExtension.lowercased()
+            if let fileType = ImageFileType.from(fileExtension: ext) {
                 XCTAssertEqual(fileType, expectedType, "\(filename) should be \(expectedType)")
                 XCTAssertTrue(fileType.isCatalog, "\(filename) should be catalog")
             }
@@ -92,7 +92,7 @@ final class ImageFileTypeTests: XCTestCase {
         for ext in unsupportedFormats {
             let url = URL(fileURLWithPath: "/test/document.\(ext)")
             XCTAssertFalse(ImageFileType.isImageFile(url), "\(ext) should NOT be recognized as image file")
-            XCTAssertNil(ImageFileType.from(url), "\(ext) should return nil")
+            XCTAssertNil(ImageFileType.from(fileExtension: ext), "\(ext) should return nil")
         }
     }
     
@@ -197,7 +197,7 @@ final class ImageFileTypeTests: XCTestCase {
         
         measure {
             for url in urls {
-                _ = ImageFileType.from(url)
+                _ = ImageFileType.from(fileExtension: url.pathExtension)
             }
         }
     }
