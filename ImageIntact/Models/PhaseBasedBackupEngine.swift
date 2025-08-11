@@ -478,21 +478,10 @@ extension BackupManager {
                 var processEndTime: Date?
                 defer {
                     let elapsed = Date().timeIntervalSince(startTime)
-                    let processTime = processEndTime?.timeIntervalSince(processStartTime ?? startTime) ?? 0
-                    let overheadTime = elapsed - processTime
-                    let logMessage = "Checksum for \(fileURL.lastPathComponent): \(String(format: "%.2f", elapsed))s (process: \(String(format: "%.2f", processTime))s, overhead: \(String(format: "%.2f", overheadTime))s)"
-                    
-                    // Add to debug log for tracking
-                    if let self = self {
-                        Task { @MainActor in
-                            self.debugLog.append(logMessage)
-                            if self.debugLog.count > 100 {
-                                self.debugLog.removeFirst()
-                            }
-                        }
-                    }
-                    
                     if elapsed > 2.0 {
+                        let processTime = processEndTime?.timeIntervalSince(processStartTime ?? startTime) ?? 0
+                        let overheadTime = elapsed - processTime
+                        let logMessage = "Checksum for \(fileURL.lastPathComponent): \(String(format: "%.2f", elapsed))s (process: \(String(format: "%.2f", processTime))s, overhead: \(String(format: "%.2f", overheadTime))s)"
                         print("⚠️ SLOW CHECKSUM: \(logMessage)")
                     }
                 }

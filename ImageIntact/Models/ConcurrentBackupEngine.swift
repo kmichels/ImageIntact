@@ -214,19 +214,8 @@ extension BackupManager {
                 let startTime = Date()
                 defer {
                     let elapsed = Date().timeIntervalSince(startTime)
-                    let logMessage = "Checksum for \(fileURL.lastPathComponent): \(String(format: "%.2f", elapsed))s"
-                    
-                    // Add to debug log for tracking
-                    if let self = self {
-                        Task { @MainActor in
-                            self.debugLog.append(logMessage)
-                            if self.debugLog.count > 100 {
-                                self.debugLog.removeFirst()
-                            }
-                        }
-                    }
-                    
                     if elapsed > 2.0 {
+                        let logMessage = "Checksum for \(fileURL.lastPathComponent): \(String(format: "%.2f", elapsed))s"
                         print("⚠️ SLOW CHECKSUM: \(logMessage)")
                     }
                 }
