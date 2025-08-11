@@ -297,7 +297,7 @@ extension BackupManager {
     }
     
     // MARK: - Helper Methods
-    private func logAction(action: String, source: URL, destination: URL, checksum: String, reason: String = "") {
+    func logAction(action: String, source: URL, destination: URL, checksum: String, reason: String = "") {
         let fileSize = (try? FileManager.default.attributesOfItem(atPath: source.path)[.size] as? Int64) ?? 0
         
         let entry = LogEntry(
@@ -356,7 +356,7 @@ extension BackupManager {
         }
     }
     
-    private func writeChecksumManifests(for destinations: [URL]) {
+    func writeChecksumManifests(for destinations: [URL]) {
         let dateFormatter = DateFormatter()
         dateFormatter.dateFormat = "yyyyMMdd_HHmmss"
         let timestamp = dateFormatter.string(from: Date())
@@ -386,7 +386,7 @@ extension BackupManager {
         }
     }
     
-    private func writeDebugLog() {
+    func writeDebugLog() {
         guard !hasWrittenDebugLog else { return }
         
         let hasSlowOperations = debugLog.contains { $0.contains("SLOW CHECKSUM") }

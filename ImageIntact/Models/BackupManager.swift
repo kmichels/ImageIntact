@@ -34,8 +34,8 @@ class BackupManager {
     var currentDestinationName: String = ""
     var currentFileName: String = ""
     var copySpeed: Double = 0.0 // MB/s
-    private var copyStartTime: Date = Date()
-    private var totalBytesCopied: Int64 = 0
+    var copyStartTime: Date = Date()
+    var totalBytesCopied: Int64 = 0
     private var atomicFileCounter = 0
     
     // Per-destination progress (simple version)
