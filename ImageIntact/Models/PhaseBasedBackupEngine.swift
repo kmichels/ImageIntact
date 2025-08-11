@@ -301,50 +301,97 @@ extension BackupManager {
         var verifiedCount = 0
         var mismatchCount = 0
         
-        // Verify each file at each destination
-        for (index, entry) in manifest.enumerated() {
-            guard !shouldCancel else {
-                statusMessage = "Backup cancelled by user"
-                return
+        // Verify with controlled concurrency (like manifest phase)
+        await withTaskGroup(of: (verified: Int, mismatches: Int).self) { taskGroup in
+            var activeTaskCount = 0
+            let maxConcurrentTasks = min(4, manifest.count)
+            var fileIndex = 0
+            var processedCount = 0
+            
+            for entry in manifest {
+                guard !shouldCancel else {
+                    statusMessage = "Backup cancelled by user"
+                    return
+                }
+                
+                // Limit concurrent tasks
+                if activeTaskCount >= maxConcurrentTasks {
+                    if let result = await taskGroup.next() {
+                        verifiedCount += result.verified
+                        mismatchCount += result.mismatches
+                        activeTaskCount -= 1
+                        processedCount += 1
+                        currentFileIndex = processedCount
+                        phaseProgress = Double(processedCount) / Double(manifest.count)
+                        updateOverallProgress()
+                    }
+                }
+                
+                // Add verification task
+                taskGroup.addTask {
+                    var localVerified = 0
+                    var localMismatches = 0
+                    
+                    // Update UI with current file
+                    await MainActor.run {
+                        self.currentFileName = entry.sourceURL.lastPathComponent
+                    }
+                    
+                    // Verify at each destination
+                    for destination in destinations {
+                        await MainActor.run {
+                            self.currentDestinationName = destination.lastPathComponent
+                        }
+                        
+                        let destPath = destination.appendingPathComponent(entry.relativePath)
+                        
+                        // Skip if file wasn't copied (already existed with correct checksum)
+                        if !copiedFiles.contains(where: { $0.destination == destination && $0.files.contains(destPath) }) {
+                            localVerified += 1
+                            continue
+                        }
+                        
+                        do {
+                            let destChecksum = try await self.calculateChecksum(for: destPath)
+                            
+                            if destChecksum == entry.checksum {
+                                print("✅ Verified: \(entry.relativePath) at \(destination.lastPathComponent)")
+                                self.logAction(action: "VERIFIED", source: entry.sourceURL, destination: destPath, checksum: destChecksum, reason: "")
+                                localVerified += 1
+                            } else {
+                                print("❌ Checksum mismatch: \(entry.relativePath) at \(destination.lastPathComponent)")
+                                print("   Expected: \(entry.checksum)")
+                                print("   Got:      \(destChecksum)")
+                                
+                                self.logAction(action: "FAILED", source: entry.sourceURL, destination: destPath, checksum: destChecksum, reason: "Checksum mismatch after copy and flush")
+                                await MainActor.run {
+                                    self.failedFiles.append((file: entry.relativePath, destination: destination.lastPathComponent, error: "Checksum mismatch after copy"))
+                                }
+                                localMismatches += 1
+                            }
+                        } catch {
+                            print("❌ Failed to verify \(entry.relativePath) at \(destination.lastPathComponent): \(error)")
+                            await MainActor.run {
+                                self.failedFiles.append((file: entry.relativePath, destination: destination.lastPathComponent, error: "Verification failed: \(error.localizedDescription)"))
+                            }
+                            localMismatches += 1
+                        }
+                    }
+                    
+                    return (verified: localVerified, mismatches: localMismatches)
+                }
+                activeTaskCount += 1
+                fileIndex += 1
             }
             
-            currentFileIndex = index
-            currentFileName = entry.sourceURL.lastPathComponent
-            phaseProgress = Double(index) / Double(manifest.count)
-            updateOverallProgress()
-            
-            for destination in destinations {
-                currentDestinationName = destination.lastPathComponent
-                
-                let destPath = destination.appendingPathComponent(entry.relativePath)
-                
-                // Skip if file wasn't copied (already existed with correct checksum)
-                if !copiedFiles.contains(where: { $0.destination == destination && $0.files.contains(destPath) }) {
-                    verifiedCount += 1
-                    continue
-                }
-                
-                do {
-                    let destChecksum = try await calculateChecksum(for: destPath)
-                    
-                    if destChecksum == entry.checksum {
-                        print("✅ Verified: \(entry.relativePath) at \(destination.lastPathComponent)")
-                        logAction(action: "VERIFIED", source: entry.sourceURL, destination: destPath, checksum: destChecksum, reason: "")
-                        verifiedCount += 1
-                    } else {
-                        print("❌ Checksum mismatch: \(entry.relativePath) at \(destination.lastPathComponent)")
-                        print("   Expected: \(entry.checksum)")
-                        print("   Got:      \(destChecksum)")
-                        
-                        logAction(action: "FAILED", source: entry.sourceURL, destination: destPath, checksum: destChecksum, reason: "Checksum mismatch after copy and flush")
-                        failedFiles.append((file: entry.relativePath, destination: destination.lastPathComponent, error: "Checksum mismatch after copy"))
-                        mismatchCount += 1
-                    }
-                } catch {
-                    print("❌ Failed to verify \(entry.relativePath) at \(destination.lastPathComponent): \(error)")
-                    failedFiles.append((file: entry.relativePath, destination: destination.lastPathComponent, error: "Verification failed: \(error.localizedDescription)"))
-                    mismatchCount += 1
-                }
+            // Collect remaining tasks
+            for await result in taskGroup {
+                verifiedCount += result.verified
+                mismatchCount += result.mismatches
+                processedCount += 1
+                currentFileIndex = processedCount
+                phaseProgress = Double(processedCount) / Double(manifest.count)
+                updateOverallProgress()
             }
         }
         
