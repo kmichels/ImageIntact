@@ -12,16 +12,6 @@ struct FileManifestEntry {
 // MARK: - Phase-Based Backup Engine
 extension BackupManager {
     
-    enum BackupPhase {
-        case idle
-        case analyzingSource
-        case buildingManifest
-        case copyingFiles
-        case flushingToDisk
-        case verifyingDestinations
-        case complete
-    }
-    
     @MainActor
     func performPhaseBasedBackup(source: URL, destinations: [URL]) async {
         defer {
@@ -368,10 +358,6 @@ extension BackupManager {
         print("  Verify:   \(String(format: "%.1f", verifyTime))s")
         print("  Total:    \(String(format: "%.1f", totalTime))s")
     }
-    
-    // Add phase tracking property
-    @MainActor
-    var currentPhase: BackupPhase = .idle
     
     // MARK: - Helper Methods
     private func quarantineExistingFile(at destPath: URL, in destination: URL, originalFile: URL) async throws {

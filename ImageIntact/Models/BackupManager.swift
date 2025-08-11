@@ -1,6 +1,17 @@
 import SwiftUI
 import Darwin
 
+// MARK: - Backup Phase Enum
+enum BackupPhase {
+    case idle
+    case analyzingSource
+    case buildingManifest
+    case copyingFiles
+    case flushingToDisk
+    case verifyingDestinations
+    case complete
+}
+
 @Observable
 class BackupManager {
     // MARK: - Published Properties
@@ -29,6 +40,9 @@ class BackupManager {
     
     // Per-destination progress (simple version)
     var destinationProgress: [String: Int] = [:] // destinationName -> completed files
+    
+    // Phase-based backup tracking
+    var currentPhase: BackupPhase = .idle
     
     // MARK: - Constants
     let sourceKey = "sourceBookmark"
