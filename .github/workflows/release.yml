@@ -63,15 +63,14 @@ jobs:
     
     - name: Create GitHub Release
       id: create_release
-      uses: actions/create-release@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      uses: softprops/action-gh-release@v2
       with:
         tag_name: v${{ steps.get_version.outputs.version }}
-        release_name: ImageIntact v${{ steps.get_version.outputs.version }}
+        name: ImageIntact v${{ steps.get_version.outputs.version }}
         body_path: release_notes.md
         draft: false
         prerelease: false
+        token: ${{ secrets.GITHUB_TOKEN }}
 
   build-and-upload:
     name: Build and Upload Release
@@ -136,14 +135,11 @@ jobs:
         ls -lh ImageIntact-*.dmg
     
     - name: Upload DMG to Release
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      uses: softprops/action-gh-release@v2
       with:
-        upload_url: ${{ needs.create-release.outputs.upload_url }}
-        asset_path: ImageIntact-${{ needs.create-release.outputs.version }}.dmg
-        asset_name: ImageIntact-${{ needs.create-release.outputs.version }}.dmg
-        asset_content_type: application/x-apple-diskimage
+        tag_name: v${{ needs.create-release.outputs.version }}
+        files: ImageIntact-${{ needs.create-release.outputs.version }}.dmg
+        token: ${{ secrets.GITHUB_TOKEN }}
     
     - name: Generate SHA256 Checksum
       run: |
@@ -151,11 +147,8 @@ jobs:
         cat ImageIntact-${{ needs.create-release.outputs.version }}.dmg.sha256
     
     - name: Upload Checksum to Release
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      uses: softprops/action-gh-release@v2
       with:
-        upload_url: ${{ needs.create-release.outputs.upload_url }}
-        asset_path: ImageIntact-${{ needs.create-release.outputs.version }}.dmg.sha256
-        asset_name: ImageIntact-${{ needs.create-release.outputs.version }}.dmg.sha256
-        asset_content_type: text/plain
+        tag_name: v${{ needs.create-release.outputs.version }}
+        files: ImageIntact-${{ needs.create-release.outputs.version }}.dmg.sha256
+        token: ${{ secrets.GITHUB_TOKEN }}

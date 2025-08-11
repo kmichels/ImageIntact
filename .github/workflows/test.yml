@@ -26,7 +26,7 @@ jobs:
         xcodebuild -version
     
     - name: Cache Swift Package Manager
-      uses: actions/cache@v3
+      uses: actions/cache@v4
       with:
         path: |
           ~/Library/Developer/Xcode/DerivedData
@@ -68,7 +68,7 @@ jobs:
     
     - name: Upload Test Results
       if: always()
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: test-results-${{ matrix.xcode }}
         path: |
@@ -150,7 +150,7 @@ jobs:
           build/ImageIntact.dmg
     
     - name: Upload Build Artifact
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: ImageIntact-macOS
         path: build/ImageIntact.dmg
