@@ -31,9 +31,22 @@ Born from 25+ years in Tech and a deep love for photography, as well as a desire
 
 ## Installation
 
+### Option 1: Download Pre-built Release (Recommended)
 1. Download the latest release from the [Releases](https://github.com/kmichels/ImageIntact/releases) page
 2. Open the DMG and drag ImageIntact to your Applications folder
 3. On first launch, macOS will ask for permission to access folders - approve this
+
+### Option 2: Build from Source
+The `main` branch may contain newer features and fixes not yet in the official releases.
+
+```bash
+git clone https://github.com/kmichels/ImageIntact.git
+cd ImageIntact
+open ImageIntact.xcodeproj
+# Then build and run in Xcode (Cmd+R)
+```
+
+> **Note:** Each release links to its specific source code snapshot. Check the [Releases](https://github.com/kmichels/ImageIntact/releases) page to see what's new in the latest development version versus the stable release.
 
 ## Usage
 
@@ -90,19 +103,13 @@ ImageIntact automatically detects network volumes (SMB, AFP, NFS) and adjusts it
 - Implements retry logic for checksum verification
 - Maintains stability over high-speed connections
 
-## Building from Source
+## Development
 
 Requirements:
 - Xcode 15 or later
 - macOS 13 or later
 
-```bash
-git clone https://github.com/yourusername/ImageIntact.git
-cd ImageIntact
-open ImageIntact.xcodeproj
-```
-
-Build and run with `Cmd + R`
+See the installation section above for build instructions.
 
 ## Testing
 
