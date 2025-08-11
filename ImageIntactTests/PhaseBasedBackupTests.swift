@@ -56,16 +56,17 @@ class PhaseBasedBackupTests: XCTestCase {
         let expectation = XCTestExpectation(description: "Backup completes")
         
         Task { @MainActor in
-            // Observe phase changes
-            var phaseObservation: NSKeyValueObservation?
-            phaseObservation = backupManager.observe(\.currentPhase, options: [.new]) { _, change in
-                if let newPhase = change.newValue {
-                    observedPhases.append(newPhase)
-                    if newPhase == .complete {
-                        expectation.fulfill()
-                        phaseObservation?.invalidate()
+            // Track phase changes by polling
+            Task {
+                var lastPhase = BackupPhase.idle
+                while lastPhase != .complete {
+                    if backupManager.currentPhase != lastPhase {
+                        lastPhase = backupManager.currentPhase
+                        observedPhases.append(lastPhase)
                     }
+                    try? await Task.sleep(nanoseconds: 10_000_000) // 0.01 seconds
                 }
+                expectation.fulfill()
             }
             
             // Start backup
@@ -183,16 +184,19 @@ class PhaseBasedBackupTests: XCTestCase {
         let expectation = XCTestExpectation(description: "Progress updates")
         
         Task { @MainActor in
-            // Observe progress changes
-            var progressObservation: NSKeyValueObservation?
-            progressObservation = backupManager.observe(\.overallProgress, options: [.new]) { _, change in
-                if let progress = change.newValue, progress > 0 {
-                    progressUpdates += 1
-                    if progress >= 1.0 {
-                        expectation.fulfill()
-                        progressObservation?.invalidate()
+            // Track progress changes by polling
+            Task {
+                var lastProgress: Double = 0
+                while lastProgress < 1.0 {
+                    if backupManager.overallProgress != lastProgress {
+                        lastProgress = backupManager.overallProgress
+                        if lastProgress > 0 {
+                            progressUpdates += 1
+                        }
                     }
+                    try? await Task.sleep(nanoseconds: 10_000_000) // 0.01 seconds
                 }
+                expectation.fulfill()
             }
             
             await backupManager.performPhaseBasedBackup(
