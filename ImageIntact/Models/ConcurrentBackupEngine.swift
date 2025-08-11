@@ -209,33 +209,22 @@ extension BackupManager {
     
     private func calculateChecksum(for fileURL: URL) async throws -> String {
         let shouldCancel = self.shouldCancel
-        return try await withCheckedThrowingContinuation { continuation in
-            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-                let startTime = Date()
-                defer {
-                    let elapsed = Date().timeIntervalSince(startTime)
-                    if elapsed > 2.0 {
-                        let logMessage = "Checksum for \(fileURL.lastPathComponent): \(String(format: "%.2f", elapsed))s"
-                        print("⚠️ SLOW CHECKSUM: \(logMessage)")
-                    }
-                }
-                
-                guard let self = self else {
-                    continuation.resume(throwing: NSError(domain: "ImageIntact", code: 999, userInfo: [NSLocalizedDescriptionKey: "Self was deallocated"]))
-                    return
-                }
-                
-                do {
-                    let checksum = try self.sha256Checksum(for: fileURL, shouldCancel: shouldCancel)
-                    continuation.resume(returning: checksum)
-                } catch {
-                    continuation.resume(throwing: error)
+        return try await Task.detached(priority: .userInitiated) {
+            let startTime = Date()
+            defer {
+                let elapsed = Date().timeIntervalSince(startTime)
+                if elapsed > 2.0 {
+                    let logMessage = "Checksum for \(fileURL.lastPathComponent): \(String(format: "%.2f", elapsed))s"
+                    print("⚠️ SLOW CHECKSUM: \(logMessage)")
                 }
             }
-        }
+            
+            return try BackupManager.sha256ChecksumStatic(for: fileURL, shouldCancel: shouldCancel)
+        }.value
     }
     
-    private func sha256Checksum(for fileURL: URL, shouldCancel: Bool) throws -> String {
+    // Static version that doesn't capture self
+    private static func sha256ChecksumStatic(for fileURL: URL, shouldCancel: Bool) throws -> String {
         for attempt in 1...3 {
             do {
                 let process = Process()

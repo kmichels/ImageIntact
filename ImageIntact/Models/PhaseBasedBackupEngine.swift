@@ -471,94 +471,17 @@ extension BackupManager {
     
     private func calculateChecksum(for fileURL: URL) async throws -> String {
         let shouldCancel = self.shouldCancel
-        return try await withCheckedThrowingContinuation { continuation in
-            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-                let startTime = Date()
-                var processStartTime: Date?
-                var processEndTime: Date?
-                defer {
-                    let elapsed = Date().timeIntervalSince(startTime)
-                    if elapsed > 2.0 {
-                        let processTime = processEndTime?.timeIntervalSince(processStartTime ?? startTime) ?? 0
-                        let overheadTime = elapsed - processTime
-                        let logMessage = "Checksum for \(fileURL.lastPathComponent): \(String(format: "%.2f", elapsed))s (process: \(String(format: "%.2f", processTime))s, overhead: \(String(format: "%.2f", overheadTime))s)"
-                        print("⚠️ SLOW CHECKSUM: \(logMessage)")
-                    }
-                }
-                
-                guard let self = self else {
-                    continuation.resume(throwing: NSError(domain: "ImageIntact", code: 999, userInfo: [NSLocalizedDescriptionKey: "Self was deallocated"]))
-                    return
-                }
-                
-                do {
-                    let checksum = try self.sha256Checksum(for: fileURL, shouldCancel: shouldCancel, processStartTime: &processStartTime, processEndTime: &processEndTime)
-                    continuation.resume(returning: checksum)
-                } catch {
-                    continuation.resume(throwing: error)
+        return try await Task.detached(priority: .userInitiated) {
+            let startTime = Date()
+            defer {
+                let elapsed = Date().timeIntervalSince(startTime)
+                if elapsed > 2.0 {
+                    let logMessage = "Checksum for \(fileURL.lastPathComponent): \(String(format: "%.2f", elapsed))s"
+                    print("⚠️ SLOW CHECKSUM: \(logMessage)")
                 }
             }
-        }
-    }
-    
-    private func sha256Checksum(for fileURL: URL, shouldCancel: Bool, processStartTime: inout Date?, processEndTime: inout Date?) throws -> String {
-        for attempt in 1...3 {
-            do {
-                let process = Process()
-                process.executableURL = URL(fileURLWithPath: "/usr/bin/shasum")
-                process.arguments = ["-a", "1", fileURL.path]  // SHA-1 is 2-3x faster than SHA-256
-
-                let pipe = Pipe()
-                let errorPipe = Pipe()
-                process.standardOutput = pipe
-                process.standardError = errorPipe
-                
-                let outputHandle = pipe.fileHandleForReading
-                let errorHandle = errorPipe.fileHandleForReading
-
-                processStartTime = Date()
-                try process.run()
-                
-                let timeoutSeconds: TimeInterval = 30.0
-                let deadline = Date().addingTimeInterval(timeoutSeconds)
-                
-                while process.isRunning && Date() < deadline {
-                    if shouldCancel {
-                        process.terminate()
-                        throw NSError(domain: "ImageIntact", code: 6, userInfo: [NSLocalizedDescriptionKey: "Checksum cancelled by user"])
-                    }
-                    Thread.sleep(forTimeInterval: 0.1)
-                }
-                
-                if process.isRunning {
-                    process.terminate()
-                    throw NSError(domain: "ImageIntact", code: 4, userInfo: [NSLocalizedDescriptionKey: "Checksum timed out after \(timeoutSeconds) seconds"])
-                }
-                
-                processEndTime = Date()
-
-                guard process.terminationStatus == 0 else {
-                    let errorData = errorHandle.readDataToEndOfFile()
-                    let errorOutput = String(data: errorData, encoding: .utf8) ?? "Unknown error"
-                    throw NSError(domain: "ImageIntact", code: Int(process.terminationStatus), userInfo: [NSLocalizedDescriptionKey: "shasum failed: \(errorOutput)"])
-                }
-
-                let data = outputHandle.readDataToEndOfFile()
-                guard let output = String(data: data, encoding: .utf8),
-                      let checksum = output.trimmingCharacters(in: .whitespacesAndNewlines).components(separatedBy: .whitespaces).first else {
-                    throw NSError(domain: "ImageIntact", code: 2, userInfo: [NSLocalizedDescriptionKey: "Checksum parsing failed"])
-                }
-
-                return checksum
-            } catch {
-                if attempt < 3 {
-                    Thread.sleep(forTimeInterval: Double(attempt) * 0.5)
-                } else {
-                    throw error
-                }
-            }
-        }
-        
-        throw NSError(domain: "ImageIntact", code: 3, userInfo: [NSLocalizedDescriptionKey: "Failed to calculate checksum after 3 attempts"])
+            
+            return try BackupManager.sha256ChecksumStatic(for: fileURL, shouldCancel: shouldCancel)
+        }.value
     }
 }
