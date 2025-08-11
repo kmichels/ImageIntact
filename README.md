@@ -2,7 +2,7 @@
 
 A robust macOS backup utility designed by photographers, for photographers. ImageIntact ensures your precious images are safely backed up to multiple destinations with checksum verification, providing peace of mind that your files are copied correctly and completely.
 
-![macOS](https://img.shields.io/badge/macOS-11.0%2B-blue)
+![macOS](https://img.shields.io/badge/macOS-14.0%2B-blue)
 ![Swift](https://img.shields.io/badge/Swift-5.0%2B-orange)
 ![License](https://img.shields.io/badge/License-MIT-green)
 
@@ -28,6 +28,11 @@ Born from 25+ years in Tech and a deep love for photography, as well as a desire
 - **Session tracking** - Each backup run has a unique ID for correlation
 - **Checksum manifests** - Proof of successful backups for each destination
 - **Modified file detection** - Catches files that changed but kept the same size
+
+## System Requirements
+
+- **Minimum**: macOS 14.0 (Sonoma)
+- **Recommended**: macOS 15.0 (Sequoia) or later for best performance
 
 ## Installation
 
@@ -141,7 +146,7 @@ Several design decisions prioritize data integrity:
 
 Requirements:
 - Xcode 15 or later
-- macOS 13 or later
+- macOS 14.0 or later (for development and testing)
 
 See the installation section above for build instructions.
 
