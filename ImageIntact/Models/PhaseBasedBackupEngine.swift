@@ -505,23 +505,4 @@ extension BackupManager {
             throw error
         }
     }
-    
-    // MARK: - Formatting Helpers
-    
-    private func formatTime(_ seconds: TimeInterval) -> String {
-        if seconds < 60 {
-            return String(format: "%.1f seconds", seconds)
-        } else {
-            let minutes = Int(seconds) / 60
-            let remainingSeconds = Int(seconds) % 60
-            return String(format: "%d:%02d", minutes, remainingSeconds)
-        }
-    }
-    
-    private func formatDataSize(_ bytes: Int64) -> String {
-        let formatter = ByteCountFormatter()
-        formatter.countStyle = .decimal
-        formatter.allowedUnits = [.useGB, .useMB]
-        return formatter.string(fromByteCount: bytes)
-    }
 }
