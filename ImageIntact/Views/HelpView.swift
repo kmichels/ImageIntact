@@ -54,7 +54,7 @@ struct HelpView: View {
                                          description: "Files are never deleted from any destination")
                                 
                                 HelpPoint(title: "Checksum Verification", 
-                                         description: "Every file is verified with checksums to ensure perfect copies")
+                                         description: "Every file is verified with SHA-256 checksums to ensure perfect copies")
                                 
                                 HelpPoint(title: "Smart Quarantine", 
                                          description: "If a file exists with different content, it's moved to a quarantine folder before copying the new version")
@@ -65,20 +65,44 @@ struct HelpView: View {
                         }
                     }
                     
+                    // File Type Support
+                    HelpSection(title: "File Type Support") {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("ImageIntact intelligently filters and backs up photography-related files:")
+                            
+                            VStack(alignment: .leading, spacing: 8) {
+                                HelpPoint(title: "30+ RAW Formats", 
+                                         description: "Supports RAW files from all major camera manufacturers")
+                                
+                                HelpPoint(title: "Video Files", 
+                                         description: "Backs up MOV, MP4, AVI and other video formats")
+                                
+                                HelpPoint(title: "Sidecar Files", 
+                                         description: "Preserves XMP, AAE and other metadata sidecar files")
+                                
+                                HelpPoint(title: "Smart Cache Exclusion", 
+                                         description: "Automatically skips Lightroom and Capture One preview caches")
+                            }
+                        }
+                    }
+                    
                     // Performance
                     HelpSection(title: "Performance") {
                         VStack(alignment: .leading, spacing: 12) {
                             Text("ImageIntact automatically optimizes performance based on your destinations:")
                             
                             VStack(alignment: .leading, spacing: 8) {
-                                HelpPoint(title: "SHA-1 Checksums", 
-                                         description: "Uses fast SHA-1 checksums for verification")
+                                HelpPoint(title: "SHA-256 Checksums", 
+                                         description: "Uses cryptographically secure SHA-256 checksums for reliable verification")
+                                
+                                HelpPoint(title: "Phase-Based Architecture", 
+                                         description: "Optimized workflow: analyze → manifest → copy → verify")
                                 
                                 HelpPoint(title: "Smart Concurrency", 
-                                         description: "Adjusts parallel operations based on destination types (local, external, network)")
+                                         description: "Up to 8 parallel operations for modern SSDs")
                                 
                                 HelpPoint(title: "Progress Monitoring", 
-                                         description: "Real-time throughput and progress tracking per destination")
+                                         description: "Real-time progress tracking with phase indicators")
                             }
                         }
                     }

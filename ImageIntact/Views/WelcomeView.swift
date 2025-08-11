@@ -31,7 +31,7 @@ struct WelcomeView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     FeatureRow(icon: "checkmark.shield", 
                               title: "Safe Backup", 
-                              description: "Verifies every file with checksums to ensure perfect copies")
+                              description: "Verifies every file with SHA-256 checksums to ensure perfect copies")
                     
                     FeatureRow(icon: "arrow.triangle.branch", 
                               title: "Multiple Destinations", 
@@ -39,7 +39,7 @@ struct WelcomeView: View {
                     
                     FeatureRow(icon: "bolt", 
                               title: "Fast & Smart", 
-                              description: "Uses SHA-1 checksums for fast verification")
+                              description: "Intelligently filters photo, video, and RAW files for backup")
                     
                     FeatureRow(icon: "shield.lefthalf.filled", 
                               title: "Never Lose Data", 
