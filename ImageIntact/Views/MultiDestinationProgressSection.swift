@@ -7,6 +7,18 @@ struct MultiDestinationProgressSection: View {
         backupManager.destinationURLs.compactMap { $0 }
     }
     
+    private func phaseDescription(for phase: BackupPhase) -> String {
+        switch phase {
+        case .idle: return "Idle"
+        case .analyzingSource: return "Analyzing source files"
+        case .buildingManifest: return "Building manifest (calculating checksums)"
+        case .copyingFiles: return "Copying files"
+        case .flushingToDisk: return "Flushing to disk"
+        case .verifyingDestinations: return "Verifying checksums"
+        case .complete: return "Complete"
+        }
+    }
+    
     var body: some View {
         if !backupManager.statusMessage.isEmpty || backupManager.isProcessing {
             VStack(alignment: .leading, spacing: 12) {
@@ -42,11 +54,16 @@ struct MultiDestinationProgressSection: View {
                         // Show phase progress if in phase-based backup
                         if backupManager.isProcessing {
                             HStack(spacing: 4) {
-                                PhaseIndicator(label: "Analyze", isActive: backupManager.statusMessage.contains("Analyzing"))
-                                PhaseIndicator(label: "Manifest", isActive: backupManager.statusMessage.contains("manifest"))
-                                PhaseIndicator(label: "Copy", isActive: backupManager.statusMessage.contains("Copying"))
-                                PhaseIndicator(label: "Flush", isActive: backupManager.statusMessage.contains("Flushing"))
-                                PhaseIndicator(label: "Verify", isActive: backupManager.statusMessage.contains("Verifying"))
+                                PhaseIndicator(label: "Analyze", isActive: backupManager.currentPhase == .analyzingSource, 
+                                             isComplete: backupManager.currentPhase.rawValue > BackupPhase.analyzingSource.rawValue)
+                                PhaseIndicator(label: "Manifest", isActive: backupManager.currentPhase == .buildingManifest,
+                                             isComplete: backupManager.currentPhase.rawValue > BackupPhase.buildingManifest.rawValue)
+                                PhaseIndicator(label: "Copy", isActive: backupManager.currentPhase == .copyingFiles,
+                                             isComplete: backupManager.currentPhase.rawValue > BackupPhase.copyingFiles.rawValue)
+                                PhaseIndicator(label: "Flush", isActive: backupManager.currentPhase == .flushingToDisk,
+                                             isComplete: backupManager.currentPhase.rawValue > BackupPhase.flushingToDisk.rawValue)
+                                PhaseIndicator(label: "Verify", isActive: backupManager.currentPhase == .verifyingDestinations,
+                                             isComplete: backupManager.currentPhase.rawValue > BackupPhase.verifyingDestinations.rawValue)
                             }
                             .font(.caption2)
                         }
@@ -82,6 +99,11 @@ struct SimpleBackupProgress: View {
             }
             
             VStack(alignment: .leading, spacing: 8) {
+                // Show current phase
+                Text("Phase: \(phaseDescription(for: backupManager.currentPhase))")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                
                 HStack {
                     Text("Files: \(backupManager.currentFileIndex)/\(backupManager.totalFiles)")
                         .font(.subheadline)
@@ -95,7 +117,8 @@ struct SimpleBackupProgress: View {
                     }
                 }
                 
-                ProgressView(value: Double(backupManager.currentFileIndex), total: Double(backupManager.totalFiles))
+                // Overall progress across all phases
+                ProgressView(value: backupManager.overallProgress)
                     .progressViewStyle(.linear)
                 
                 HStack {
@@ -156,9 +179,14 @@ struct MultiDestinationProgress: View {
                 .help("Cancel backup")
             }
             
-            // Overall progress bar
-            ProgressView(value: Double(backupManager.currentFileIndex), total: Double(backupManager.totalFiles))
-                .progressViewStyle(.linear)
+            // Overall progress bar (shows total progress across all phases)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Overall Progress")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                ProgressView(value: backupManager.overallProgress)
+                    .progressViewStyle(.linear)
+            }
             
             // Per-destination progress
             ForEach(destinations, id: \.lastPathComponent) { destination in
@@ -232,15 +260,23 @@ struct DestinationProgressRow: View {
 struct PhaseIndicator: View {
     let label: String
     let isActive: Bool
+    var isComplete: Bool = false
     
     var body: some View {
-        Text(label)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 2)
-            .background(
-                RoundedRectangle(cornerRadius: 4)
-                    .fill(isActive ? Color.accentColor : Color.gray.opacity(0.2))
-            )
-            .foregroundColor(isActive ? .white : .secondary)
+        HStack(spacing: 2) {
+            if isComplete {
+                Image(systemName: "checkmark.circle.fill")
+                    .imageScale(.small)
+                    .foregroundColor(.green)
+            }
+            Text(label)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 2)
+        .background(
+            RoundedRectangle(cornerRadius: 4)
+                .fill(isActive ? Color.accentColor : (isComplete ? Color.green.opacity(0.2) : Color.gray.opacity(0.2)))
+        )
+        .foregroundColor(isActive ? .white : (isComplete ? .green : .secondary))
     }
 }

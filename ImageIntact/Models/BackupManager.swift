@@ -2,14 +2,18 @@ import SwiftUI
 import Darwin
 
 // MARK: - Backup Phase Enum
-enum BackupPhase {
-    case idle
-    case analyzingSource
-    case buildingManifest
-    case copyingFiles
-    case flushingToDisk
-    case verifyingDestinations
-    case complete
+enum BackupPhase: Int, Comparable {
+    case idle = 0
+    case analyzingSource = 1
+    case buildingManifest = 2
+    case copyingFiles = 3
+    case flushingToDisk = 4
+    case verifyingDestinations = 5
+    case complete = 6
+    
+    static func < (lhs: BackupPhase, rhs: BackupPhase) -> Bool {
+        return lhs.rawValue < rhs.rawValue
+    }
 }
 
 @Observable
@@ -43,6 +47,8 @@ class BackupManager {
     
     // Phase-based backup tracking
     var currentPhase: BackupPhase = .idle
+    var phaseProgress: Double = 0.0  // Progress within current phase (0-1)
+    var overallProgress: Double = 0.0  // Overall progress across all phases (0-1)
     
     // MARK: - Constants
     let sourceKey = "sourceBookmark"

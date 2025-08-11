@@ -36,6 +36,8 @@ extension BackupManager {
         // Reset all progress
         resetProgress()
         currentPhase = .analyzingSource
+        phaseProgress = 0.0
+        overallProgress = 0.0
         
         // Start accessing security-scoped resources
         let sourceAccess = source.startAccessingSecurityScopedResource()
@@ -111,6 +113,8 @@ extension BackupManager {
                         }
                         activeTaskCount -= 1
                         currentFileIndex = manifest.count
+                        phaseProgress = Double(manifest.count) / Double(fileURLs.count)
+                        updateOverallProgress()
                     }
                 }
                 
@@ -194,6 +198,8 @@ extension BackupManager {
             
             currentFileIndex = index
             currentFileName = entry.sourceURL.lastPathComponent
+            phaseProgress = Double(index) / Double(manifest.count)
+            updateOverallProgress()
             
             // Copy to each destination
             for (destIndex, destination) in destinations.enumerated() {
@@ -304,6 +310,8 @@ extension BackupManager {
             
             currentFileIndex = index
             currentFileName = entry.sourceURL.lastPathComponent
+            phaseProgress = Double(index) / Double(manifest.count)
+            updateOverallProgress()
             
             for destination in destinations {
                 currentDestinationName = destination.lastPathComponent
@@ -360,6 +368,38 @@ extension BackupManager {
     }
     
     // MARK: - Helper Methods
+    
+    // Calculate overall progress based on phase weights
+    private func updateOverallProgress() {
+        // Phase weights (approximate time distribution)
+        let weights: [BackupPhase: Double] = [
+            .idle: 0.0,
+            .analyzingSource: 0.05,      // 5% - quick
+            .buildingManifest: 0.20,     // 20% - checksumming source
+            .copyingFiles: 0.50,         // 50% - main work
+            .flushingToDisk: 0.05,       // 5% - quick
+            .verifyingDestinations: 0.20, // 20% - checksumming destinations
+            .complete: 1.0
+        ]
+        
+        // Calculate cumulative progress
+        let phaseOrder: [BackupPhase] = [.analyzingSource, .buildingManifest, .copyingFiles, .flushingToDisk, .verifyingDestinations]
+        var cumulativeProgress = 0.0
+        
+        for phase in phaseOrder {
+            if phase == currentPhase {
+                // Add partial progress for current phase
+                cumulativeProgress += (weights[phase] ?? 0) * phaseProgress
+                break
+            } else if phaseOrder.firstIndex(of: phase)! < phaseOrder.firstIndex(of: currentPhase)! {
+                // Add full weight for completed phases
+                cumulativeProgress += weights[phase] ?? 0
+            }
+        }
+        
+        overallProgress = min(1.0, cumulativeProgress)
+    }
+    
     private func quarantineExistingFile(at destPath: URL, in destination: URL, originalFile: URL) async throws {
         let quarantineDir = destination.appendingPathComponent(".imageintact_quarantine")
         try? FileManager.default.createDirectory(at: quarantineDir, withIntermediateDirectories: true)
