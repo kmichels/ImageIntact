@@ -288,7 +288,7 @@ class ImageIntactTests: XCTestCase {
         
         // Now test that the file would be quarantined
         if FileManager.default.fileExists(atPath: destFile.path) {
-            let existingChecksum = try contentView.sha256ChecksumStatic(for: destFile, shouldCancel: false)
+            let existingChecksum = try BackupManager.sha256ChecksumStatic(for: destFile, shouldCancel: false)
             if existingChecksum != sourceChecksum {
                 // This is what the app does - quarantine the existing file
                 // quarantineFile is private - would be called internally during backup
