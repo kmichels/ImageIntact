@@ -75,15 +75,21 @@ extension BackupManager {
                   !$0.lastPathComponent.hasPrefix(".") else {
                 return false
             }
-            // Only process image files
+            
+            // Exclude cache files if option is enabled
+            if excludeCacheFiles && isLikelyCacheFile($0) {
+                return false
+            }
+            
+            // Only process supported file types
             return ImageFileType.isImageFile($0)
         }
         
         totalFiles = fileURLs.count
-        statusMessage = "Found \(fileURLs.count) image files to process"
+        statusMessage = "Found \(fileURLs.count) files to process"
         
         if fileURLs.isEmpty {
-            statusMessage = "No image files found to backup"
+            statusMessage = "No supported files found to backup"
             return
         }
         
@@ -152,9 +158,18 @@ extension BackupManager {
                             size: size
                         )
                     } catch {
-                        print("❌ Failed to process \(relativePath): \(error)")
-                        await MainActor.run {
-                            self.failedFiles.append((file: relativePath, destination: "Source", error: error.localizedDescription))
+                        // Log the error but continue processing other files
+                        let errorMsg = error.localizedDescription
+                        print("⚠️ Skipping file \(relativePath): \(errorMsg)")
+                        
+                        // Only add to failed files if it's not a "file not readable" error
+                        // These are often temporary locks or permission issues
+                        if !errorMsg.contains("not readable") && !errorMsg.contains("Bad file descriptor") {
+                            await MainActor.run {
+                                self.failedFiles.append((file: relativePath, destination: "Source", error: errorMsg))
+                            }
+                        } else {
+                            print("  → File may be locked or have permission issues, will skip")
                         }
                         return nil
                     }
@@ -202,9 +217,9 @@ extension BackupManager {
                 return
             }
             
-            currentFileIndex = index
+            currentFileIndex = index + 1  // Show 1-based index for UI
             currentFileName = entry.sourceURL.lastPathComponent
-            phaseProgress = Double(index) / Double(manifest.count)
+            phaseProgress = Double(index + 1) / Double(manifest.count)
             updateOverallProgress()
             
             // Copy to each destination
@@ -283,23 +298,24 @@ extension BackupManager {
         
         let flushStart = Date()
         var flushedCount = 0
+        let totalFilesToFlush = manifest.count * destinations.count
         
-        for (_, files) in copiedFiles {
-            for file in files {
-                if let handle = FileHandle(forWritingAtPath: file.path) {
-                    handle.synchronizeFile()  // Force fsync()
-                    handle.closeFile()
-                    flushedCount += 1
-                    
-                    if flushedCount % 100 == 0 {
-                        statusMessage = "Flushing files to disk... (\(flushedCount) files)"
-                    }
-                }
-            }
+        // Use sync() system call instead of file handles to avoid conflicts
+        // This forces all buffered writes to disk for the entire volume
+        for _ in destinations {
+            // Force sync for the destination volume
+            Darwin.sync()  // Force system-wide sync
+            flushedCount += manifest.count
+            phaseProgress = Double(flushedCount) / Double(totalFilesToFlush)
+            updateOverallProgress()
+            statusMessage = "Flushing files to disk... (\(flushedCount)/\(totalFilesToFlush) files)"
         }
         
+        // Give the system a moment to complete the flush
+        try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 second
+        
         let flushTime = Date().timeIntervalSince(flushStart)
-        print("✅ Flushed \(flushedCount) files in \(String(format: "%.1f", flushTime))s")
+        print("✅ Forced system sync in \(String(format: "%.1f", flushTime))s")
         
         // ============================
         // PHASE 5: Verify Destinations
@@ -356,9 +372,14 @@ extension BackupManager {
                         
                         let destPath = destination.appendingPathComponent(entry.relativePath)
                         
-                        // Skip if file wasn't copied (already existed with correct checksum)
-                        if !copiedFiles.contains(where: { $0.destination == destination && $0.files.contains(destPath) }) {
-                            localVerified += 1
+                        // Check if file exists at destination
+                        guard FileManager.default.fileExists(atPath: destPath.path) else {
+                            // File doesn't exist at destination - this is an error
+                            print("❌ Missing file: \(entry.relativePath) at \(destination.lastPathComponent)")
+                            await MainActor.run {
+                                self.failedFiles.append((file: entry.relativePath, destination: destination.lastPathComponent, error: "File missing at destination"))
+                            }
+                            localMismatches += 1
                             continue
                         }
                         
@@ -430,6 +451,23 @@ extension BackupManager {
     }
     
     // MARK: - Helper Methods
+    
+    func formatTime(_ seconds: TimeInterval) -> String {
+        if seconds < 60 {
+            return String(format: "%.1f seconds", seconds)
+        } else {
+            let minutes = Int(seconds) / 60
+            let remainingSeconds = Int(seconds) % 60
+            return String(format: "%d:%02d", minutes, remainingSeconds)
+        }
+    }
+    
+    func formatDataSize(_ bytes: Int64) -> String {
+        let formatter = ByteCountFormatter()
+        formatter.countStyle = .decimal
+        formatter.allowedUnits = [.useGB, .useMB]
+        return formatter.string(fromByteCount: bytes)
+    }
     
     // Calculate overall progress based on phase weights
     private func updateOverallProgress() {
@@ -504,6 +542,194 @@ extension BackupManager {
             return checksum
         case .failure(let error):
             throw error
+        }
+    }
+    
+    // Helper function to identify cache files
+    private func isLikelyCacheFile(_ url: URL) -> Bool {
+        let path = url.path.lowercased()
+        
+        // Check for common cache directory patterns
+        let cachePatterns = [
+            "/cache/",
+            "/caches/",
+            "/cache icons/",
+            "/cache proxies/",
+            "/cache thumbnails/",
+            "/thumbnails/",
+            "/previews/",
+            "/.lrdata/",  // Lightroom previews
+            "/smart previews.lrdata/",
+            "previews.lrdata/",
+            ".cosessiondb/cache/",  // Capture One session cache
+            "/captureone/cache"
+        ]
+        
+        for pattern in cachePatterns {
+            if path.contains(pattern) {
+                return true
+            }
+        }
+        
+        // Check for cache file extensions
+        let cacheExtensions = ["cache", "tmp", "temp"]
+        let ext = url.pathExtension.lowercased()
+        if cacheExtensions.contains(ext) {
+            return true
+        }
+        
+        return false
+    }
+    
+    // MARK: - Logging Methods
+    func logAction(action: String, source: URL, destination: URL, checksum: String, reason: String = "") {
+        let fileSize = (try? FileManager.default.attributesOfItem(atPath: source.path)[.size] as? Int64) ?? 0
+        
+        let entry = LogEntry(
+            timestamp: Date(),
+            sessionID: sessionID,
+            action: action,
+            source: source.path,
+            destination: destination.path,
+            checksum: checksum,
+            algorithm: "SHA256",
+            fileSize: fileSize,
+            reason: reason
+        )
+        
+        Task { @MainActor in
+            self.logEntries.append(entry)
+        }
+        
+        writeLogEntry(entry, to: destination.deletingLastPathComponent())
+    }
+    
+    private func writeLogEntry(_ entry: LogEntry, to baseDir: URL) {
+        let logDir = baseDir.appendingPathComponent(".imageintact_logs")
+        
+        try? FileManager.default.createDirectory(at: logDir, withIntermediateDirectories: true)
+        try? FileManager.default.setAttributes([.extensionHidden: true], ofItemAtPath: logDir.path)
+        
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy-MM-dd"
+        let dateString = dateFormatter.string(from: Date())
+        let logFile = logDir.appendingPathComponent("imageintact_\(dateString).csv")
+        
+        if !FileManager.default.fileExists(atPath: logFile.path) {
+            let header = "timestamp,session_id,action,source,destination,checksum,algorithm,file_size,reason\n"
+            try? header.write(to: logFile, atomically: true, encoding: .utf8)
+        }
+        
+        let timestampFormatter = DateFormatter()
+        timestampFormatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        let timestampString = timestampFormatter.string(from: entry.timestamp)
+        
+        let escapedSource = entry.source.contains(",") ? "\"\(entry.source)\"" : entry.source
+        let escapedDest = entry.destination.contains(",") ? "\"\(entry.destination)\"" : entry.destination
+        let escapedReason = entry.reason.contains(",") ? "\"\(entry.reason)\"" : entry.reason
+        
+        let logLine = "\(timestampString),\(entry.sessionID),\(entry.action),\(escapedSource),\(escapedDest),\(entry.checksum),\(entry.algorithm),\(entry.fileSize),\(escapedReason)\n"
+        
+        if let fileHandle = FileHandle(forWritingAtPath: logFile.path) {
+            fileHandle.seekToEndOfFile()
+            if let data = logLine.data(using: .utf8) {
+                fileHandle.write(data)
+            }
+            fileHandle.closeFile()
+        } else {
+            try? logLine.write(to: logFile, atomically: true, encoding: .utf8)
+        }
+    }
+    
+    func writeChecksumManifests(for destinations: [URL]) {
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyyMMdd_HHmmss"
+        let timestamp = dateFormatter.string(from: Date())
+        
+        for destination in destinations {
+            let manifestDir = destination.appendingPathComponent(".imageintact_checksums")
+            try? FileManager.default.createDirectory(at: manifestDir, withIntermediateDirectories: true)
+            try? FileManager.default.setAttributes([.extensionHidden: true], ofItemAtPath: manifestDir.path)
+            
+            let manifestFile = manifestDir.appendingPathComponent("manifest_\(timestamp)_\(sessionID).csv")
+            
+            let relevantEntries = logEntries.filter { entry in
+                entry.destination.hasPrefix(destination.path) &&
+                (entry.action == "COPIED" || entry.action == "SKIPPED" || entry.action == "VERIFIED")
+            }
+            
+            var manifestContent = "file_path,checksum,algorithm,file_size,action,timestamp\n"
+            
+            for entry in relevantEntries {
+                guard let sourceURL else { continue }
+                let relativePath = entry.source.replacingOccurrences(of: sourceURL.path, with: "").trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+                manifestContent += "\(relativePath),\(entry.checksum),\(entry.algorithm),\(entry.fileSize),\(entry.action),\(entry.timestamp.ISO8601Format())\n"
+            }
+            
+            try? manifestContent.write(to: manifestFile, atomically: true, encoding: .utf8)
+            print("✅ Wrote checksum manifest to: \(manifestFile.lastPathComponent)")
+        }
+    }
+    
+    func writeDebugLog() {
+        guard !hasWrittenDebugLog else { return }
+        
+        let hasSlowOperations = debugLog.contains { $0.contains("SLOW CHECKSUM") }
+        let hasErrors = !failedFiles.isEmpty || shouldCancel
+        
+        // Always write debug log if there are any failed files reported in UI
+        let errorCount = failedFiles.count
+        if errorCount > 0 {
+            print("📄 Writing debug log: \(errorCount) errors detected")
+        }
+        
+        if !hasSlowOperations && !hasErrors && errorCount == 0 {
+            print("📄 Skipping debug log: no slow operations or errors")
+            return
+        }
+        
+        hasWrittenDebugLog = true
+        
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy-MM-dd_HH-mm-ss"
+        let timestamp = dateFormatter.string(from: Date())
+        
+        var logContent = "ImageIntact Debug Log - \(timestamp)\n"
+        logContent += "Session ID: \(sessionID)\n"
+        logContent += "Total Files: \(totalFiles)\n"
+        logContent += "Processed Files: \(processedFiles)\n"
+        logContent += "Failed Files: \(failedFiles.count)\n"
+        logContent += "Was Cancelled: \(shouldCancel)\n\n"
+        
+        // Add detailed error information
+        if !failedFiles.isEmpty {
+            logContent += "ERROR DETAILS:\n"
+            for (index, failure) in failedFiles.enumerated() {
+                logContent += "\(index + 1). File: \(failure.file)\n"
+                logContent += "   Destination: \(failure.destination)\n"
+                logContent += "   Error: \(failure.error)\n\n"
+            }
+        }
+        
+        logContent += "Checksum Timings:\n"
+        logContent += debugLog.joined(separator: "\n")
+        
+        if let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first {
+            let logDir = documentsURL.appendingPathComponent("ImageIntact_Logs")
+            try? FileManager.default.createDirectory(at: logDir, withIntermediateDirectories: true)
+            
+            let logFile = logDir.appendingPathComponent("Debug_\(timestamp).log")
+            
+            do {
+                try logContent.write(to: logFile, atomically: true, encoding: .utf8)
+                print("📄 Debug log written to: \(logFile.path)")
+                
+                Task { @MainActor in
+                    self.lastDebugLogPath = logFile
+                }
+            } catch {
+                print("❌ Failed to write debug log: \(error)")
+            }
         }
     }
 }

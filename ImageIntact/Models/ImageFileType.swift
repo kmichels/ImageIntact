@@ -8,7 +8,7 @@
 import Foundation
 
 enum ImageFileType: String, CaseIterable {
-    // Standard formats
+    // Standard image formats
     case jpeg = "JPEG"
     case tiff = "TIFF"
     case png = "PNG"
@@ -17,6 +17,26 @@ enum ImageFileType: String, CaseIterable {
     case webp = "WebP"
     case bmp = "BMP"
     case gif = "GIF"
+    
+    // Video formats
+    case mov = "MOV"
+    case mp4 = "MP4"
+    case avi = "AVI"
+    case m4v = "M4V"
+    case mpg = "MPG"
+    case mts = "MTS"  // AVCHD
+    case m2ts = "M2TS"  // AVCHD
+    
+    // Sidecar and metadata files
+    case xmp = "XMP"  // Adobe sidecar
+    case dop = "DOP"  // DxO PhotoLab
+    case cos = "COS"  // Capture One settings
+    case pp3 = "PP3"  // RawTherapee
+    case arp = "ARP"  // Adobe Camera Raw
+    case lrcat = "LR Catalog"  // Lightroom catalog
+    case lrdata = "LR Data"  // Lightroom data
+    case cocatalog = "C1 Catalog"  // Capture One catalog
+    case cocatalogdb = "C1 Database"  // Capture One catalog database
     
     // Adobe/Generic RAW
     case dng = "DNG"
@@ -47,11 +67,10 @@ enum ImageFileType: String, CaseIterable {
     
     // Pentax
     case pef = "PEF"
-    case dng_pentax = "PTX"
+    case ptx = "PTX"  // Pentax
     
     // Leica
     case rwl = "RWL"
-    case dng_leica = "DNG"
     
     // Hasselblad
     case fff = "FFF"
@@ -86,8 +105,45 @@ enum ImageFileType: String, CaseIterable {
             return ["bmp"]
         case .gif:
             return ["gif"]
-        case .dng, .dng_pentax, .dng_leica:
+        // Video formats
+        case .mov:
+            return ["mov", "qt"]
+        case .mp4:
+            return ["mp4", "m4v", "mp4v"]
+        case .avi:
+            return ["avi"]
+        case .m4v:
+            return ["m4v"]
+        case .mpg:
+            return ["mpg", "mpeg", "mpe", "m2v"]
+        case .mts:
+            return ["mts", "m2t"]
+        case .m2ts:
+            return ["m2ts"]
+        // Sidecar files
+        case .xmp:
+            return ["xmp"]
+        case .dop:
+            return ["dop"]
+        case .cos:
+            return ["cos", "cosessiondb"]
+        case .pp3:
+            return ["pp3"]
+        case .arp:
+            return ["arp"]
+        case .lrcat:
+            return ["lrcat", "lrcat-data"]
+        case .lrdata:
+            return ["lrdata"]
+        case .cocatalog:
+            return ["cocatalog"]
+        case .cocatalogdb:
+            return ["cocatalogdb"]
+        // RAW formats
+        case .dng:
             return ["dng"]
+        case .ptx:
+            return ["ptx"]
         case .cr2:
             return ["cr2"]
         case .cr3:
@@ -139,16 +195,40 @@ enum ImageFileType: String, CaseIterable {
     
     var isRaw: Bool {
         switch self {
-        case .jpeg, .tiff, .png, .heic, .heif, .webp, .bmp, .gif:
+        case .jpeg, .tiff, .png, .heic, .heif, .webp, .bmp, .gif,
+             .mov, .mp4, .avi, .m4v, .mpg, .mts, .m2ts,
+             .xmp, .dop, .cos, .pp3, .arp, .lrcat, .lrdata, .cocatalog, .cocatalogdb:
             return false
         default:
             return true
         }
     }
     
+    var isVideo: Bool {
+        switch self {
+        case .mov, .mp4, .avi, .m4v, .mpg, .mts, .m2ts:
+            return true
+        default:
+            return false
+        }
+    }
+    
+    var isSidecar: Bool {
+        switch self {
+        case .xmp, .dop, .cos, .pp3, .arp, .lrcat, .lrdata, .cocatalog, .cocatalogdb:
+            return true
+        default:
+            return false
+        }
+    }
+    
     var displayName: String {
         if isRaw {
             return "RAW (\(rawValue))"
+        } else if isVideo {
+            return "Video (\(rawValue))"
+        } else if isSidecar {
+            return rawValue  // Keep simple for sidecars
         }
         return rawValue
     }
@@ -168,9 +248,14 @@ enum ImageFileType: String, CaseIterable {
         return nil
     }
     
-    static func isImageFile(_ url: URL) -> Bool {
+    static func isSupportedFile(_ url: URL) -> Bool {
         let ext = url.pathExtension.lowercased()
         return from(fileExtension: ext) != nil
+    }
+    
+    // Keep for compatibility
+    static func isImageFile(_ url: URL) -> Bool {
+        return isSupportedFile(url)
     }
 }
 
@@ -201,7 +286,9 @@ class ImageFileScanner {
                             userInfo: [NSLocalizedDescriptionKey: "Failed to create enumerator"])
             }
             
-            for case let url as URL in enumerator {
+            while let element = enumerator.nextObject() {
+                guard let url = element as? URL else { continue }
+                
                 try Task.checkCancellation()
                 
                 let resourceValues = try url.resourceValues(forKeys: Set(resourceKeys))
@@ -232,46 +319,55 @@ class ImageFileScanner {
     // Helper to get a nice summary string
     static func formatScanResults(_ results: ScanResult, groupRaw: Bool = false) -> String {
         if results.isEmpty {
-            return "No image files found"
+            return "No supported files found"
         }
         
-        if groupRaw {
-            var rawCount = 0
-            var otherCounts: [(String, Int)] = []
-            
-            for (type, count) in results.sorted(by: { $0.value > $1.value }) {
-                if type.isRaw {
-                    rawCount += count
-                } else {
-                    otherCounts.append((type.rawValue, count))
-                }
+        // Group counts by category
+        var rawCount = 0
+        var videoCount = 0
+        var sidecarCount = 0
+        var imageCount = 0
+        var imageCounts: [(ImageFileType, Int)] = []
+        
+        for (type, count) in results {
+            if type.isRaw {
+                rawCount += count
+            } else if type.isVideo {
+                videoCount += count
+            } else if type.isSidecar {
+                sidecarCount += count
+            } else {
+                imageCount += count
+                imageCounts.append((type, count))
             }
-            
-            var parts: [String] = []
-            if rawCount > 0 {
-                parts.append("\(rawCount.formatted()) RAW")
-            }
-            for (type, count) in otherCounts.prefix(3) {
-                parts.append("\(count.formatted()) \(type)")
-            }
-            if otherCounts.count > 3 {
-                parts.append("...")
-            }
-            
-            return parts.joined(separator: " • ")
-        } else {
-            let sorted = results.sorted(by: { $0.value > $1.value })
-            let displayed = sorted.prefix(4)
-            
-            var parts = displayed.map { type, count in
-                "\(count.formatted()) \(type.displayName)"
-            }
-            
-            if sorted.count > 4 {
-                parts.append("...")
-            }
-            
-            return parts.joined(separator: " • ")
         }
+        
+        var parts: [String] = []
+        
+        // Add counts in priority order
+        if rawCount > 0 {
+            parts.append("\(rawCount.formatted()) RAW")
+        }
+        
+        // Show top image formats
+        for (type, count) in imageCounts.sorted(by: { $0.1 > $1.1 }).prefix(2) {
+            parts.append("\(count.formatted()) \(type.rawValue)")
+        }
+        
+        if videoCount > 0 {
+            parts.append("\(videoCount.formatted()) Video")
+        }
+        
+        if sidecarCount > 0 {
+            parts.append("\(sidecarCount.formatted()) Sidecar")
+        }
+        
+        // Limit to 5 parts total
+        if parts.count > 5 {
+            parts = Array(parts.prefix(4))
+            parts.append("...")
+        }
+        
+        return parts.joined(separator: " • ")
     }
 }

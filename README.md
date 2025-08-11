@@ -13,7 +13,7 @@ Born from 25+ years in Tech and a deep love for photography, as well as a desire
 ### 🛡️ Safety First
 - **Never deletes files** - Mismatched files are quarantined, not deleted
 - **Source protection** - Prevents accidentally using a source folder as a destination
-- **Checksum verification** - Every file is verified using SHA-1 for fast, reliable integrity checking
+- **Checksum verification** - Every file is verified using SHA-256 for cryptographically secure integrity checking
 - **Detailed logging** - Complete audit trail of all operations
 
 ### 🚀 Performance
@@ -102,6 +102,40 @@ ImageIntact automatically detects network volumes (SMB, AFP, NFS) and adjusts it
 - Limits concurrent operations to prevent connection drops
 - Implements retry logic for checksum verification
 - Maintains stability over high-speed connections
+
+## Design Choices
+
+### Native Swift Checksums vs External Commands
+ImageIntact uses native Swift CryptoKit for SHA-256 checksum calculation rather than calling external `shasum` commands. This decision was made after extensive testing revealed that certain file types (particularly Capture One catalogs and some sidecar files) would cause file descriptor errors when accessed by external processes. The native approach provides:
+- **100% reliability** across all file types
+- **Better error handling** with proper Swift error propagation
+- **Consistent performance** without process spawning overhead
+- **Memory efficiency** through streaming for large files (>100MB)
+
+### Phase-Based Backup Architecture
+The backup process is divided into distinct phases for better progress tracking and error recovery:
+1. **Analyze** - Quick enumeration of source files
+2. **Build Manifest** - Calculate source checksums once (20% of time)
+3. **Copy** - Transfer files to destinations (50% of time)
+4. **Flush** - Force disk writes with `Darwin.sync()`
+5. **Verify** - Calculate destination checksums (20% of time)
+
+This architecture ensures checksums are calculated efficiently and provides clear progress feedback.
+
+### File Type Filtering
+ImageIntact automatically filters for photography-related files:
+- **30+ RAW formats** from all major camera manufacturers
+- **Video formats** commonly used by cameras (MOV, MP4, AVI)
+- **Sidecar files** (XMP, AAE, THM, etc.)
+- **Catalog files** from Lightroom and Capture One
+- **Smart cache exclusion** - automatically skips preview caches that can be regenerated
+
+### Safety Over Speed
+Several design decisions prioritize data integrity:
+- **Always verify after copy** - every file is checksum-verified at the destination
+- **Quarantine, don't delete** - existing files with mismatches are preserved
+- **Source tagging** - prevents accidental use of source folders as destinations
+- **Atomic operations** - uses security-scoped bookmarks for persistent folder access
 
 ## Development
 

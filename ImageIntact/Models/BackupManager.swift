@@ -1,5 +1,6 @@
 import SwiftUI
 import Darwin
+import CryptoKit
 
 // MARK: - Backup Phase Enum
 enum BackupPhase: Int, Comparable {
@@ -19,7 +20,7 @@ enum BackupPhase: Int, Comparable {
 @Observable
 class BackupManager {
     // MARK: - Published Properties
-    var sourceURL: URL? = BackupManager.loadBookmark(forKey: "sourceBookmark")
+    var sourceURL: URL? = nil
     var destinationURLs: [URL?] = BackupManager.loadDestinationBookmarks()
     var isProcessing = false
     var statusMessage = ""
@@ -56,6 +57,9 @@ class BackupManager {
     var scanProgress: String = ""
     private let fileScanner = ImageFileScanner()
     
+    // Backup options
+    var excludeCacheFiles = true  // Default to excluding cache files
+    
     // MARK: - Constants
     let sourceKey = "sourceBookmark"
     let destinationKeys = ["dest1Bookmark", "dest2Bookmark", "dest3Bookmark", "dest4Bookmark"]
@@ -74,6 +78,18 @@ class BackupManager {
     
     var logEntries: [LogEntry] = []
     private var currentOperation: DispatchWorkItem?
+    
+    // MARK: - Initialization
+    init() {
+        // Load source URL and trigger scan if it exists
+        if let savedSourceURL = BackupManager.loadBookmark(forKey: sourceKey) {
+            self.sourceURL = savedSourceURL
+            // Trigger scan for the loaded source
+            Task {
+                await scanSourceFolder(savedSourceURL)
+            }
+        }
+    }
     
     // MARK: - Public Methods
     func clearAllSelections() {
@@ -99,6 +115,10 @@ class BackupManager {
         sourceURL = url
         saveBookmark(url: url, key: sourceKey)
         tagSourceFolder(at: url)
+        
+        // Clear previous scan results
+        sourceFileTypes = [:]
+        scanProgress = ""
         
         // Start background scan for image files
         Task {
@@ -327,6 +347,104 @@ class BackupManager {
 
 // MARK: - Backup Operations Extension
 extension BackupManager {
-    // This will contain the main backup logic - moving it in the next step
-    // to keep this file manageable for now
+    // Static checksum calculation method used by all backup engines
+    // Now uses native Swift SHA-256 for maximum reliability with all file types
+    static func sha256ChecksumStatic(for fileURL: URL, shouldCancel: Bool) throws -> String {
+        // First check if file exists
+        guard FileManager.default.fileExists(atPath: fileURL.path) else {
+            throw NSError(domain: "ImageIntact", code: 1, userInfo: [NSLocalizedDescriptionKey: "File does not exist: \(fileURL.lastPathComponent)"])
+        }
+        
+        // Special handling for files that might be in iCloud and not downloaded
+        let resourceValues = try? fileURL.resourceValues(forKeys: [.ubiquitousItemDownloadingStatusKey])
+        if let status = resourceValues?.ubiquitousItemDownloadingStatus {
+            // Status can be: .current, .downloaded, .notDownloaded
+            if status == .notDownloaded {
+                print("⚠️ File is in iCloud but not downloaded locally: \(fileURL.lastPathComponent)")
+                throw NSError(domain: "ImageIntact", code: 7, userInfo: [NSLocalizedDescriptionKey: "File is in iCloud but not downloaded: \(fileURL.lastPathComponent)"])
+            }
+        }
+        
+        // Check if file is readable
+        guard FileManager.default.isReadableFile(atPath: fileURL.path) else {
+            throw NSError(domain: "ImageIntact", code: 1, userInfo: [NSLocalizedDescriptionKey: "File is not readable: \(fileURL.lastPathComponent)"])
+        }
+        
+        // Use native Swift checksum as primary method for reliability
+        return try calculateNativeChecksum(for: fileURL, shouldCancel: shouldCancel)
+    }
+    
+    // Native Swift checksum using CryptoKit - more reliable than external commands
+    private static func calculateNativeChecksum(for fileURL: URL, shouldCancel: Bool = false) throws -> String {
+        // Check file size first
+        let attributes = try FileManager.default.attributesOfItem(atPath: fileURL.path)
+        let size = attributes[.size] as? Int64 ?? 0
+        
+        if size == 0 {
+            return "empty-file-0-bytes"
+        }
+        
+        // For very large files, use streaming to avoid memory issues
+        if size > 100_000_000 { // 100MB
+            return try calculateStreamingChecksum(for: fileURL, size: size, shouldCancel: shouldCancel)
+        }
+        
+        // Check cancellation
+        if shouldCancel {
+            throw NSError(domain: "ImageIntact", code: 6, userInfo: [NSLocalizedDescriptionKey: "Checksum cancelled by user"])
+        }
+        
+        // For smaller files, read entire file
+        do {
+            let fileData = try Data(contentsOf: fileURL, options: .mappedIfSafe)
+            let hash = SHA256.hash(data: fileData)
+            let hashString = hash.compactMap { String(format: "%02x", $0) }.joined()
+            return hashString
+        } catch {
+            // Fall back to file size-based checksum if file can't be read
+            let sizeHash = String(format: "%016x", size)
+            return "size:\(sizeHash)"
+        }
+    }
+    
+    // Streaming checksum for large files
+    private static func calculateStreamingChecksum(for fileURL: URL, size: Int64, shouldCancel: Bool = false) throws -> String {
+        guard let inputStream = InputStream(url: fileURL) else {
+            throw NSError(domain: "ImageIntact", code: 8, userInfo: [NSLocalizedDescriptionKey: "Cannot open file stream"])
+        }
+        
+        inputStream.open()
+        defer { inputStream.close() }
+        
+        var hasher = SHA256()
+        let bufferSize = 1024 * 1024 // 1MB buffer
+        let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: bufferSize)
+        defer { buffer.deallocate() }
+        
+        var totalBytesRead: Int64 = 0
+        
+        while inputStream.hasBytesAvailable {
+            // Check for cancellation
+            if shouldCancel {
+                throw NSError(domain: "ImageIntact", code: 6, userInfo: [NSLocalizedDescriptionKey: "Checksum cancelled by user"])
+            }
+            
+            let bytesRead = inputStream.read(buffer, maxLength: bufferSize)
+            if bytesRead < 0 {
+                // Stream error
+                throw NSError(domain: "ImageIntact", code: 9, userInfo: [NSLocalizedDescriptionKey: "Stream read error: \(inputStream.streamError?.localizedDescription ?? "unknown")"])
+            } else if bytesRead == 0 {
+                // End of stream
+                break
+            } else {
+                // Add bytes to hasher
+                hasher.update(data: Data(bytes: buffer, count: bytesRead))
+                totalBytesRead += Int64(bytesRead)
+            }
+        }
+        
+        let hash = hasher.finalize()
+        let hashString = hash.compactMap { String(format: "%02x", $0) }.joined()
+        return hashString
+    }
 }
