@@ -209,7 +209,11 @@ extension BackupManager {
     
     private func calculateChecksum(for fileURL: URL) async throws -> String {
         return try await withCheckedThrowingContinuation { continuation in
-            DispatchQueue.global(qos: .userInitiated).async {
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                guard let self = self else {
+                    continuation.resume(throwing: NSError(domain: "ImageIntact", code: 999, userInfo: [NSLocalizedDescriptionKey: "Self was deallocated"]))
+                    return
+                }
                 let startTime = Date()
                 defer {
                     let elapsed = Date().timeIntervalSince(startTime)
