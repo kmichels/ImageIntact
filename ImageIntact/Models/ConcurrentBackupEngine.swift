@@ -216,7 +216,8 @@ extension BackupManager {
                     let logMessage = "Checksum for \(fileURL.lastPathComponent): \(String(format: "%.2f", elapsed))s"
                     
                     // Add to debug log for tracking
-                    Task { @MainActor in
+                    Task { @MainActor [weak self] in
+                        guard let self = self else { return }
                         self.debugLog.append(logMessage)
                         if self.debugLog.count > 100 {
                             self.debugLog.removeFirst()

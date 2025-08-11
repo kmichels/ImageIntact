@@ -251,7 +251,7 @@ extension BackupManager {
                             copySpeed = Double(totalBytesCopied) / (1024 * 1024) / elapsed
                         }
                         
-                        print("📄 Copied \(entry.relativePath) to \(destination.lastPathComponent)")
+                        print("📄 Copied: \(entry.relativePath) to \(destination.lastPathComponent)")
                         incrementDestinationProgress(destination.lastPathComponent)
                     }
                 } catch {
@@ -273,7 +273,7 @@ extension BackupManager {
         let flushStart = Date()
         var flushedCount = 0
         
-        for (destination, files) in copiedFiles {
+        for (_, files) in copiedFiles {
             for file in files {
                 if let handle = FileHandle(forWritingAtPath: file.path) {
                     handle.synchronizeFile()  // Force fsync()
@@ -426,7 +426,8 @@ extension BackupManager {
                     let logMessage = "Checksum for \(fileURL.lastPathComponent): \(String(format: "%.2f", elapsed))s"
                     
                     // Add to debug log for tracking
-                    Task { @MainActor in
+                    Task { @MainActor [weak self] in
+                        guard let self = self else { return }
                         self.debugLog.append(logMessage)
                         if self.debugLog.count > 100 {
                             self.debugLog.removeFirst()

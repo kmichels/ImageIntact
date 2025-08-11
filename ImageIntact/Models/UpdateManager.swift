@@ -163,7 +163,7 @@ class UpdateManager {
                 }
             }
             
-            let (tempURL, response) = try await URLSession.shared.download(from: url)
+            let (tempURL, _) = try await URLSession.shared.download(from: url)
             
             // Cancel progress simulation
             progressTask.cancel()

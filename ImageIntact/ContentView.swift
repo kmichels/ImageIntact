@@ -342,7 +342,7 @@ struct ContentView: View {
         // Always generate a log with current session data
         let logContent: String
         if let logPath = backupManager.lastDebugLogPath,
-           let existingContent = try? String(contentsOf: logPath) {
+           let existingContent = try? String(contentsOf: logPath, encoding: .utf8) {
             logContent = existingContent
         } else {
             // Generate debug log with current session data

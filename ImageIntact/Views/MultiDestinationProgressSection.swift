@@ -218,8 +218,18 @@ struct MultiDestinationProgress: View {
                     .progressViewStyle(.linear)
             }
             
-            // Per-destination progress (only show meaningful progress during copy/verify phases)
-            if backupManager.currentPhase == .copyingFiles || backupManager.currentPhase == .verifyingDestinations {
+            // Per-destination progress
+            if backupManager.currentPhase == .buildingManifest {
+                // During manifest building, show a single progress for all destinations
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Building source manifest for all destinations...")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    ProgressView(value: backupManager.phaseProgress)
+                        .progressViewStyle(.linear)
+                }
+            } else if backupManager.currentPhase != .idle && backupManager.currentPhase != .analyzingSource {
+                // Show destination rows for all other phases
                 ForEach(destinations, id: \.lastPathComponent) { destination in
                     DestinationProgressRow(
                         destinationName: destination.lastPathComponent,
@@ -228,15 +238,6 @@ struct MultiDestinationProgress: View {
                         isActive: backupManager.currentDestinationName == destination.lastPathComponent,
                         phase: backupManager.currentPhase
                     )
-                }
-            } else if backupManager.currentPhase == .buildingManifest {
-                // During manifest building, show a single progress for all destinations
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Building source manifest for all destinations...")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    ProgressView(value: backupManager.phaseProgress)
-                        .progressViewStyle(.linear)
                 }
             }
             
@@ -286,6 +287,14 @@ struct DestinationProgressRow: View {
                     Text("Verifying...")
                         .font(.caption)
                         .foregroundColor(.orange)
+                } else if phase == .copyingFiles {
+                    Text("Copying...")
+                        .font(.caption)
+                        .foregroundColor(.blue)
+                } else if phase == .flushingToDisk {
+                    Text("Flushing...")
+                        .font(.caption)
+                        .foregroundColor(.purple)
                 } else {
                     Text("\(completedFiles)/\(totalFiles)")
                         .font(.caption)
