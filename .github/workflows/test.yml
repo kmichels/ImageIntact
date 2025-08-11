@@ -37,24 +37,36 @@ jobs:
     
     - name: Build
       run: |
-        xcodebuild build \
+        # List available schemes
+        xcodebuild -list -project ImageIntact.xcodeproj || true
+        
+        # Clean and build
+        xcodebuild clean build \
+          -project ImageIntact.xcodeproj \
           -scheme ImageIntact \
+          -configuration Debug \
           -destination 'platform=macOS' \
           -derivedDataPath build \
           CODE_SIGN_IDENTITY="" \
           CODE_SIGNING_REQUIRED=NO \
-          CODE_SIGNING_ALLOWED=NO
+          CODE_SIGNING_ALLOWED=NO \
+          DEVELOPMENT_TEAM="" \
+          PRODUCT_BUNDLE_IDENTIFIER="com.imageintact.test"
     
     - name: Run Tests
       run: |
         xcodebuild test \
+          -project ImageIntact.xcodeproj \
           -scheme ImageIntact \
+          -configuration Debug \
           -destination 'platform=macOS' \
           -derivedDataPath build \
           -resultBundlePath TestResults \
           CODE_SIGN_IDENTITY="" \
           CODE_SIGNING_REQUIRED=NO \
           CODE_SIGNING_ALLOWED=NO \
+          DEVELOPMENT_TEAM="" \
+          PRODUCT_BUNDLE_IDENTIFIER="com.imageintact.test" \
           -enableCodeCoverage YES
     
     - name: Generate Test Report
@@ -118,13 +130,16 @@ jobs:
     
     - name: Build Release
       run: |
-        xcodebuild archive \
+        xcodebuild clean archive \
+          -project ImageIntact.xcodeproj \
           -scheme ImageIntact \
           -configuration Release \
           -archivePath build/ImageIntact.xcarchive \
           CODE_SIGN_IDENTITY="" \
           CODE_SIGNING_REQUIRED=NO \
           CODE_SIGNING_ALLOWED=NO \
+          DEVELOPMENT_TEAM="" \
+          PRODUCT_BUNDLE_IDENTIFIER="com.imageintact.app" \
           SKIP_INSTALL=NO
     
     - name: Export Archive

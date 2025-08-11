@@ -95,12 +95,15 @@ jobs:
     - name: Build Release
       run: |
         xcodebuild clean archive \
+          -project ImageIntact.xcodeproj \
           -scheme ImageIntact \
           -configuration Release \
           -archivePath build/ImageIntact.xcarchive \
           CODE_SIGN_IDENTITY="" \
           CODE_SIGNING_REQUIRED=NO \
           CODE_SIGNING_ALLOWED=NO \
+          DEVELOPMENT_TEAM="" \
+          PRODUCT_BUNDLE_IDENTIFIER="com.imageintact.app" \
           MARKETING_VERSION="${{ needs.create-release.outputs.version }}" \
           CURRENT_PROJECT_VERSION="${{ needs.create-release.outputs.version }}"
     
