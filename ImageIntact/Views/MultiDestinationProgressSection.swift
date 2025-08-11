@@ -79,6 +79,18 @@ struct MultiDestinationProgressSection: View {
 struct SimpleBackupProgress: View {
     @Bindable var backupManager: BackupManager
     
+    private func phaseDescription(for phase: BackupPhase) -> String {
+        switch phase {
+        case .idle: return "Idle"
+        case .analyzingSource: return "Analyzing source files"
+        case .buildingManifest: return "Building manifest (calculating checksums)"
+        case .copyingFiles: return "Copying files"
+        case .flushingToDisk: return "Flushing to disk"
+        case .verifyingDestinations: return "Verifying checksums"
+        case .complete: return "Complete"
+        }
+    }
+    
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
