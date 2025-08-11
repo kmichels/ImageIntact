@@ -71,8 +71,8 @@ struct HelpView: View {
                             Text("ImageIntact automatically optimizes performance based on your destinations:")
                             
                             VStack(alignment: .leading, spacing: 8) {
-                                HelpPoint(title: "SHA-256 Checksums", 
-                                         description: "Uses reliable SHA-256 checksums for verification")
+                                HelpPoint(title: "SHA-1 Checksums", 
+                                         description: "Uses fast SHA-1 checksums for verification")
                                 
                                 HelpPoint(title: "Smart Concurrency", 
                                          description: "Adjusts parallel operations based on destination types (local, external, network)")

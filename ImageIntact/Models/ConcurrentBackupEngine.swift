@@ -244,7 +244,7 @@ extension BackupManager {
             do {
                 let process = Process()
                 process.executableURL = URL(fileURLWithPath: "/usr/bin/shasum")
-                process.arguments = ["-a", "256", fileURL.path]
+                process.arguments = ["-a", "1", fileURL.path]  // SHA-1 is 2-3x faster than SHA-256
 
                 let pipe = Pipe()
                 let errorPipe = Pipe()
@@ -308,7 +308,7 @@ extension BackupManager {
             source: source.path,
             destination: destination.path,
             checksum: checksum,
-            algorithm: "SHA256",
+            algorithm: "SHA1",
             fileSize: fileSize,
             reason: reason
         )

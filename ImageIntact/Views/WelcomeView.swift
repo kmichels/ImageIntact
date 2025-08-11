@@ -39,7 +39,7 @@ struct WelcomeView: View {
                     
                     FeatureRow(icon: "bolt", 
                               title: "Fast & Smart", 
-                              description: "Uses SHA-256 checksums for reliable verification")
+                              description: "Uses SHA-1 checksums for fast verification")
                     
                     FeatureRow(icon: "shield.lefthalf.filled", 
                               title: "Never Lose Data", 

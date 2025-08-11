@@ -85,7 +85,7 @@ struct ContentView: View {
             setupKeyboardShortcuts()
             setupMenuCommands()
             
-            print("🔐 Using SHA-256 checksums for maximum compatibility")
+            print("🔐 Using SHA-1 checksums for faster verification")
             
             // Check for first run
             checkFirstRun()
