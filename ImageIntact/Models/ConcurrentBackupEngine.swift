@@ -209,7 +209,7 @@ extension BackupManager {
     
     private func calculateChecksum(for fileURL: URL) async throws -> String {
         let shouldCancel = self.shouldCancel
-        return try await Task.detached(priority: .userInitiated) {
+        let result = await Task.detached(priority: .userInitiated) { () -> Result<String, Error> in
             let startTime = Date()
             defer {
                 let elapsed = Date().timeIntervalSince(startTime)
@@ -219,12 +219,24 @@ extension BackupManager {
                 }
             }
             
-            return try BackupManager.sha256ChecksumStatic(for: fileURL, shouldCancel: shouldCancel)
+            do {
+                let checksum = try BackupManager.sha256ChecksumStatic(for: fileURL, shouldCancel: shouldCancel)
+                return .success(checksum)
+            } catch {
+                return .failure(error)
+            }
         }.value
+        
+        switch result {
+        case .success(let checksum):
+            return checksum
+        case .failure(let error):
+            throw error
+        }
     }
     
     // Static version that doesn't capture self
-    private static func sha256ChecksumStatic(for fileURL: URL, shouldCancel: Bool) throws -> String {
+    static func sha256ChecksumStatic(for fileURL: URL, shouldCancel: Bool) throws -> String {
         for attempt in 1...3 {
             do {
                 let process = Process()
