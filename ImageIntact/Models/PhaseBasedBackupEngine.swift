@@ -209,9 +209,11 @@ extension BackupManager {
                 let destDir = destPath.deletingLastPathComponent()
                 
                 do {
-                    // Create directory if needed
+                    // Create directory if needed (off main thread)
                     if !fileManager.fileExists(atPath: destDir.path) {
-                        try fileManager.createDirectory(at: destDir, withIntermediateDirectories: true, attributes: nil)
+                        try await Task.detached(priority: .userInitiated) {
+                            try FileManager.default.createDirectory(at: destDir, withIntermediateDirectories: true, attributes: nil)
+                        }.value
                     }
                     
                     // Check if file already exists with matching checksum
@@ -241,7 +243,10 @@ extension BackupManager {
                     
                     // Copy file if needed
                     if needsCopy {
-                        try fileManager.copyItem(at: entry.sourceURL, to: destPath)
+                        // Move file copy off main thread to prevent UI blocking
+                        try await Task.detached(priority: .userInitiated) {
+                            try FileManager.default.copyItem(at: entry.sourceURL, to: destPath)
+                        }.value
                         copiedFiles[destIndex].files.append(destPath)
                         
                         // Update bytes processed for speed calculation
