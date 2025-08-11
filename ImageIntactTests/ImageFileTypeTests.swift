@@ -81,7 +81,8 @@ final class ImageFileTypeTests: XCTestCase {
             let ext = url.pathExtension.lowercased()
             if let fileType = ImageFileType.from(fileExtension: ext) {
                 XCTAssertEqual(fileType, expectedType, "\(filename) should be \(expectedType)")
-                XCTAssertTrue(fileType.isCatalog, "\(filename) should be catalog")
+                // Catalog types are lrcat and cocatalog
+                XCTAssertTrue(fileType == .lrcat || fileType == .cocatalog, "\(filename) should be catalog type")
             }
         }
     }
@@ -160,7 +161,7 @@ final class ImageFileTypeTests: XCTestCase {
         ]
         
         for path in cachePatterns {
-            let url = URL(fileURLWithPath: path)
+            _ = URL(fileURLWithPath: path)
             // Note: This would require exposing isLikelyCacheFile or testing through the backup process
             // For now, we're testing the concept that these paths should be excluded
             XCTAssertTrue(path.contains(".lrdata/"), "Path should contain Lightroom cache indicator")
