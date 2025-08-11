@@ -163,6 +163,18 @@ struct MultiDestinationProgress: View {
     @Bindable var backupManager: BackupManager
     let destinations: [URL]
     
+    private func phaseDescription(for phase: BackupPhase) -> String {
+        switch phase {
+        case .idle: return "Idle"
+        case .analyzingSource: return "Analyzing source files"
+        case .buildingManifest: return "Building manifest (calculating checksums)"
+        case .copyingFiles: return "Copying files"
+        case .flushingToDisk: return "Flushing to disk"
+        case .verifyingDestinations: return "Verifying checksums"
+        case .complete: return "Complete"
+        }
+    }
+    
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
@@ -193,21 +205,39 @@ struct MultiDestinationProgress: View {
             
             // Overall progress bar (shows total progress across all phases)
             VStack(alignment: .leading, spacing: 4) {
-                Text("Overall Progress")
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
+                HStack {
+                    Text("Overall Progress")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                    Spacer()
+                    Text(phaseDescription(for: backupManager.currentPhase))
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
                 ProgressView(value: backupManager.overallProgress)
                     .progressViewStyle(.linear)
             }
             
-            // Per-destination progress
-            ForEach(destinations, id: \.lastPathComponent) { destination in
-                DestinationProgressRow(
-                    destinationName: destination.lastPathComponent,
-                    completedFiles: backupManager.destinationProgress[destination.lastPathComponent] ?? 0,
-                    totalFiles: backupManager.totalFiles,
-                    isActive: backupManager.currentDestinationName == destination.lastPathComponent
-                )
+            // Per-destination progress (only show meaningful progress during copy/verify phases)
+            if backupManager.currentPhase == .copyingFiles || backupManager.currentPhase == .verifyingDestinations {
+                ForEach(destinations, id: \.lastPathComponent) { destination in
+                    DestinationProgressRow(
+                        destinationName: destination.lastPathComponent,
+                        completedFiles: backupManager.destinationProgress[destination.lastPathComponent] ?? 0,
+                        totalFiles: backupManager.totalFiles,
+                        isActive: backupManager.currentDestinationName == destination.lastPathComponent,
+                        phase: backupManager.currentPhase
+                    )
+                }
+            } else if backupManager.currentPhase == .buildingManifest {
+                // During manifest building, show a single progress for all destinations
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Building source manifest for all destinations...")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    ProgressView(value: backupManager.phaseProgress)
+                        .progressViewStyle(.linear)
+                }
             }
             
             // Current file info
@@ -241,6 +271,7 @@ struct DestinationProgressRow: View {
     let completedFiles: Int
     let totalFiles: Int
     let isActive: Bool
+    var phase: BackupPhase = .copyingFiles
     
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -251,9 +282,15 @@ struct DestinationProgressRow: View {
                 
                 Spacer()
                 
-                Text("\(completedFiles)/\(totalFiles)")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+                if phase == .verifyingDestinations {
+                    Text("Verifying...")
+                        .font(.caption)
+                        .foregroundColor(.orange)
+                } else {
+                    Text("\(completedFiles)/\(totalFiles)")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
                 
                 // Activity indicator
                 Circle()
