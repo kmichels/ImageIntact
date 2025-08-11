@@ -96,7 +96,7 @@ extension BackupManager {
         // Build manifest with controlled concurrency
         await withTaskGroup(of: FileManifestEntry?.self) { taskGroup in
             var activeTaskCount = 0
-            let maxConcurrentTasks = min(4, fileURLs.count)
+            let maxConcurrentTasks = min(8, fileURLs.count)  // Increased for better SSD utilization
             var fileIndex = 0
             
             for fileURL in fileURLs {
@@ -304,7 +304,7 @@ extension BackupManager {
         // Verify with controlled concurrency (like manifest phase)
         await withTaskGroup(of: (verified: Int, mismatches: Int).self) { taskGroup in
             var activeTaskCount = 0
-            let maxConcurrentTasks = min(4, manifest.count)
+            let maxConcurrentTasks = min(8, manifest.count)  // Increased for better SSD utilization
             var fileIndex = 0
             var processedCount = 0
             
@@ -487,8 +487,6 @@ extension BackupManager {
                     
                     if elapsed > 2.0 {
                         print("⚠️ SLOW CHECKSUM: \(logMessage)")
-                    } else if elapsed > 0.5 {
-                        print("📊 CHECKSUM TIMING: \(logMessage)")
                     }
                 }
                 
