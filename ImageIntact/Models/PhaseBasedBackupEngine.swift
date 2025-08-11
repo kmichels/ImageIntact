@@ -468,9 +468,13 @@ extension BackupManager {
         return try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
                 let startTime = Date()
+                var processStartTime: Date?
+                var processEndTime: Date?
                 defer {
                     let elapsed = Date().timeIntervalSince(startTime)
-                    let logMessage = "Checksum for \(fileURL.lastPathComponent): \(String(format: "%.2f", elapsed))s"
+                    let processTime = processEndTime?.timeIntervalSince(processStartTime ?? startTime) ?? 0
+                    let overheadTime = elapsed - processTime
+                    let logMessage = "Checksum for \(fileURL.lastPathComponent): \(String(format: "%.2f", elapsed))s (process: \(String(format: "%.2f", processTime))s, overhead: \(String(format: "%.2f", overheadTime))s)"
                     
                     // Add to debug log for tracking
                     Task { @MainActor [weak self] in
@@ -483,11 +487,13 @@ extension BackupManager {
                     
                     if elapsed > 2.0 {
                         print("⚠️ SLOW CHECKSUM: \(logMessage)")
+                    } else if elapsed > 0.5 {
+                        print("📊 CHECKSUM TIMING: \(logMessage)")
                     }
                 }
                 
                 do {
-                    let checksum = try self.sha256Checksum(for: fileURL)
+                    let checksum = try self.sha256Checksum(for: fileURL, processStartTime: &processStartTime, processEndTime: &processEndTime)
                     continuation.resume(returning: checksum)
                 } catch {
                     continuation.resume(throwing: error)
@@ -496,7 +502,7 @@ extension BackupManager {
         }
     }
     
-    private func sha256Checksum(for fileURL: URL) throws -> String {
+    private func sha256Checksum(for fileURL: URL, processStartTime: inout Date?, processEndTime: inout Date?) throws -> String {
         for attempt in 1...3 {
             do {
                 let process = Process()
@@ -511,6 +517,7 @@ extension BackupManager {
                 let outputHandle = pipe.fileHandleForReading
                 let errorHandle = errorPipe.fileHandleForReading
 
+                processStartTime = Date()
                 try process.run()
                 
                 let timeoutSeconds: TimeInterval = 30.0
@@ -528,6 +535,8 @@ extension BackupManager {
                     process.terminate()
                     throw NSError(domain: "ImageIntact", code: 4, userInfo: [NSLocalizedDescriptionKey: "Checksum timed out after \(timeoutSeconds) seconds"])
                 }
+                
+                processEndTime = Date()
 
                 guard process.terminationStatus == 0 else {
                     let errorData = errorHandle.readDataToEndOfFile()
