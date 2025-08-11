@@ -13,15 +13,17 @@ Born from 25+ years in Tech and a deep love for photography, as well as a desire
 ### 🛡️ Safety First
 - **Never deletes files** - Mismatched files are quarantined, not deleted
 - **Source protection** - Prevents accidentally using a source folder as a destination
-- **Checksum verification** - Every file is verified using SHA-256
+- **Checksum verification** - Every file is verified using SHA-1 for fast, reliable integrity checking
 - **Detailed logging** - Complete audit trail of all operations
 
 ### 🚀 Performance
-- **Smart concurrency** - Full speed for local drives, throttled for network volumes
+- **Phase-based backup** - Optimized workflow: analyze → build manifest → copy → verify
+- **Smart concurrency** - Up to 8 parallel checksum operations for modern SSDs
 - **Skip identical files** - Only copies what's needed
 - **Progress tracking** - See exactly what's being copied in real-time
+- **Detailed completion stats** - Shows files processed, data volume, and time taken
 
-### 📊 Professional Features
+### 📊 Advanced Features
 - **Multiple destinations** - Back up to up to 4 locations simultaneously
 - **Session tracking** - Each backup run has a unique ID for correlation
 - **Checksum manifests** - Proof of successful backups for each destination

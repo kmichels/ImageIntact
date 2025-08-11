@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-ImageIntact is a native macOS backup utility for photographers, built with Swift and SwiftUI. It provides safe, verified file backups with SHA-256 checksum verification and support for multiple simultaneous destinations.
+ImageIntact is a native macOS backup utility for photographers, built with Swift and SwiftUI. It provides safe, verified file backups with SHA-1 checksum verification and support for multiple simultaneous destinations.
 
 ## Development Commands
 
@@ -26,7 +26,7 @@ ImageIntact is a native macOS backup utility for photographers, built with Swift
 
 2. **ContentView.swift** (~900 lines): The main application logic containing:
    - Backup orchestration and file copying logic
-   - SHA-256 checksum verification using external `shasum` command
+   - SHA-1 checksum verification using external `shasum` command (optimized for speed)
    - Network volume detection and throttling
    - CSV logging and manifest generation
    - Session management with UUID tracking
@@ -37,7 +37,7 @@ ImageIntact is a native macOS backup utility for photographers, built with Swift
 ### Key Technical Patterns
 
 - **Security-Scoped Bookmarks**: Used for persistent folder access across app launches. All folder selections are stored in UserDefaults as bookmarks.
-- **Checksum Verification**: Every file is verified using SHA-256 via the system's `shasum` command, not internal hashing.
+- **Checksum Verification**: Every file is verified using SHA-1 via the system's `shasum` command for fast, reliable integrity checking.
 - **Concurrent Operations**: Supports up to 4 simultaneous backup destinations with smart throttling for network volumes.
 - **Safety Features**: Source folders are tagged to prevent accidental use as destinations. Files are quarantined rather than deleted.
 
@@ -45,7 +45,7 @@ ImageIntact is a native macOS backup utility for photographers, built with Swift
 
 The test suite (ImageIntactTests.swift) covers:
 - Bookmark persistence and retrieval
-- SHA-256 checksum calculation consistency
+- SHA-1 checksum calculation consistency
 - File quarantine operations
 - Source folder tagging
 - Full backup workflow simulation
