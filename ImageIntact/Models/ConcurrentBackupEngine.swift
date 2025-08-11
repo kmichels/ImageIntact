@@ -208,23 +208,22 @@ extension BackupManager {
     }
     
     private func calculateChecksum(for fileURL: URL) async throws -> String {
-        return try await withCheckedThrowingContinuation { continuation in
-            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-                guard let self = self else {
-                    continuation.resume(throwing: NSError(domain: "ImageIntact", code: 999, userInfo: [NSLocalizedDescriptionKey: "Self was deallocated"]))
-                    return
-                }
+        return try await withCheckedThrowingContinuation { [weak self] continuation in
+            guard let strongSelf = self else {
+                continuation.resume(throwing: NSError(domain: "ImageIntact", code: 999, userInfo: [NSLocalizedDescriptionKey: "Self was deallocated"]))
+                return
+            }
+            DispatchQueue.global(qos: .userInitiated).async {
                 let startTime = Date()
                 defer {
                     let elapsed = Date().timeIntervalSince(startTime)
                     let logMessage = "Checksum for \(fileURL.lastPathComponent): \(String(format: "%.2f", elapsed))s"
                     
                     // Add to debug log for tracking
-                    Task { @MainActor [weak self] in
-                        guard let self = self else { return }
-                        self.debugLog.append(logMessage)
-                        if self.debugLog.count > 100 {
-                            self.debugLog.removeFirst()
+                    Task { @MainActor in
+                        strongSelf.debugLog.append(logMessage)
+                        if strongSelf.debugLog.count > 100 {
+                            strongSelf.debugLog.removeFirst()
                         }
                     }
                     
@@ -234,7 +233,7 @@ extension BackupManager {
                 }
                 
                 do {
-                    let checksum = try self.sha256Checksum(for: fileURL)
+                    let checksum = try strongSelf.sha256Checksum(for: fileURL)
                     continuation.resume(returning: checksum)
                 } catch {
                     continuation.resume(throwing: error)
@@ -264,7 +263,7 @@ extension BackupManager {
                 let deadline = Date().addingTimeInterval(timeoutSeconds)
                 
                 while process.isRunning && Date() < deadline {
-                    if shouldCancel {
+                    if strongSelf.shouldCancel {
                         process.terminate()
                         throw NSError(domain: "ImageIntact", code: 6, userInfo: [NSLocalizedDescriptionKey: "Checksum cancelled by user"])
                     }
