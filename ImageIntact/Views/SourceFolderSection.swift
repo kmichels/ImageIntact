@@ -22,6 +22,8 @@ struct SourceFolderSection: View {
                 ),
                 onClear: {
                     backupManager.sourceURL = nil
+                    backupManager.sourceFileTypes = [:]
+                    backupManager.scanProgress = ""
                     UserDefaults.standard.removeObject(forKey: backupManager.sourceKey)
                 },
                 onSelect: { url in
@@ -31,6 +33,28 @@ struct SourceFolderSection: View {
             .focused($focusedField, equals: .source)
             .onTapGesture {
                 focusedField = .source
+            }
+            
+            // File type summary
+            if backupManager.sourceURL != nil {
+                HStack(spacing: 4) {
+                    if backupManager.isScanning {
+                        ProgressView()
+                            .scaleEffect(0.7)
+                            .frame(width: 14, height: 14)
+                    } else if !backupManager.sourceFileTypes.isEmpty {
+                        Image(systemName: "photo.stack")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    
+                    Text(backupManager.getFormattedFileTypeSummary())
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                }
+                .padding(.leading, 20)
+                .animation(.easeInOut(duration: 0.2), value: backupManager.isScanning)
             }
         }
         .padding(.horizontal, 20)

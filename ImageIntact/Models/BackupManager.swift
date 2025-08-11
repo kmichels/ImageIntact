@@ -50,6 +50,12 @@ class BackupManager {
     var phaseProgress: Double = 0.0  // Progress within current phase (0-1)
     var overallProgress: Double = 0.0  // Overall progress across all phases (0-1)
     
+    // File type scanning
+    var sourceFileTypes: [ImageFileType: Int] = [:]
+    var isScanning = false
+    var scanProgress: String = ""
+    private let fileScanner = ImageFileScanner()
+    
     // MARK: - Constants
     let sourceKey = "sourceBookmark"
     let destinationKeys = ["dest1Bookmark", "dest2Bookmark", "dest3Bookmark", "dest4Bookmark"]
@@ -93,6 +99,11 @@ class BackupManager {
         sourceURL = url
         saveBookmark(url: url, key: sourceKey)
         tagSourceFolder(at: url)
+        
+        // Start background scan for image files
+        Task {
+            await scanSourceFolder(url)
+        }
     }
     
     func setDestination(_ url: URL, at index: Int) {
@@ -267,6 +278,50 @@ class BackupManager {
     @MainActor
     func incrementDestinationProgress(_ destinationName: String) {
         destinationProgress[destinationName, default: 0] += 1
+    }
+    
+    // MARK: - File Scanning Methods
+    @MainActor
+    func scanSourceFolder(_ url: URL) async {
+        isScanning = true
+        scanProgress = "Scanning for image files..."
+        sourceFileTypes = [:]
+        
+        // Access the security-scoped resource
+        let accessing = url.startAccessingSecurityScopedResource()
+        defer {
+            if accessing {
+                url.stopAccessingSecurityScopedResource()
+            }
+        }
+        
+        do {
+            let results = try await fileScanner.scan(directory: url) { progress in
+                Task { @MainActor in
+                    if progress.scanned % 100 == 0 {
+                        self.scanProgress = "Scanned \(progress.scanned) files..."
+                    }
+                }
+            }
+            
+            await MainActor.run {
+                self.sourceFileTypes = results
+                self.scanProgress = ImageFileScanner.formatScanResults(results, groupRaw: false)
+                self.isScanning = false
+            }
+        } catch {
+            await MainActor.run {
+                self.scanProgress = "Scan failed: \(error.localizedDescription)"
+                self.isScanning = false
+            }
+        }
+    }
+    
+    func getFormattedFileTypeSummary(groupRaw: Bool = false) -> String {
+        if sourceFileTypes.isEmpty {
+            return isScanning ? scanProgress : ""
+        }
+        return ImageFileScanner.formatScanResults(sourceFileTypes, groupRaw: groupRaw)
     }
 }
 

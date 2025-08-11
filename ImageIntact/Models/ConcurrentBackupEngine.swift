@@ -55,14 +55,15 @@ extension BackupManager {
                   !$0.lastPathComponent.hasPrefix(".") else {
                 return false
             }
-            return true
+            // Only process image files
+            return ImageFileType.isImageFile($0)
         }
         
         totalFiles = fileURLs.count
-        statusMessage = "Found \(fileURLs.count) files to process"
+        statusMessage = "Found \(fileURLs.count) image files to process"
         
         if fileURLs.isEmpty {
-            statusMessage = "No files found to backup"
+            statusMessage = "No image files found to backup"
             return
         }
 
