@@ -14,7 +14,7 @@
             buildForAnalyzing = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "ImageIntact"
+               BlueprintIdentifier = "71592B7F2E3CE71600571AB3"
                BuildableName = "ImageIntact.app"
                BlueprintName = "ImageIntact"
                ReferencedContainer = "container:ImageIntact.xcodeproj">
@@ -32,7 +32,7 @@
             skipped = "NO">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "ImageIntactTests"
+               BlueprintIdentifier = "71CB2DFC2E3E6030004E9F48"
                BuildableName = "ImageIntactTests.xctest"
                BlueprintName = "ImageIntactTests"
                ReferencedContainer = "container:ImageIntact.xcodeproj">
