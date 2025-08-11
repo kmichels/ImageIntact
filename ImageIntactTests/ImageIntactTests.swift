@@ -152,18 +152,17 @@ class ImageIntactTests: XCTestCase {
     
     // MARK: - Checksum Tests
     
-    func testSHA256Checksum() throws {
+    func testSHA1Checksum() throws {
         // Create a test file
         let testDir = createTestDirectory(name: "ChecksumTest")!
         let testFile = testDir.appendingPathComponent("test.txt")
         try "Hello, World!".write(to: testFile, atomically: true, encoding: .utf8)
         
-        // Calculate checksum
-        let contentView = ContentView()
-        let checksum = try contentView.sha256Checksum(for: testFile)
+        // Calculate checksum using static method
+        let checksum = try BackupManager.sha256ChecksumStatic(for: testFile, shouldCancel: false)
         
-        // Verify it returns a valid SHA256 hash (64 hex characters)
-        XCTAssertEqual(checksum.count, 64, "SHA256 should be 64 characters long")
+        // Verify it returns a valid SHA1 hash (40 hex characters)
+        XCTAssertEqual(checksum.count, 40, "SHA1 should be 40 characters long")
         XCTAssertTrue(checksum.allSatisfy { $0.isHexDigit }, "Checksum should only contain hex characters")
     }
     
@@ -173,9 +172,9 @@ class ImageIntactTests: XCTestCase {
         let testFile = testDir.appendingPathComponent("test.txt")
         try "Consistent content".write(to: testFile, atomically: true, encoding: .utf8)
         
-        let contentView = ContentView()
-        let checksum1 = try contentView.sha256Checksum(for: testFile)
-        let checksum2 = try contentView.sha256Checksum(for: testFile)
+        // Calculate checksum twice
+        let checksum1 = try BackupManager.sha256ChecksumStatic(for: testFile, shouldCancel: false)
+        let checksum2 = try BackupManager.sha256ChecksumStatic(for: testFile, shouldCancel: false)
         
         XCTAssertEqual(checksum1, checksum2, "Checksum should be consistent for same file")
     }
