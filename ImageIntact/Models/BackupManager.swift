@@ -27,6 +27,9 @@ class BackupManager {
     private var totalBytesCopied: Int64 = 0
     private var atomicFileCounter = 0
     
+    // Per-destination progress (simple version)
+    var destinationProgress: [String: Int] = [:] // destinationName -> completed files
+    
     // MARK: - Constants
     let sourceKey = "sourceBookmark"
     let destinationKeys = ["dest1Bookmark", "dest2Bookmark", "dest3Bookmark", "dest4Bookmark"]
@@ -125,9 +128,9 @@ class BackupManager {
         debugLog = []
         hasWrittenDebugLog = false
         
-        // Run the new concurrent backup operation
+        // Run the new phase-based backup operation
         Task {
-            await performConcurrentBackup(source: source, destinations: destinations)
+            await performPhaseBasedBackup(source: source, destinations: destinations)
         }
     }
     
@@ -231,6 +234,19 @@ class BackupManager {
         copyStartTime = Date()
         totalBytesCopied = 0
         atomicFileCounter = 0
+        destinationProgress.removeAll()
+    }
+    
+    @MainActor
+    func initializeDestinations(_ destinations: [URL]) {
+        for destination in destinations {
+            destinationProgress[destination.lastPathComponent] = 0
+        }
+    }
+    
+    @MainActor
+    func incrementDestinationProgress(_ destinationName: String) {
+        destinationProgress[destinationName, default: 0] += 1
     }
 }
 
