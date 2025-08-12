@@ -128,6 +128,18 @@ READY TO TEST:
 
 ### Next Session Resume Point
 If session ends, continue with:
-1. Add averageFileSize to ImageFileType enum
-2. Update DestinationSection.swift to show estimates
-3. Build and test
+1. Add averageFileSize to ImageFileType enum ✅
+2. Update DestinationSection.swift to show estimates ✅
+3. Build and test ✅
+
+### Bug Fixes Applied (4:15 PM)
+1. Fixed TB5 detection:
+   - External PCI-Express now correctly identified as Thunderbolt
+   - Added detectThunderboltVersion() method to determine TB3/4/5
+   - Fixed logic that was incorrectly treating External PCI as Internal
+   
+2. Fixed system drive detection:
+   - Added proper memory-safe string conversion from statfs
+   - Added fallback detection for system volumes
+   
+3. Removed incorrect HDD speed limiting for SSDs

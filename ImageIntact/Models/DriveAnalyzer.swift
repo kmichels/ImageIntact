@@ -130,15 +130,13 @@ class DriveAnalyzer {
         let isSSD = detectIfSSD(bsdName: bsdName)
         let deviceName = getDeviceName(bsdName: bsdName) ?? url.lastPathComponent
         
-        // Adjust speed based on drive type
-        var writeSpeed = connectionType.estimatedWriteSpeedMBps
-        var readSpeed = connectionType.estimatedReadSpeedMBps
+        // Get base speeds from connection type
+        let writeSpeed = connectionType.estimatedWriteSpeedMBps
+        let readSpeed = connectionType.estimatedReadSpeedMBps
         
-        // HDDs are slower, especially for random access
-        if !isSSD && connectionType != .network {
-            writeSpeed = min(writeSpeed, 150)  // HDDs typically max out at 150 MB/s
-            readSpeed = min(readSpeed, 150)
-        }
+        // Note: We're NOT limiting speeds for HDDs anymore since modern external
+        // SSDs can be very fast over TB3/4/5, and our SSD detection might not
+        // catch all SSDs (especially external ones)
         
         let protocolDetails = getProtocolDetails(bsdName: bsdName)
         
@@ -217,7 +215,11 @@ class DriveAnalyzer {
         // Try using statfs to get mount info
         var statInfo = statfs()
         if statfs("/", &statInfo) == 0 {
-            let device = String(cString: &statInfo.f_mntfromname.0)
+            let device = withUnsafePointer(to: &statInfo.f_mntfromname) { ptr in
+                ptr.withMemoryRebound(to: CChar.self, capacity: Int(MAXPATHLEN)) { cString in
+                    String(cString: cString)
+                }
+            }
             print("DriveAnalyzer: System volume device from statfs: \(device)")
             
             // Extract BSD name from device path (e.g., /dev/disk1s1 -> disk1s1)
@@ -303,6 +305,17 @@ class DriveAnalyzer {
                     if let physical = dict["Physical Interconnect"] as? String {
                         print("DriveAnalyzer: Physical Interconnect: \(physical)")
                         
+                        // Check if it's external PCI-Express (likely Thunderbolt)
+                        if let location = dict["Physical Interconnect Location"] as? String {
+                            print("DriveAnalyzer: Physical Location: \(location)")
+                            if location == "External" && physical.contains("PCI") {
+                                print("DriveAnalyzer: External PCI-Express detected - this IS Thunderbolt")
+                                // External PCI-Express is ALWAYS Thunderbolt (TB3/4/5)
+                                // Try to determine version by looking for speed info
+                                return detectThunderboltVersion(for: parent)
+                            }
+                        }
+                        
                         if physical.contains("Thunderbolt") || physical.contains("Thunder") {
                             print("DriveAnalyzer: Detected Thunderbolt via Protocol Characteristics")
                             return .thunderbolt3
@@ -310,6 +323,12 @@ class DriveAnalyzer {
                             print("DriveAnalyzer: Detected USB via Protocol Characteristics")
                             return detectUSBSpeed(for: parent)
                         } else if physical.contains("PCI") {
+                            // PCI without "External" location might be internal
+                            if let location = dict["Physical Interconnect Location"] as? String,
+                               location == "Internal" {
+                                print("DriveAnalyzer: Internal PCI-Express - Internal drive")
+                                return .internalDrive
+                            }
                             foundPCI = true
                             // Don't return immediately - might be TB over PCI
                         } else if physical.contains("SATA") {
@@ -371,13 +390,80 @@ class DriveAnalyzer {
         if foundThunderbolt {
             print("DriveAnalyzer: Final decision: Thunderbolt")
             return .thunderbolt3
-        } else if foundPCI && !foundThunderbolt {
-            print("DriveAnalyzer: Final decision: Internal (PCI without Thunderbolt)")
-            return .internalDrive
+        } else if foundPCI {
+            // PCI alone doesn't mean internal - could still be external
+            print("DriveAnalyzer: Final decision: Unknown (PCI but unclear if external)")
+            return .unknown
         }
         
         print("DriveAnalyzer: Final decision: Unknown")
         return connectionType
+    }
+    
+    private static func detectThunderboltVersion(for service: io_object_t) -> ConnectionType {
+        // Try to determine TB version by looking at link speed or other properties
+        var parent: io_object_t = 0
+        var currentService = service
+        IOObjectRetain(currentService)
+        
+        // Look up the tree for speed indicators
+        while IORegistryEntryGetParentEntry(currentService, kIOServicePlane, &parent) == KERN_SUCCESS {
+            defer {
+                IOObjectRelease(currentService)
+                currentService = parent
+            }
+            
+            // Check for link speed properties that indicate TB version
+            if let linkSpeed = IORegistryEntryCreateCFProperty(parent, "Link Speed" as CFString, kCFAllocatorDefault, 0) {
+                print("DriveAnalyzer: Found Link Speed in TB detection: \(linkSpeed)")
+                if let speed = linkSpeed.takeRetainedValue() as? Int {
+                    if speed >= 80000 { // 80 Gbps = TB5
+                        print("DriveAnalyzer: Detected Thunderbolt 5 (80+ Gbps)")
+                        IOObjectRelease(currentService)
+                        return .thunderbolt5
+                    } else if speed >= 40000 { // 40 Gbps = TB4
+                        print("DriveAnalyzer: Detected Thunderbolt 4 (40 Gbps)")
+                        IOObjectRelease(currentService)
+                        return .thunderbolt4
+                    }
+                }
+            }
+            
+            // Check for Negotiated Link Speed
+            if let negotiatedSpeed = IORegistryEntryCreateCFProperty(parent, "Negotiated Link Speed" as CFString, kCFAllocatorDefault, 0) {
+                print("DriveAnalyzer: Found Negotiated Link Speed: \(negotiatedSpeed)")
+                if let speed = negotiatedSpeed.takeRetainedValue() as? Int {
+                    // Speed might be in Mbps
+                    if speed >= 80000 { // 80 Gbps
+                        IOObjectRelease(currentService)
+                        return .thunderbolt5
+                    } else if speed >= 40000 { // 40 Gbps
+                        IOObjectRelease(currentService)
+                        return .thunderbolt4
+                    }
+                }
+            }
+            
+            // Check for TB-specific properties
+            if let tbGen = IORegistryEntryCreateCFProperty(parent, "Thunderbolt Generation" as CFString, kCFAllocatorDefault, 0) {
+                if let gen = tbGen.takeRetainedValue() as? Int {
+                    print("DriveAnalyzer: Found Thunderbolt Generation: \(gen)")
+                    IOObjectRelease(currentService)
+                    switch gen {
+                    case 5: return .thunderbolt5
+                    case 4: return .thunderbolt4
+                    default: return .thunderbolt3
+                    }
+                }
+            }
+        }
+        
+        IOObjectRelease(currentService)
+        
+        // Default to TB3 if we can't determine version
+        // (External PCI-Express is definitely Thunderbolt of some kind)
+        print("DriveAnalyzer: Defaulting to Thunderbolt 3")
+        return .thunderbolt3
     }
     
     private static func detectUSBSpeed(for service: io_object_t) -> ConnectionType {
