@@ -60,7 +60,7 @@ class BackupManager {
     var destinationProgress: [String: Int] = [:] // destinationName -> completed files
     
     // Destination drive analysis
-    var destinationDriveInfo: [Int: DriveAnalyzer.DriveInfo] = [:] // index -> DriveInfo
+    var destinationDriveInfo: [UUID: DriveAnalyzer.DriveInfo] = [:] // Use UUID instead of index to avoid mismatch
     
     // Phase-based backup tracking
     var currentPhase: BackupPhase = .idle
@@ -115,6 +115,21 @@ class BackupManager {
         if destinationItems.isEmpty {
             destinationItems = [DestinationItem()]
         }
+        
+        // Analyze drives for loaded destinations
+        for (index, item) in destinationItems.enumerated() {
+            if let url = item.url {
+                let itemID = item.id
+                Task {
+                    if let driveInfo = DriveAnalyzer.analyzeDrive(at: url) {
+                        await MainActor.run {
+                            destinationDriveInfo[itemID] = driveInfo
+                            print("Initial drive analysis: \(driveInfo.deviceName) - \(driveInfo.connectionType.displayName)")
+                        }
+                    }
+                }
+            }
+        }
     }
     
     // MARK: - Public Methods
@@ -127,6 +142,8 @@ class BackupManager {
                 UserDefaults.standard.removeObject(forKey: destinationKeys[i])
             }
         }
+        // Clear all drive info
+        destinationDriveInfo.removeAll()
         // Reset to show at least one destination slot
         destinationURLs = [nil]
         destinationItems = [DestinationItem()]
@@ -186,10 +203,11 @@ class BackupManager {
         }
         
         // Analyze drive for performance estimates
+        let itemID = destinationItems[index].id
         Task {
             if let driveInfo = DriveAnalyzer.analyzeDrive(at: url) {
                 await MainActor.run {
-                    destinationDriveInfo[index] = driveInfo
+                    destinationDriveInfo[itemID] = driveInfo
                     print("Drive analyzed: \(driveInfo.deviceName) - \(driveInfo.connectionType.displayName) - Write: \(driveInfo.estimatedWriteSpeed) MB/s")
                 }
             }
@@ -198,6 +216,12 @@ class BackupManager {
     
     func clearDestination(at index: Int) {
         guard index < destinationURLs.count else { return }
+        guard index < destinationItems.count else { return }
+        
+        // Clear drive info for this item
+        let itemID = destinationItems[index].id
+        destinationDriveInfo.removeValue(forKey: itemID)
+        
         destinationURLs[index] = nil
         if index < destinationKeys.count {
             UserDefaults.standard.removeObject(forKey: destinationKeys[index])
@@ -211,11 +235,17 @@ class BackupManager {
         // Don't remove if it's the last destination
         guard destinationItems.count > 1 else { 
             // Just clear the last one instead
+            let itemID = destinationItems[0].id
             destinationItems[0].url = nil
             destinationURLs = [nil]
+            destinationDriveInfo.removeValue(forKey: itemID)
             UserDefaults.standard.removeObject(forKey: destinationKeys[0])
             return
         }
+        
+        // Remove drive info for this item
+        let itemID = destinationItems[index].id
+        destinationDriveInfo.removeValue(forKey: itemID)
         
         // Remove from items array
         destinationItems.remove(at: index)
@@ -540,7 +570,9 @@ class BackupManager {
     }
     
     func getDestinationEstimate(at index: Int) -> String? {
-        guard let driveInfo = destinationDriveInfo[index] else { return nil }
+        guard index < destinationItems.count else { return nil }
+        let itemID = destinationItems[index].id
+        guard let driveInfo = destinationDriveInfo[itemID] else { return nil }
         
         // Calculate total size from source file types
         var totalBytes: Int64 = 0
