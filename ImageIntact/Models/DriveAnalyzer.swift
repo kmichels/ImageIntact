@@ -35,20 +35,25 @@ class DriveAnalyzer {
             }
         }
         
-        // Real-world speeds (not theoretical)
+        // Real-world speeds (conservative estimates for actual file copying)
+        // These are much lower than theoretical max due to:
+        // - File system overhead
+        // - Small file penalties  
+        // - OS caching and buffering
+        // - Multiple simultaneous destinations
         var estimatedWriteSpeedMBps: Double {
             switch self {
-            case .usb2: return 25
-            case .usb30: return 350
-            case .usb31Gen1: return 350
-            case .usb31Gen2: return 700
-            case .usb32Gen2x2: return 1200
-            case .thunderbolt3: return 2200
-            case .thunderbolt4: return 2500  
-            case .thunderbolt5: return 4000  // TB5 can do 80 Gbps = ~6000 MB/s real world
-            case .internalDrive: return 2800
-            case .network: return 100  // Gigabit ethernet
-            case .unknown: return 100
+            case .usb2: return 15      // ~15 MB/s real world
+            case .usb30: return 80     // ~80 MB/s (way less than 5 Gbps theoretical)
+            case .usb31Gen1: return 100  // ~100 MB/s
+            case .usb31Gen2: return 200  // ~200 MB/s
+            case .usb32Gen2x2: return 300  // ~300 MB/s
+            case .thunderbolt3: return 500  // ~500 MB/s (way less than 40 Gbps)
+            case .thunderbolt4: return 600  // ~600 MB/s
+            case .thunderbolt5: return 800  // ~800 MB/s (way less than 80 Gbps)
+            case .internalDrive: return 400  // ~400 MB/s (varies widely)
+            case .network: return 50  // ~50 MB/s (network is unpredictable)
+            case .unknown: return 50
             }
         }
         
@@ -66,7 +71,7 @@ class DriveAnalyzer {
         let protocolDetails: String
         let estimatedWriteSpeed: Double // MB/s
         let estimatedReadSpeed: Double // MB/s
-        let checksumSpeed: Double = 150 // SHA-256 speed on modern Macs
+        let checksumSpeed: Double = 100 // SHA-256 speed (conservative for mixed file sizes)
         
         func estimateBackupTime(totalBytes: Int64) -> TimeInterval {
             let totalMB = Double(totalBytes) / (1024 * 1024)

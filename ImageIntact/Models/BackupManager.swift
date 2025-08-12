@@ -662,7 +662,17 @@ class BackupManager {
         
         guard totalBytes > 0 else { return nil }
         
-        let estimate = driveInfo.formattedEstimate(totalBytes: totalBytes)
+        // Adjust estimate based on number of simultaneous destinations
+        // Multiple destinations slow things down due to disk contention
+        let activeDestinations = destinationItems.compactMap { $0.url }.count
+        var adjustedTotalBytes = totalBytes
+        if activeDestinations > 1 {
+            // Add overhead for multiple simultaneous writes (roughly 30% penalty per extra destination)
+            let overhead = 1.0 + (Double(activeDestinations - 1) * 0.3)
+            adjustedTotalBytes = Int64(Double(totalBytes) * overhead)
+        }
+        
+        let estimate = driveInfo.formattedEstimate(totalBytes: adjustedTotalBytes)
         let totalGB = Double(totalBytes) / (1024 * 1024 * 1024)
         let sizeStr = String(format: "%.1f GB", totalGB)
         
