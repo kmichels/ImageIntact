@@ -384,8 +384,8 @@ extension BackupManager {
             return "empty-file-0-bytes"
         }
         
-        // For very large files, use streaming to avoid memory issues
-        if size > 100_000_000 { // 100MB
+        // For large files, use streaming to avoid memory issues
+        if size > 10_000_000 { // 10MB - stream to prevent memory pressure
             return try calculateStreamingChecksum(for: fileURL, size: size, shouldCancel: shouldCancel)
         }
         
