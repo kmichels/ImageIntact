@@ -406,11 +406,41 @@ class DriveAnalyzer {
         var currentService = service
         IOObjectRetain(currentService)
         
+        var foundJHL9580 = false // Intel TB5 controller
+        
         // Look up the tree for speed indicators
         while IORegistryEntryGetParentEntry(currentService, kIOServicePlane, &parent) == KERN_SUCCESS {
             defer {
                 IOObjectRelease(currentService)
                 currentService = parent
+            }
+            
+            // Check class name for TB5 controllers
+            var className = [CChar](repeating: 0, count: 128)
+            IOObjectGetClass(parent, &className)
+            let classString = String(cString: className)
+            
+            // Check for known TB5 controllers
+            if classString.contains("JHL9580") || classString.contains("JHL9480") {
+                print("DriveAnalyzer: Found TB5 controller (JHL9580/9480)")
+                foundJHL9580 = true
+                // Continue searching for more specific properties
+            }
+            
+            // Check for IOPCIExpressLinkCapabilities which might indicate speed
+            if let linkCap = IORegistryEntryCreateCFProperty(parent, "IOPCIExpressLinkCapabilities" as CFString, kCFAllocatorDefault, 0) {
+                // This is a bitmask that includes link speed info
+                if let cap = linkCap.takeRetainedValue() as? Int {
+                    print("DriveAnalyzer: Found PCIe Link Capabilities: \(cap)")
+                    // PCIe Gen 5 (used by TB5) has specific capability bits
+                    // Bit 0-3: Max Link Speed (0x5 = Gen5)
+                    let maxSpeed = cap & 0xF
+                    if maxSpeed >= 5 {
+                        print("DriveAnalyzer: PCIe Gen 5+ detected - likely TB5")
+                        IOObjectRelease(currentService)
+                        return .thunderbolt5
+                    }
+                }
             }
             
             // Check for link speed properties that indicate TB version
@@ -459,6 +489,12 @@ class DriveAnalyzer {
         }
         
         IOObjectRelease(currentService)
+        
+        // If we found a TB5 controller, return TB5
+        if foundJHL9580 {
+            print("DriveAnalyzer: Detected TB5 based on JHL9580 controller")
+            return .thunderbolt5
+        }
         
         // Default to TB3 if we can't determine version
         // (External PCI-Express is definitely Thunderbolt of some kind)
