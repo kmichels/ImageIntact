@@ -14,6 +14,7 @@ class DriveAnalyzer {
         case usb32Gen2x2
         case thunderbolt3
         case thunderbolt4
+        case thunderbolt5
         case internalDrive
         case network
         case unknown
@@ -27,6 +28,7 @@ class DriveAnalyzer {
             case .usb32Gen2x2: return "USB 3.2 Gen 2x2"
             case .thunderbolt3: return "Thunderbolt 3"
             case .thunderbolt4: return "Thunderbolt 4"
+            case .thunderbolt5: return "Thunderbolt 5"
             case .internalDrive: return "Internal"
             case .network: return "Network"
             case .unknown: return "Unknown"
@@ -42,7 +44,8 @@ class DriveAnalyzer {
             case .usb31Gen2: return 700
             case .usb32Gen2x2: return 1200
             case .thunderbolt3: return 2200
-            case .thunderbolt4: return 2500
+            case .thunderbolt4: return 2500  
+            case .thunderbolt5: return 4000  // TB5 can do 80 Gbps = ~6000 MB/s real world
             case .internalDrive: return 2800
             case .network: return 100  // Gigabit ethernet
             case .unknown: return 100
@@ -167,20 +170,70 @@ class DriveAnalyzer {
     
     private static func getBSDName(for url: URL) -> String? {
         // Use DiskArbitration to get BSD name from mount point
-        guard let session = DASessionCreate(kCFAllocatorDefault) else { return nil }
+        guard let session = DASessionCreate(kCFAllocatorDefault) else { 
+            print("DriveAnalyzer: Failed to create DA session")
+            return nil 
+        }
         
         // Get the device from the URL
-        let path = url.path as CFString
         guard let disk = DADiskCreateFromVolumePath(kCFAllocatorDefault, session, url as CFURL) else {
+            print("DriveAnalyzer: Failed to create disk from path: \(url.path)")
+            
+            // Fallback: Try to get BSD name for system volume
+            if url.path.hasPrefix("/System") || url.path.hasPrefix("/Users") || url.path == "/" {
+                print("DriveAnalyzer: Detected system path, using fallback")
+                // For system volume, typically disk1s1 or similar
+                // Try to find it via mount command
+                return getSystemVolumeBSDName()
+            }
             return nil
         }
         
-        guard let diskInfo = DADiskCopyDescription(disk) as? [String: Any],
-              let bsdName = diskInfo["DAMediaBSDName"] as? String else {
+        guard let diskInfo = DADiskCopyDescription(disk) as? [String: Any] else {
+            print("DriveAnalyzer: Failed to get disk description")
             return nil
         }
         
-        return bsdName
+        print("DriveAnalyzer: Disk info: \(diskInfo)")
+        
+        if let bsdName = diskInfo["DAMediaBSDName"] as? String {
+            print("DriveAnalyzer: Found BSD name: \(bsdName)")
+            return bsdName
+        } else if let volumePath = diskInfo["DAVolumePath"] as? URL {
+            print("DriveAnalyzer: Volume path: \(volumePath)")
+            // Try another approach for system volumes
+            if volumePath.path == "/" || url.path.hasPrefix(volumePath.path) {
+                return getSystemVolumeBSDName()
+            }
+        }
+        
+        return nil
+    }
+    
+    private static func getSystemVolumeBSDName() -> String? {
+        // For macOS system volume, try to find the BSD name
+        // This is a simplified approach - typically the system is on disk1s1 or similar
+        
+        // Try using statfs to get mount info
+        var statInfo = statfs()
+        if statfs("/", &statInfo) == 0 {
+            let device = String(cString: &statInfo.f_mntfromname.0)
+            print("DriveAnalyzer: System volume device from statfs: \(device)")
+            
+            // Extract BSD name from device path (e.g., /dev/disk1s1 -> disk1s1)
+            if device.hasPrefix("/dev/") {
+                let bsdName = String(device.dropFirst(5))
+                // Remove partition suffix for whole disk
+                if let baseRange = bsdName.range(of: "s[0-9]+$", options: .regularExpression) {
+                    return String(bsdName[..<baseRange.lowerBound])
+                }
+                return bsdName
+            }
+        }
+        
+        // Fallback: assume internal drive
+        print("DriveAnalyzer: Using fallback BSD name for system volume")
+        return "disk0"  // Common for internal SSDs
     }
     
     private static func detectConnectionType(bsdName: String) -> ConnectionType {
@@ -215,6 +268,8 @@ class DriveAnalyzer {
     private static func findConnectionType(for service: io_object_t) -> ConnectionType {
         var parent: io_object_t = 0
         var connectionType = ConnectionType.unknown
+        var foundPCI = false
+        var foundThunderbolt = false
         
         // Traverse up the IO registry tree
         var currentService = service
@@ -226,37 +281,102 @@ class DriveAnalyzer {
                 currentService = parent
             }
             
-            // Check for Thunderbolt
+            // Check class name first
+            var className = [CChar](repeating: 0, count: 128)
+            IOObjectGetClass(parent, &className)
+            let classString = String(cString: className)
+            
+            // Debug output
+            print("DriveAnalyzer: Checking class: \(classString)")
+            
+            // Check for Thunderbolt in class name
+            if classString.contains("Thunderbolt") || classString.contains("Thunder") {
+                foundThunderbolt = true
+                print("DriveAnalyzer: Found Thunderbolt in class name")
+            }
+            
+            // Check Protocol Characteristics
             if let protocolChar = IORegistryEntryCreateCFProperty(parent, "Protocol Characteristics" as CFString, kCFAllocatorDefault, 0) {
                 if let dict = protocolChar.takeRetainedValue() as? [String: Any] {
+                    print("DriveAnalyzer: Protocol Characteristics: \(dict)")
+                    
                     if let physical = dict["Physical Interconnect"] as? String {
-                        if physical.contains("Thunderbolt") {
+                        print("DriveAnalyzer: Physical Interconnect: \(physical)")
+                        
+                        if physical.contains("Thunderbolt") || physical.contains("Thunder") {
+                            print("DriveAnalyzer: Detected Thunderbolt via Protocol Characteristics")
                             return .thunderbolt3
                         } else if physical.contains("USB") {
-                            // Check USB speed
+                            print("DriveAnalyzer: Detected USB via Protocol Characteristics")
                             return detectUSBSpeed(for: parent)
-                        } else if physical.contains("PCI") || physical.contains("SATA") {
+                        } else if physical.contains("PCI") {
+                            foundPCI = true
+                            // Don't return immediately - might be TB over PCI
+                        } else if physical.contains("SATA") {
+                            print("DriveAnalyzer: Detected SATA - Internal drive")
                             return .internalDrive
                         }
                     }
                 }
             }
             
-            // Check class name for additional hints
-            var className = [CChar](repeating: 0, count: 128)
-            IOObjectGetClass(parent, &className)
-            let classString = String(cString: className)
+            // Check for device type properties
+            if let deviceType = IORegistryEntryCreateCFProperty(parent, "Device Type" as CFString, kCFAllocatorDefault, 0) {
+                if let typeString = deviceType.takeRetainedValue() as? String {
+                    print("DriveAnalyzer: Device Type: \(typeString)")
+                }
+            }
             
-            if classString.contains("Thunderbolt") {
-                return .thunderbolt3
-            } else if classString.contains("USB") {
+            // Check specific Thunderbolt properties
+            if let tbSpeed = IORegistryEntryCreateCFProperty(parent, "Thunderbolt Speed" as CFString, kCFAllocatorDefault, 0) {
+                print("DriveAnalyzer: Found Thunderbolt Speed property: \(tbSpeed)")
+                foundThunderbolt = true
+            }
+            
+            // Check link speed to determine TB version
+            if let linkSpeed = IORegistryEntryCreateCFProperty(parent, "Link Speed" as CFString, kCFAllocatorDefault, 0) {
+                print("DriveAnalyzer: Found Link Speed: \(linkSpeed)")
+                if let speed = linkSpeed.takeRetainedValue() as? Int {
+                    if speed >= 80000 { // 80 Gbps = TB5
+                        print("DriveAnalyzer: Detected Thunderbolt 5 (80+ Gbps)")
+                        return .thunderbolt5
+                    } else if speed >= 40000 { // 40 Gbps = TB4
+                        print("DriveAnalyzer: Detected Thunderbolt 4 (40 Gbps)")
+                        return .thunderbolt4
+                    } else if speed >= 20000 { // 20 Gbps = TB3
+                        foundThunderbolt = true
+                    }
+                }
+            }
+            
+            // Check for USB in class name
+            if classString.contains("USB") {
+                print("DriveAnalyzer: Detected USB via class name")
                 return detectUSBSpeed(for: parent)
-            } else if classString.contains("Internal") || classString.contains("SATA") || classString.contains("NVMe") {
-                return .internalDrive
+            }
+            
+            // Check for NVMe (usually internal but could be TB)
+            if classString.contains("NVMe") {
+                if foundThunderbolt {
+                    print("DriveAnalyzer: NVMe over Thunderbolt")
+                    return .thunderbolt3
+                }
+                // Keep checking - might find TB higher up
             }
         }
         
         IOObjectRelease(currentService)
+        
+        // Final decision based on what we found
+        if foundThunderbolt {
+            print("DriveAnalyzer: Final decision: Thunderbolt")
+            return .thunderbolt3
+        } else if foundPCI && !foundThunderbolt {
+            print("DriveAnalyzer: Final decision: Internal (PCI without Thunderbolt)")
+            return .internalDrive
+        }
+        
+        print("DriveAnalyzer: Final decision: Unknown")
         return connectionType
     }
     
