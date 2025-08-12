@@ -637,6 +637,11 @@ class BackupManager {
             return "⚠️ Destination not accessible (drive may be disconnected)"
         }
         
+        // For network drives, don't show estimates - too many variables
+        if driveInfo.connectionType == .network {
+            return "Network Drive • Too many variables to estimate time"
+        }
+        
         // Calculate total size from source file types
         var totalBytes: Int64 = 0
         
@@ -661,7 +666,10 @@ class BackupManager {
         let totalGB = Double(totalBytes) / (1024 * 1024 * 1024)
         let sizeStr = String(format: "%.1f GB", totalGB)
         
-        return "\(driveInfo.connectionType.displayName) • \(driveInfo.isSSD ? "SSD" : "HDD") • \(sizeStr) • \(estimate)"
+        // Show drive type properly - Network vs SSD vs HDD
+        let driveType = driveInfo.connectionType == .network ? "Network" : (driveInfo.isSSD ? "SSD" : "HDD")
+        
+        return "\(driveInfo.connectionType.displayName) • \(driveType) • \(sizeStr) • \(estimate)"
     }
 }
 
