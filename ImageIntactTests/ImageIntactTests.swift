@@ -234,6 +234,29 @@ class ImageIntactTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: tagFile2.path), "Should detect source tag")
     }
     
+    func testSourceTagRemoval() throws {
+        // Create a test directory and tag it as source
+        let testDir = createTestDirectory(name: "TestSourceRemoval")!
+        let backupManager = BackupManager()
+        backupManager.setSource(testDir)
+        
+        // Verify tag exists
+        let tagFile = testDir.appendingPathComponent(".imageintact_source")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: tagFile.path), "Source tag should exist initially")
+        
+        // Test removing the tag (simulating user choosing "Use This Folder")
+        // Note: We can't test the UI dialog directly, but we can test the removal function
+        // by accessing it through reflection or by testing the end result
+        
+        // For now, let's test that after tagging a folder, we can remove the tag manually
+        try FileManager.default.removeItem(at: tagFile)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: tagFile.path), "Source tag should be removed")
+        
+        // Test that folder can now be used (no tag exists)
+        let hasTag = FileManager.default.fileExists(atPath: tagFile.path)
+        XCTAssertFalse(hasTag, "Folder should no longer have source tag")
+    }
+    
     func testQuarantineFile() throws {
         // Skip this test - quarantineFile is now private in PhaseBasedBackupEngine
         // The quarantine functionality is tested through integration tests

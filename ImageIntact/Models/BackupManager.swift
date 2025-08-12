@@ -131,14 +131,22 @@ class BackupManager {
         
         // Check if this is a source folder
         if checkForSourceTag(at: url) {
-            // Show alert
+            // Show choice dialog
             let alert = NSAlert()
             alert.messageText = "Source Folder Selected"
-            alert.informativeText = "This folder has been tagged as a source folder. Using it as a destination could lead to data loss. Please select a different folder."
+            alert.informativeText = "This folder was previously used as a source. Using it as a destination will remove the source tag. Do you want to continue?"
             alert.alertStyle = .warning
-            alert.addButton(withTitle: "OK")
-            alert.runModal()
-            return
+            alert.addButton(withTitle: "Use This Folder")
+            alert.addButton(withTitle: "Cancel")
+            
+            let response = alert.runModal()
+            if response == .alertSecondButtonReturn {
+                // User clicked "Cancel" - don't set destination
+                return
+            }
+            
+            // User clicked "Use This Folder" - remove source tag and proceed
+            removeSourceTag(at: url)
         }
         
         destinationURLs[index] = url
@@ -255,6 +263,16 @@ class BackupManager {
     private func checkForSourceTag(at url: URL) -> Bool {
         let tagFile = url.appendingPathComponent(".imageintact_source")
         return FileManager.default.fileExists(atPath: tagFile.path)
+    }
+    
+    private func removeSourceTag(at url: URL) {
+        let tagFile = url.appendingPathComponent(".imageintact_source")
+        do {
+            try FileManager.default.removeItem(at: tagFile)
+            print("Removed source tag from: \(url.path)")
+        } catch {
+            print("Failed to remove source tag: \(error)")
+        }
     }
     
     // MARK: - Simple Progress Updates
