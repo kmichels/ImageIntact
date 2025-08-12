@@ -116,15 +116,46 @@ class BackupManager {
             destinationItems = [DestinationItem()]
         }
         
-        // Analyze drives for loaded destinations
+        // Analyze drives for loaded destinations and check accessibility
         for (index, item) in destinationItems.enumerated() {
             if let url = item.url {
                 let itemID = item.id
                 Task {
-                    if let driveInfo = DriveAnalyzer.analyzeDrive(at: url) {
+                    // First check if the destination is still accessible
+                    let accessing = url.startAccessingSecurityScopedResource()
+                    defer {
+                        if accessing {
+                            url.stopAccessingSecurityScopedResource()
+                        }
+                    }
+                    
+                    // Check if the path exists and is accessible
+                    let isAccessible = FileManager.default.fileExists(atPath: url.path)
+                    
+                    if isAccessible {
+                        // Destination is accessible, analyze it
+                        if let driveInfo = DriveAnalyzer.analyzeDrive(at: url) {
+                            await MainActor.run {
+                                destinationDriveInfo[itemID] = driveInfo
+                                print("Initial drive analysis: \(driveInfo.deviceName) - \(driveInfo.connectionType.displayName)")
+                            }
+                        }
+                    } else {
+                        // Destination is not accessible (drive disconnected, etc.)
                         await MainActor.run {
-                            destinationDriveInfo[itemID] = driveInfo
-                            print("Initial drive analysis: \(driveInfo.deviceName) - \(driveInfo.connectionType.displayName)")
+                            // Store a special marker to indicate unavailable destination
+                            print("Destination not accessible: \(url.lastPathComponent)")
+                            // We'll create a special DriveInfo to indicate unavailable
+                            let unavailableInfo = DriveAnalyzer.DriveInfo(
+                                mountPath: url,
+                                connectionType: .unknown,
+                                isSSD: false,
+                                deviceName: url.lastPathComponent,
+                                protocolDetails: "Not Connected",
+                                estimatedWriteSpeed: 0,
+                                estimatedReadSpeed: 0
+                            )
+                            destinationDriveInfo[itemID] = unavailableInfo
                         }
                     }
                 }
@@ -205,10 +236,37 @@ class BackupManager {
         // Analyze drive for performance estimates
         let itemID = destinationItems[index].id
         Task {
-            if let driveInfo = DriveAnalyzer.analyzeDrive(at: url) {
+            // Check if the destination is accessible
+            let accessing = url.startAccessingSecurityScopedResource()
+            defer {
+                if accessing {
+                    url.stopAccessingSecurityScopedResource()
+                }
+            }
+            
+            let isAccessible = FileManager.default.fileExists(atPath: url.path)
+            
+            if isAccessible {
+                if let driveInfo = DriveAnalyzer.analyzeDrive(at: url) {
+                    await MainActor.run {
+                        destinationDriveInfo[itemID] = driveInfo
+                        print("Drive analyzed: \(driveInfo.deviceName) - \(driveInfo.connectionType.displayName) - Write: \(driveInfo.estimatedWriteSpeed) MB/s")
+                    }
+                }
+            } else {
+                // Destination selected but not accessible
                 await MainActor.run {
-                    destinationDriveInfo[itemID] = driveInfo
-                    print("Drive analyzed: \(driveInfo.deviceName) - \(driveInfo.connectionType.displayName) - Write: \(driveInfo.estimatedWriteSpeed) MB/s")
+                    let unavailableInfo = DriveAnalyzer.DriveInfo(
+                        mountPath: url,
+                        connectionType: .unknown,
+                        isSSD: false,
+                        deviceName: url.lastPathComponent,
+                        protocolDetails: "Not Connected",
+                        estimatedWriteSpeed: 0,
+                        estimatedReadSpeed: 0
+                    )
+                    destinationDriveInfo[itemID] = unavailableInfo
+                    print("Destination not accessible: \(url.lastPathComponent)")
                 }
             }
         }
@@ -573,6 +631,11 @@ class BackupManager {
         guard index < destinationItems.count else { return nil }
         let itemID = destinationItems[index].id
         guard let driveInfo = destinationDriveInfo[itemID] else { return nil }
+        
+        // Check if destination is unavailable
+        if driveInfo.estimatedWriteSpeed == 0 && driveInfo.protocolDetails == "Not Connected" {
+            return "⚠️ Destination not accessible (drive may be disconnected)"
+        }
         
         // Calculate total size from source file types
         var totalBytes: Int64 = 0
