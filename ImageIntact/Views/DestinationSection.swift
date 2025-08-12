@@ -13,7 +13,7 @@ struct DestinationSection: View {
                 
                 Spacer()
                 
-                if backupManager.destinationURLs.count < 4 {
+                if backupManager.destinationItems.count < 4 {
                     Button(action: {
                         backupManager.addDestination()
                     }) {
@@ -27,11 +27,13 @@ struct DestinationSection: View {
             }
             
             VStack(spacing: 8) {
-                ForEach(0..<backupManager.destinationURLs.count, id: \.self) { index in
+                ForEach(Array(backupManager.destinationItems.enumerated()), id: \.element.id) { index, item in
                     FolderRow(
                         title: "Destination \(index + 1)",
                         selectedURL: Binding(
-                            get: { backupManager.destinationURLs[index] },
+                            get: { 
+                                item.url
+                            },
                             set: { newValue in
                                 if let url = newValue {
                                     backupManager.setDestination(url, at: index)
@@ -39,11 +41,12 @@ struct DestinationSection: View {
                             }
                         ),
                         onClear: {
-                            backupManager.clearDestination(at: index)
+                            backupManager.removeDestination(at: index)
                         },
                         onSelect: { url in
                             // Validation handled in backupManager.setDestination()
-                        }
+                        },
+                        showRemoveButton: backupManager.destinationItems.count > 1
                     )
                     .focused($focusedField, equals: .destination(index))
                     .onTapGesture {

@@ -396,6 +396,7 @@ struct FolderRow: View {
     @Binding var selectedURL: URL?
     let onClear: () -> Void
     var onSelect: ((URL) -> Void)? = nil
+    var showRemoveButton: Bool = true
     
     var body: some View {
         HStack(spacing: 12) {
@@ -416,13 +417,19 @@ struct FolderRow: View {
             }
             .buttonStyle(.plain)
             
-            if selectedURL != nil {
-                Button("Clear") {
+            // Always reserve space for the button to maintain consistent width
+            if selectedURL != nil && showRemoveButton {
+                Button("Remove") {
                     onClear()
                 }
                 .buttonStyle(.plain)
                 .foregroundColor(.secondary)
                 .font(.footnote)
+                .frame(width: 50)
+            } else {
+                // Invisible spacer to maintain width
+                Color.clear
+                    .frame(width: 50)
             }
         }
     }

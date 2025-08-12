@@ -17,11 +17,18 @@ enum BackupPhase: Int, Comparable {
     }
 }
 
+// MARK: - Destination Item
+struct DestinationItem: Identifiable {
+    let id = UUID()
+    var url: URL?
+}
+
 @Observable
 class BackupManager {
     // MARK: - Published Properties
     var sourceURL: URL? = nil
     var destinationURLs: [URL?] = BackupManager.loadDestinationBookmarks()
+    var destinationItems: [DestinationItem] = BackupManager.loadDestinationItems()
     var isProcessing = false
     var statusMessage = ""
     var totalFiles = 0
@@ -89,6 +96,16 @@ class BackupManager {
                 await scanSourceFolder(savedSourceURL)
             }
         }
+        
+        // Initialize destination items if needed
+        if destinationItems.isEmpty && !destinationURLs.isEmpty {
+            destinationItems = destinationURLs.map { DestinationItem(url: $0) }
+        }
+        
+        // Ensure at least one destination slot
+        if destinationItems.isEmpty {
+            destinationItems = [DestinationItem()]
+        }
     }
     
     // MARK: - Public Methods
@@ -103,10 +120,13 @@ class BackupManager {
         }
         // Reset to show at least one destination slot
         destinationURLs = [nil]
+        destinationItems = [DestinationItem()]
     }
     
     func addDestination() {
-        if destinationURLs.count < 4 {
+        if destinationItems.count < 4 {
+            let newItem = DestinationItem()
+            destinationItems.append(newItem)
             destinationURLs.append(nil)
         }
     }
@@ -127,6 +147,7 @@ class BackupManager {
     }
     
     func setDestination(_ url: URL, at index: Int) {
+        guard index < destinationItems.count else { return }
         guard index < destinationURLs.count else { return }
         
         // Check if this is a source folder
@@ -149,6 +170,7 @@ class BackupManager {
             removeSourceTag(at: url)
         }
         
+        destinationItems[index].url = url
         destinationURLs[index] = url
         if index < destinationKeys.count {
             saveBookmark(url: url, key: destinationKeys[index])
@@ -161,6 +183,48 @@ class BackupManager {
         if index < destinationKeys.count {
             UserDefaults.standard.removeObject(forKey: destinationKeys[index])
         }
+    }
+    
+    @MainActor
+    func removeDestination(at index: Int) {
+        guard index < destinationItems.count else { return }
+        
+        // Don't remove if it's the last destination
+        guard destinationItems.count > 1 else { 
+            // Just clear the last one instead
+            destinationItems[0].url = nil
+            destinationURLs = [nil]
+            UserDefaults.standard.removeObject(forKey: destinationKeys[0])
+            return
+        }
+        
+        // Remove from items array
+        destinationItems.remove(at: index)
+        
+        // Rebuild URLs array and update UserDefaults
+        var newURLs: [URL?] = []
+        for (i, item) in destinationItems.enumerated() {
+            newURLs.append(item.url)
+            
+            // Update UserDefaults - shift all bookmarks down
+            if i < destinationKeys.count {
+                if let url = item.url {
+                    saveBookmark(url: url, key: destinationKeys[i])
+                } else {
+                    UserDefaults.standard.removeObject(forKey: destinationKeys[i])
+                }
+            }
+        }
+        
+        // Clear any remaining keys
+        for i in destinationItems.count..<destinationKeys.count {
+            UserDefaults.standard.removeObject(forKey: destinationKeys[i])
+        }
+        
+        // Update the URLs array
+        destinationURLs = newURLs
+        
+        print("Removed destination at index \(index), new count: \(destinationItems.count)")
     }
     
     func canRunBackup() -> Bool {
@@ -239,6 +303,11 @@ class BackupManager {
         
         print("Total destinations loaded: \(urls.count)")
         return urls
+    }
+    
+    static func loadDestinationItems() -> [DestinationItem] {
+        let urls = loadDestinationBookmarks()
+        return urls.map { DestinationItem(url: $0) }
     }
     
     private func tagSourceFolder(at url: URL) {
