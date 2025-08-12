@@ -34,25 +34,36 @@ struct ContentView: View {
                 .padding(.horizontal)
             
             // Main content - ScrollView for everything except header and bottom buttons
-            ScrollView {
-                VStack(alignment: .leading, spacing: 24) {
-                    // Source Section
-                    SourceFolderSection(backupManager: backupManager, focusedField: $focusedField)
-                    
-                    Divider()
-                        .padding(.horizontal, 20)
-                    
-                    // Destinations Section
-                    DestinationSection(backupManager: backupManager, focusedField: $focusedField)
-                    
-                    // Progress Section
-                    MultiDestinationProgressSection(backupManager: backupManager)
-                    
-                    // Add some bottom padding so content doesn't hide behind buttons
-                    Color.clear.frame(height: 20)
+            ScrollViewReader { scrollProxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 24) {
+                        // Source Section
+                        SourceFolderSection(backupManager: backupManager, focusedField: $focusedField)
+                        
+                        Divider()
+                            .padding(.horizontal, 20)
+                        
+                        // Destinations Section
+                        DestinationSection(backupManager: backupManager, focusedField: $focusedField)
+                        
+                        // Progress Section
+                        MultiDestinationProgressSection(backupManager: backupManager)
+                            .id("progressSection")
+                        
+                        // Add some bottom padding so content doesn't hide behind buttons
+                        Color.clear.frame(height: 20)
+                    }
+                }
+                .frame(maxHeight: .infinity)
+                .onChange(of: backupManager.isProcessing) { _, isProcessing in
+                    if isProcessing {
+                        // Auto-scroll to progress section when backup starts
+                        withAnimation(.easeInOut(duration: 0.3)) {
+                            scrollProxy.scrollTo("progressSection", anchor: .top)
+                        }
+                    }
                 }
             }
-            .frame(maxHeight: .infinity)
             
             // Bottom action area - always visible
             Divider()
