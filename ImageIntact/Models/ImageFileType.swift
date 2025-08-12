@@ -264,6 +264,55 @@ enum ImageFileType: String, CaseIterable {
         return rawValue
     }
     
+    // Average file size in bytes (rough estimates for pre-backup calculation)
+    var averageFileSize: Int {
+        switch self {
+        // RAW files are typically large
+        case .dng, .cr2, .cr3, .nef, .arw, .orf, .rw2, .raf, .pef, .srw, .erf, .crw, .raw:
+            return 85_000_000  // ~85 MB average for modern RAW files
+        case .nrw, .rwl, .iiq, .mos, .dcr, .mef, .mrw, .kdc, .srf, .sr2, .ptx, .fff, .x3f:
+            return 60_000_000  // ~60 MB for these RAW formats
+            
+        // Standard images
+        case .jpeg:
+            return 5_000_000   // ~5 MB for high-quality JPEG
+        case .heic, .heif:
+            return 3_000_000   // ~3 MB (more efficient than JPEG)
+        case .tiff:
+            return 50_000_000  // ~50 MB (uncompressed)
+        case .png:
+            return 10_000_000  // ~10 MB
+        case .webp:
+            return 2_000_000   // ~2 MB
+        case .bmp:
+            return 20_000_000  // ~20 MB (uncompressed)
+        case .gif:
+            return 1_000_000   // ~1 MB
+            
+        // Video files
+        case .mov, .mp4:
+            return 500_000_000 // ~500 MB for 4K video clips
+        case .avi, .mpg, .mpeg:
+            return 300_000_000 // ~300 MB
+        case .mts, .m2ts:
+            return 400_000_000 // ~400 MB (AVCHD)
+        case .m4v, .wmv, .flv, .webm, .mkv:
+            return 200_000_000 // ~200 MB
+            
+        // Sidecar files are small
+        case .xmp, .aae, .dop, .cos, .pp3, .arp:
+            return 50_000     // ~50 KB
+        case .thm:
+            return 100_000    // ~100 KB (thumbnail)
+            
+        // Catalog files can be large
+        case .lrcat, .cocatalog:
+            return 100_000_000 // ~100 MB
+        case .lrdata, .cocatalogdb:
+            return 500_000_000 // ~500 MB (can be huge)
+        }
+    }
+    
     static func from(fileExtension ext: String) -> ImageFileType? {
         let lowercased = ext.lowercased()
         for type in ImageFileType.allCases {

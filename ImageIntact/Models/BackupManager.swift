@@ -59,6 +59,9 @@ class BackupManager {
     // Per-destination progress (simple version)
     var destinationProgress: [String: Int] = [:] // destinationName -> completed files
     
+    // Destination drive analysis
+    var destinationDriveInfo: [Int: DriveAnalyzer.DriveInfo] = [:] // index -> DriveInfo
+    
     // Phase-based backup tracking
     var currentPhase: BackupPhase = .idle
     var phaseProgress: Double = 0.0  // Progress within current phase (0-1)
@@ -180,6 +183,16 @@ class BackupManager {
         destinationURLs[index] = url
         if index < destinationKeys.count {
             saveBookmark(url: url, key: destinationKeys[index])
+        }
+        
+        // Analyze drive for performance estimates
+        Task {
+            if let driveInfo = DriveAnalyzer.analyzeDrive(at: url) {
+                await MainActor.run {
+                    destinationDriveInfo[index] = driveInfo
+                    print("Drive analyzed: \(driveInfo.deviceName) - \(driveInfo.connectionType.displayName) - Write: \(driveInfo.estimatedWriteSpeed) MB/s")
+                }
+            }
         }
     }
     
@@ -376,9 +389,9 @@ class BackupManager {
         guard Date().timeIntervalSince(lastETAUpdate) >= 1.0 else { return }
         lastETAUpdate = Date()
         
-        // Don't calculate ETA until we have at least 5 seconds of data
+        // Don't calculate ETA until we have at least 2 seconds of data (reduced from 5)
         let elapsed = Date().timeIntervalSince(copyStartTime)
-        guard elapsed >= 5.0 else {
+        guard elapsed >= 2.0 else {
             estimatedSecondsRemaining = nil
             return
         }
@@ -408,6 +421,10 @@ class BackupManager {
         
         // Calculate remaining bytes and ETA
         let remainingBytes = totalBytesToCopy - totalBytesCopied
+        
+        // Debug logging
+        print("ETA Debug: totalBytesToCopy=\(totalBytesToCopy), totalBytesCopied=\(totalBytesCopied), remainingBytes=\(remainingBytes), averageSpeed=\(averageSpeed)")
+        
         guard remainingBytes > 0 && averageSpeed > 0 else {
             estimatedSecondsRemaining = nil
             return
@@ -415,11 +432,12 @@ class BackupManager {
         
         let remainingMB = Double(remainingBytes) / (1024 * 1024)
         estimatedSecondsRemaining = remainingMB / averageSpeed
+        print("ETA Debug: estimatedSecondsRemaining=\(estimatedSecondsRemaining ?? -1)")
     }
     
     func formattedETA() -> String {
         guard let seconds = estimatedSecondsRemaining else {
-            if Date().timeIntervalSince(copyStartTime) < 5.0 {
+            if Date().timeIntervalSince(copyStartTime) < 2.0 {
                 return "Calculating..."
             }
             return ""
@@ -519,6 +537,36 @@ class BackupManager {
             return isScanning ? scanProgress : ""
         }
         return ImageFileScanner.formatScanResults(sourceFileTypes, groupRaw: groupRaw)
+    }
+    
+    func getDestinationEstimate(at index: Int) -> String? {
+        guard let driveInfo = destinationDriveInfo[index] else { return nil }
+        
+        // Calculate total size from source file types
+        var totalBytes: Int64 = 0
+        
+        // If we have scanned source files, use that
+        if !sourceFileTypes.isEmpty {
+            // Sum up all file sizes from the scan
+            for (fileType, count) in sourceFileTypes {
+                // Estimate average file size based on type
+                let avgSize = fileType.averageFileSize
+                totalBytes += Int64(avgSize * count)
+            }
+        } else if sourceURL != nil {
+            // If no scan yet, return a placeholder
+            return "Calculating size..."
+        } else {
+            return nil
+        }
+        
+        guard totalBytes > 0 else { return nil }
+        
+        let estimate = driveInfo.formattedEstimate(totalBytes: totalBytes)
+        let totalGB = Double(totalBytes) / (1024 * 1024 * 1024)
+        let sizeStr = String(format: "%.1f GB", totalGB)
+        
+        return "\(driveInfo.connectionType.displayName) • \(driveInfo.isSSD ? "SSD" : "HDD") • \(sizeStr) • \(estimate)"
     }
 }
 

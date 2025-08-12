@@ -205,6 +205,7 @@ extension BackupManager {
         // Calculate and set total bytes for ETA
         let manifestTotalSize = manifest.reduce(0) { $0 + $1.size }
         totalBytesToCopy = manifestTotalSize * Int64(destinations.count)
+        print("ETA Setup: manifestTotalSize=\(manifestTotalSize), destinations=\(destinations.count), totalBytesToCopy=\(totalBytesToCopy)")
         
         // Track copied files for flush phase
         var copiedFiles: [(destination: URL, files: [URL])] = []

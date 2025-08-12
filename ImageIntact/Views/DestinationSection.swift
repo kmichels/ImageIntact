@@ -28,7 +28,8 @@ struct DestinationSection: View {
             
             VStack(spacing: 8) {
                 ForEach(Array(backupManager.destinationItems.enumerated()), id: \.element.id) { index, item in
-                    FolderRow(
+                    VStack(alignment: .leading, spacing: 4) {
+                        FolderRow(
                         title: "Destination \(index + 1)",
                         selectedURL: Binding(
                             get: { 
@@ -47,10 +48,19 @@ struct DestinationSection: View {
                             // Validation handled in backupManager.setDestination()
                         },
                         showRemoveButton: backupManager.destinationItems.count > 1
-                    )
-                    .focused($focusedField, equals: .destination(index))
-                    .onTapGesture {
-                        focusedField = .destination(index)
+                        )
+                        .focused($focusedField, equals: .destination(index))
+                        .onTapGesture {
+                            focusedField = .destination(index)
+                        }
+                        
+                        // Show drive analysis and time estimate
+                        if let estimate = backupManager.getDestinationEstimate(at: index) {
+                            Text(estimate)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .padding(.leading, 12)
+                        }
                     }
                 }
             }
