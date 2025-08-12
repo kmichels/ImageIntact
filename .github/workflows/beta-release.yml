@@ -1,0 +1,197 @@
+name: Beta Release
+
+on:
+  push:
+    branches:
+      - 'beta/*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Beta version (e.g., 1.1.1-beta.1)'
+        required: true
+        default: '1.1.1-beta.1'
+
+env:
+  BUILD_DIR: build
+  APP_NAME: ImageIntact
+  SCHEME: ImageIntact
+
+jobs:
+  build-and-release:
+    runs-on: macos-14
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Setup Xcode
+      uses: maxim-lobanov/setup-xcode@v1
+      with:
+        xcode-version: latest-stable
+    
+    - name: Import Developer ID certificates
+      env:
+        DEVELOPER_ID_APP_P12: ${{ secrets.DEVELOPER_ID_APP_P12 }}
+        DEVELOPER_ID_APP_PASSWORD: ${{ secrets.DEVELOPER_ID_APP_PASSWORD }}
+        DEVELOPER_ID_INSTALLER_P12: ${{ secrets.DEVELOPER_ID_INSTALLER_P12 }}
+        DEVELOPER_ID_INSTALLER_PASSWORD: ${{ secrets.DEVELOPER_ID_INSTALLER_PASSWORD }}
+      run: |
+        # Create temporary keychain
+        security create-keychain -p "${{ secrets.KEYCHAIN_PASSWORD }}" build.keychain
+        security default-keychain -s build.keychain
+        security unlock-keychain -p "${{ secrets.KEYCHAIN_PASSWORD }}" build.keychain
+        security set-keychain-settings -t 3600 -l build.keychain
+        
+        # Import certificates
+        echo "$DEVELOPER_ID_APP_P12" | base64 --decode > developer_id_app.p12
+        echo "$DEVELOPER_ID_INSTALLER_P12" | base64 --decode > developer_id_installer.p12
+        
+        security import developer_id_app.p12 -k build.keychain -P "$DEVELOPER_ID_APP_PASSWORD" -T /usr/bin/codesign
+        security import developer_id_installer.p12 -k build.keychain -P "$DEVELOPER_ID_INSTALLER_PASSWORD" -T /usr/bin/productbuild
+        
+        # Set key partition list
+        security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "${{ secrets.KEYCHAIN_PASSWORD }}" build.keychain
+        
+        # Clean up temporary files
+        rm developer_id_app.p12 developer_id_installer.p12
+    
+    - name: Determine version
+      id: version
+      run: |
+        if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+          VERSION="${{ github.event.inputs.version }}"
+        else
+          # Auto-generate beta version from branch and commit
+          BRANCH_NAME=${GITHUB_REF#refs/heads/}
+          SHORT_SHA=${GITHUB_SHA:0:7}
+          VERSION="1.1.1-beta.$(date +%Y%m%d%H%M)-${SHORT_SHA}"
+        fi
+        echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+        echo "Building version: $VERSION"
+    
+    - name: Create export options
+      run: |
+        cat > exportOptions.plist << EOF
+        <?xml version="1.0" encoding="UTF-8"?>
+        <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+        <plist version="1.0">
+        <dict>
+            <key>method</key>
+            <string>developer-id</string>
+            <key>teamID</key>
+            <string>${{ secrets.APPLE_TEAM_ID }}</string>
+            <key>signingStyle</key>
+            <string>manual</string>
+        </dict>
+        </plist>
+        EOF
+    
+    - name: Build for Release
+      env:
+        DEVELOPER_ID_APP_IDENTITY: ${{ secrets.DEVELOPER_ID_APP_IDENTITY }}
+      run: |
+        # Build the app
+        xcodebuild -scheme "$SCHEME" \
+                   -configuration Release \
+                   -derivedDataPath "$BUILD_DIR" \
+                   -archivePath "$BUILD_DIR/$APP_NAME.xcarchive" \
+                   CODE_SIGN_IDENTITY="$DEVELOPER_ID_APP_IDENTITY" \
+                   CODE_SIGN_STYLE=Manual \
+                   DEVELOPMENT_TEAM="${{ secrets.APPLE_TEAM_ID }}" \
+                   archive
+        
+        # Export the app
+        xcodebuild -exportArchive \
+                   -archivePath "$BUILD_DIR/$APP_NAME.xcarchive" \
+                   -exportPath "$BUILD_DIR/export" \
+                   -exportOptionsPlist exportOptions.plist
+    
+    - name: Create DMG
+      run: |
+        APP_PATH="$BUILD_DIR/export/$APP_NAME.app"
+        DMG_NAME="${APP_NAME}-${{ steps.version.outputs.VERSION }}.dmg"
+        
+        # Create temporary DMG directory
+        mkdir -p dmg_temp
+        cp -R "$APP_PATH" dmg_temp/
+        
+        # Create Applications symlink
+        ln -s /Applications dmg_temp/Applications
+        
+        # Create DMG
+        hdiutil create -volname "$APP_NAME ${{ steps.version.outputs.VERSION }}" \
+                      -srcfolder dmg_temp \
+                      -ov -format UDZO \
+                      "$DMG_NAME"
+        
+        echo "DMG_PATH=$PWD/$DMG_NAME" >> $GITHUB_ENV
+    
+    - name: Codesign DMG
+      env:
+        DEVELOPER_ID_APP_IDENTITY: ${{ secrets.DEVELOPER_ID_APP_IDENTITY }}
+      run: |
+        codesign --sign "$DEVELOPER_ID_APP_IDENTITY" \
+                 --verbose \
+                 --options runtime \
+                 "$DMG_PATH"
+    
+    - name: Notarize DMG
+      env:
+        APPLE_ID: ${{ secrets.APPLE_ID }}
+        APPLE_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+        APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      run: |
+        echo "Uploading for notarization..."
+        xcrun notarytool submit "$DMG_PATH" \
+                              --apple-id "$APPLE_ID" \
+                              --password "$APPLE_PASSWORD" \
+                              --team-id "$APPLE_TEAM_ID" \
+                              --wait
+        
+        echo "Stapling notarization ticket..."
+        xcrun stapler staple "$DMG_PATH"
+        
+        echo "Verifying notarization..."
+        xcrun stapler validate "$DMG_PATH"
+    
+    - name: Create Release Notes
+      id: release_notes
+      run: |
+        cat > release_notes.md << 'EOF'
+        ## Beta Release ${{ steps.version.outputs.VERSION }}
+        
+        This is a beta build for testing purposes.
+        
+        ### Changes in this beta:
+        - Fixed destination field removal crashes with stable ID system
+        - Changed "Clear" button to "Remove" with proper field removal
+        - Fixed source folder reuse dialog (now shows choice instead of just warning)
+        - Improved UI consistency with consistent field widths
+        
+        ### Installation:
+        1. Download the DMG file below
+        2. Open the DMG and drag ImageIntact to Applications
+        3. The app is notarized and should run without security warnings
+        
+        ### Feedback:
+        Please report any issues or feedback as comments on this release or as new issues.
+        
+        Built from commit: ${{ github.sha }}
+        EOF
+    
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: "v${{ steps.version.outputs.VERSION }}"
+        name: "ImageIntact ${{ steps.version.outputs.VERSION }} (Beta)"
+        body_path: release_notes.md
+        files: ${{ env.DMG_PATH }}
+        prerelease: true
+        draft: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Cleanup keychain
+      if: always()
+      run: |
+        security delete-keychain build.keychain || true
