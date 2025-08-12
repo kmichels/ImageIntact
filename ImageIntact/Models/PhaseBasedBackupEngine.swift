@@ -2,11 +2,11 @@ import SwiftUI
 import Darwin
 
 // MARK: - File Manifest Entry
-struct FileManifestEntry {
-    let relativePath: String
-    let sourceURL: URL
-    let checksum: String
-    let size: Int64
+public struct FileManifestEntry {
+    public let relativePath: String
+    public let sourceURL: URL
+    public let checksum: String
+    public let size: Int64
 }
 
 // MARK: - Phase-Based Backup Engine
