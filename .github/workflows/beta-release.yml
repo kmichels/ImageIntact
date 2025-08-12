@@ -194,4 +194,4 @@ jobs:
     - name: Cleanup keychain
       if: always()
       run: |
-        security delete-keychain build.keychain || true
+        security delete-keychain build.keychain || trueTrigger rebuild
