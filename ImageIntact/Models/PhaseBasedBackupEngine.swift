@@ -213,6 +213,7 @@ extension BackupManager {
         }
         
         let copyStart = Date()
+        copyStartTime = copyStart  // Set instance variable for ETA calculation
         
         // Process each file
         for (index, entry) in manifest.enumerated() {
@@ -274,12 +275,8 @@ extension BackupManager {
                         }.value
                         copiedFiles[destIndex].files.append(destPath)
                         
-                        // Update bytes processed for speed calculation
-                        totalBytesCopied += entry.size
-                        let elapsed = Date().timeIntervalSince(copyStartTime)
-                        if elapsed > 0 {
-                            copySpeed = Double(totalBytesCopied) / (1024 * 1024) / elapsed
-                        }
+                        // Update bytes processed for speed calculation and ETA
+                        updateCopySpeed(bytesAdded: entry.size)
                         
                         print("📄 Copied: \(entry.relativePath) to \(destination.lastPathComponent)")
                         incrementDestinationProgress(destination.lastPathComponent)
