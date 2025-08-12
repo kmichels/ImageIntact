@@ -49,6 +49,32 @@ final class NativeChecksumTests: XCTestCase {
         XCTAssertEqual(checksum, "empty-file-0-bytes", "Empty file should return special marker")
     }
     
+    func testSHA256ChecksumStreamingThreshold() throws {
+        // Test file just under 10MB (should NOT use streaming)
+        let smallFile = testDirectory.appendingPathComponent("9mb.bin")
+        let smallData = Data(repeating: 0xAA, count: 9_000_000) // 9MB
+        try smallData.write(to: smallFile)
+        
+        // Test file just over 10MB (should use streaming)
+        let largeFile = testDirectory.appendingPathComponent("11mb.bin")
+        let largeData = Data(repeating: 0xBB, count: 11_000_000) // 11MB
+        try largeData.write(to: largeFile)
+        
+        // Both should calculate correctly
+        let smallChecksum = try BackupManager.sha256ChecksumStatic(for: smallFile, shouldCancel: false)
+        let largeChecksum = try BackupManager.sha256ChecksumStatic(for: largeFile, shouldCancel: false)
+        
+        XCTAssertEqual(smallChecksum.count, 64, "9MB file should produce valid SHA-256")
+        XCTAssertEqual(largeChecksum.count, 64, "11MB file should produce valid SHA-256")
+        
+        // Verify consistency
+        let smallChecksum2 = try BackupManager.sha256ChecksumStatic(for: smallFile, shouldCancel: false)
+        let largeChecksum2 = try BackupManager.sha256ChecksumStatic(for: largeFile, shouldCancel: false)
+        
+        XCTAssertEqual(smallChecksum, smallChecksum2, "9MB checksum should be consistent")
+        XCTAssertEqual(largeChecksum, largeChecksum2, "11MB checksum should be consistent")
+    }
+    
     func testSHA256ChecksumForLargeFile() throws {
         // Create a 150MB file (triggers streaming)
         let testFile = testDirectory.appendingPathComponent("large.bin")
