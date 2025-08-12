@@ -37,6 +37,14 @@ struct SimpleProgressSection: View {
                                 
                                 Spacer()
                                 
+                                // ETA display
+                                let eta = backupManager.formattedETA()
+                                if !eta.isEmpty {
+                                    Text(eta)
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+                                
                                 if backupManager.copySpeed > 0 {
                                     Text("\(String(format: "%.1f", backupManager.copySpeed)) MB/s")
                                         .font(.caption)

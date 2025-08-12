@@ -50,6 +50,12 @@ class BackupManager {
     var totalBytesCopied: Int64 = 0
     private var atomicFileCounter = 0
     
+    // ETA tracking
+    var totalBytesToCopy: Int64 = 0
+    var estimatedSecondsRemaining: TimeInterval? = nil
+    private var recentSpeedSamples: [Double] = []
+    private var lastETAUpdate: Date = Date()
+    
     // Per-destination progress (simple version)
     var destinationProgress: [String: Int] = [:] // destinationName -> completed files
     
@@ -360,6 +366,84 @@ class BackupManager {
         let elapsed = Date().timeIntervalSince(copyStartTime)
         if elapsed > 0 {
             copySpeed = Double(totalBytesCopied) / (1024 * 1024) / elapsed
+            updateETA()
+        }
+    }
+    
+    @MainActor
+    private func updateETA() {
+        // Only update ETA every second to avoid too frequent updates
+        guard Date().timeIntervalSince(lastETAUpdate) >= 1.0 else { return }
+        lastETAUpdate = Date()
+        
+        // Don't calculate ETA until we have at least 5 seconds of data
+        let elapsed = Date().timeIntervalSince(copyStartTime)
+        guard elapsed >= 5.0 else {
+            estimatedSecondsRemaining = nil
+            return
+        }
+        
+        // Add current speed to samples (keep last 30 samples for 30-second average)
+        if copySpeed > 0 {
+            recentSpeedSamples.append(copySpeed)
+            if recentSpeedSamples.count > 30 {
+                recentSpeedSamples.removeFirst()
+            }
+        }
+        
+        // Calculate weighted average speed (recent samples weighted more)
+        guard !recentSpeedSamples.isEmpty else {
+            estimatedSecondsRemaining = nil
+            return
+        }
+        
+        var weightedSum: Double = 0
+        var totalWeight: Double = 0
+        for (index, speed) in recentSpeedSamples.enumerated() {
+            let weight = Double(index + 1) // More recent samples have higher weight
+            weightedSum += speed * weight
+            totalWeight += weight
+        }
+        let averageSpeed = weightedSum / totalWeight // MB/s
+        
+        // Calculate remaining bytes and ETA
+        let remainingBytes = totalBytesToCopy - totalBytesCopied
+        guard remainingBytes > 0 && averageSpeed > 0 else {
+            estimatedSecondsRemaining = nil
+            return
+        }
+        
+        let remainingMB = Double(remainingBytes) / (1024 * 1024)
+        estimatedSecondsRemaining = remainingMB / averageSpeed
+    }
+    
+    func formattedETA() -> String {
+        guard let seconds = estimatedSecondsRemaining else {
+            if Date().timeIntervalSince(copyStartTime) < 5.0 {
+                return "Calculating..."
+            }
+            return ""
+        }
+        
+        // Round to nearest 5 seconds for stability
+        let roundedSeconds = round(seconds / 5.0) * 5.0
+        
+        if roundedSeconds < 60 {
+            return "Less than 1 minute remaining"
+        } else if roundedSeconds < 300 { // Less than 5 minutes
+            let minutes = Int(roundedSeconds / 60)
+            return "About \(minutes) minute\(minutes == 1 ? "" : "s") remaining"
+        } else if roundedSeconds < 3600 { // Less than 1 hour
+            let minutes = Int(roundedSeconds / 60)
+            return "About \(minutes) minutes remaining"
+        } else { // More than 1 hour
+            let hours = Int(roundedSeconds / 3600)
+            let minutes = Int((roundedSeconds.truncatingRemainder(dividingBy: 3600)) / 60)
+            if minutes > 0 {
+                return "About \(hours) hour\(hours == 1 ? "" : "s") \(minutes) minutes remaining"
+            } else {
+                return "About \(hours) hour\(hours == 1 ? "" : "s") remaining"
+            }
         }
     }
     
@@ -373,6 +457,12 @@ class BackupManager {
         totalBytesCopied = 0
         atomicFileCounter = 0
         destinationProgress.removeAll()
+        
+        // Reset ETA tracking
+        totalBytesToCopy = 0
+        estimatedSecondsRemaining = nil
+        recentSpeedSamples.removeAll()
+        lastETAUpdate = Date()
     }
     
     @MainActor

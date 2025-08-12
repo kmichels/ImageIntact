@@ -202,6 +202,10 @@ extension BackupManager {
         currentPhase = .copyingFiles
         currentFileIndex = 0
         
+        // Calculate and set total bytes for ETA
+        let manifestTotalSize = manifest.reduce(0) { $0 + $1.size }
+        totalBytesToCopy = manifestTotalSize * Int64(destinations.count)
+        
         // Track copied files for flush phase
         var copiedFiles: [(destination: URL, files: [URL])] = []
         for dest in destinations {
@@ -440,6 +444,9 @@ extension BackupManager {
         
         // Calculate total data size
         totalDataSize = manifest.reduce(0) { $0 + $1.size }
+        
+        // Set total bytes for ETA calculation (multiply by destination count)
+        totalBytesToCopy = totalDataSize * Int64(destinations.count)
         
         let totalTime = manifestBuildTime + copyTime + flushTime + verifyTime
         print("\n📊 Backup Summary:")
