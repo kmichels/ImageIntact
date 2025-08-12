@@ -401,6 +401,12 @@ class DriveAnalyzer {
     }
     
     private static func detectThunderboltVersion(for service: io_object_t) -> ConnectionType {
+        // First check if there's a TB5 controller in the system
+        if isThunderbolt5SystemPresent() {
+            print("DriveAnalyzer: TB5 controller detected in system, assuming TB5 for external PCI-Express")
+            return .thunderbolt5
+        }
+        
         // Try to determine TB version by looking at link speed or other properties
         var parent: io_object_t = 0
         var currentService = service
@@ -500,6 +506,39 @@ class DriveAnalyzer {
         // (External PCI-Express is definitely Thunderbolt of some kind)
         print("DriveAnalyzer: Defaulting to Thunderbolt 3")
         return .thunderbolt3
+    }
+    
+    private static func isThunderbolt5SystemPresent() -> Bool {
+        // Check if there's a TB5 controller anywhere in the system
+        var iterator: io_iterator_t = 0
+        
+        // Search for Intel JHL9580 TB5 controller
+        let matching = IOServiceMatching("IOThunderboltSwitchIntelJHL9580")
+        let result = IOServiceGetMatchingServices(kIOMainPortDefault, matching, &iterator)
+        
+        guard result == KERN_SUCCESS else { return false }
+        defer { IOObjectRelease(iterator) }
+        
+        // If we find any TB5 controller, return true
+        if IOIteratorNext(iterator) != 0 {
+            print("DriveAnalyzer: Found IOThunderboltSwitchIntelJHL9580 (TB5) in system")
+            return true
+        }
+        
+        // Also check for JHL9480 (another TB5 variant)
+        let matching2 = IOServiceMatching("IOThunderboltSwitchIntelJHL9480")
+        var iterator2: io_iterator_t = 0
+        let result2 = IOServiceGetMatchingServices(kIOMainPortDefault, matching2, &iterator2)
+        
+        guard result2 == KERN_SUCCESS else { return false }
+        defer { IOObjectRelease(iterator2) }
+        
+        if IOIteratorNext(iterator2) != 0 {
+            print("DriveAnalyzer: Found IOThunderboltSwitchIntelJHL9480 (TB5) in system")
+            return true
+        }
+        
+        return false
     }
     
     private static func detectUSBSpeed(for service: io_object_t) -> ConnectionType {
