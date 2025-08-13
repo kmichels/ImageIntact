@@ -27,8 +27,8 @@ struct DestinationItem: Identifiable {
 class BackupManager {
     // MARK: - Published Properties
     var sourceURL: URL? = nil
-    var destinationURLs: [URL?] = BackupManager.loadDestinationBookmarks()
-    var destinationItems: [DestinationItem] = BackupManager.loadDestinationItems()
+    var destinationURLs: [URL?] = []
+    var destinationItems: [DestinationItem] = []
     var isProcessing = false
     var statusMessage = ""
     var totalFiles = 0
@@ -106,23 +106,19 @@ class BackupManager {
     
     // MARK: - Initialization
     init() {
+        // Load destinations first (only once)
+        let loadedURLs = BackupManager.loadDestinationBookmarks()
+        self.destinationURLs = loadedURLs
+        self.destinationItems = loadedURLs.map { DestinationItem(url: $0) }
+        
         // Load source URL and trigger scan if it exists
         if let savedSourceURL = BackupManager.loadBookmark(forKey: sourceKey) {
             self.sourceURL = savedSourceURL
+            print("Loaded source: \(savedSourceURL.lastPathComponent)")
             // Trigger scan for the loaded source
             Task {
                 await scanSourceFolder(savedSourceURL)
             }
-        }
-        
-        // Initialize destination items if needed
-        if destinationItems.isEmpty && !destinationURLs.isEmpty {
-            destinationItems = destinationURLs.map { DestinationItem(url: $0) }
-        }
-        
-        // Ensure at least one destination slot
-        if destinationItems.isEmpty {
-            destinationItems = [DestinationItem()]
         }
         
         // Analyze drives for loaded destinations and check accessibility
@@ -400,10 +396,20 @@ class BackupManager {
     // MARK: - Private Methods
     private func saveBookmark(url: URL, key: String) {
         do {
+            // Start accessing the security-scoped resource before creating bookmark
+            let accessing = url.startAccessingSecurityScopedResource()
+            defer {
+                if accessing {
+                    url.stopAccessingSecurityScopedResource()
+                }
+            }
+            
             let bookmark = try url.bookmarkData(options: .withSecurityScope, includingResourceValuesForKeys: nil, relativeTo: nil)
             UserDefaults.standard.set(bookmark, forKey: key)
+            UserDefaults.standard.synchronize() // Force save immediately
+            print("Successfully saved bookmark for \(key): \(url.lastPathComponent)")
         } catch {
-            print("Failed to save bookmark: \(error)")
+            print("Failed to save bookmark for \(key): \(error)")
         }
     }
     
@@ -416,21 +422,16 @@ class BackupManager {
     static func loadDestinationBookmarks() -> [URL?] {
         let keys = ["dest1Bookmark", "dest2Bookmark", "dest3Bookmark", "dest4Bookmark"]
         var urls: [URL?] = []
-        var foundAny = false
         
-        // Load all saved bookmarks in their exact positions
+        // Load bookmarks sequentially until we hit a gap
         for key in keys {
             if let url = loadBookmark(forKey: key) {
                 print("Loaded destination from \(key): \(url.lastPathComponent)")
                 urls.append(url)
-                foundAny = true
             } else {
                 print("No bookmark found for \(key)")
-                // Only add nil if we've found at least one bookmark
-                // This preserves the position of bookmarks
-                if foundAny {
-                    urls.append(nil)
-                }
+                // Stop at first missing bookmark to avoid gaps
+                break
             }
         }
         
@@ -439,19 +440,15 @@ class BackupManager {
             urls = [nil]
         }
         
-        // Trim trailing nils but keep at least one slot
-        while urls.count > 1 && urls.last == nil {
-            urls.removeLast()
-        }
-        
         print("Total destinations loaded: \(urls.count)")
         return urls
     }
     
-    static func loadDestinationItems() -> [DestinationItem] {
-        let urls = loadDestinationBookmarks()
-        return urls.map { DestinationItem(url: $0) }
-    }
+    // No longer needed - we load directly in init
+    // static func loadDestinationItems() -> [DestinationItem] {
+    //     let urls = loadDestinationBookmarks()
+    //     return urls.map { DestinationItem(url: $0) }
+    // }
     
     private func tagSourceFolder(at url: URL) {
         let tagFile = url.appendingPathComponent(".imageintact_source")
