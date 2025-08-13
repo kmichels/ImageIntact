@@ -16,6 +16,10 @@ This guide documents the complete process for building, notarizing, and releasin
 - [ ] Version number updated in Xcode project
 - [ ] README.md updated with new features
 - [ ] In-app help updated
+- [ ] **Remove or comment out debug print statements**
+  - Search for `print("` in the codebase
+  - Check DriveAnalyzer.swift (lots of debug output)
+  - Check queue system files for progress markers (🎯, 📊, ✅)
 - [ ] All changes committed and pushed
 - [ ] No uncommitted changes (`git status` clean)
 
@@ -86,26 +90,49 @@ Note: You'll need an ExportOptions.plist file. Create one if needed:
 
 ## Step 5: Notarize the App
 
-```bash
-# Store credentials (one-time setup)
-xcrun notarytool store-credentials "AC_PASSWORD" \
-  --apple-id "YOUR_APPLE_ID" \
-  --team-id "YOUR_TEAM_ID" \
-  --password "YOUR_APP_SPECIFIC_PASSWORD"
+### Option A: Using Xcode (Recommended)
+1. In Xcode Organizer, select your archive
+2. Click "Distribute App"
+3. Choose "Developer ID" → "Upload" (for notarization)
+4. Follow the prompts - Xcode handles notarization automatically
+5. Wait for email confirmation (usually 2-5 minutes)
+6. Once notarized, distribute again but choose "Export" this time
+7. Save the notarized app to Desktop
 
+### Option B: Command Line Notarization
+
+#### First-Time Setup: Create App-Specific Password
+1. Go to https://appleid.apple.com
+2. Sign in with your Apple Developer account
+3. Go to "Sign-In and Security" → "App-Specific Passwords"
+4. Click "+" to generate a new password
+5. Name it "ImageIntact Notarization"
+6. Copy the password (format: xxxx-xxxx-xxxx-xxxx)
+7. **SAVE THIS PASSWORD** - You'll need it for the next step
+
+#### Store Credentials in Keychain (One-Time)
+```bash
+# Replace with your actual values:
+xcrun notarytool store-credentials "AC_PASSWORD" \
+  --apple-id "your-developer-email@example.com" \
+  --team-id "84HPHY846S" \
+  --password "xxxx-xxxx-xxxx-xxxx"
+
+# This creates a keychain profile called "AC_PASSWORD" that you'll use for all future notarizations
+```
+
+#### Notarize Each Release
+```bash
 # Compress app for notarization
-ditto -c -k --keepParent ~/Desktop/ImageIntact-Export/ImageIntact.app ~/Desktop/ImageIntact.zip
+ditto -c -k --keepParent ~/Desktop/ImageIntact.app ~/Desktop/ImageIntact.zip
 
 # Submit for notarization
 xcrun notarytool submit ~/Desktop/ImageIntact.zip \
   --keychain-profile "AC_PASSWORD" \
   --wait
 
-# Check status (if needed)
-xcrun notarytool history --keychain-profile "AC_PASSWORD"
-
 # Staple the notarization
-xcrun stapler staple ~/Desktop/ImageIntact-Export/ImageIntact.app
+xcrun stapler staple ~/Desktop/ImageIntact.app
 ```
 
 ## Step 6: Create DMG
@@ -113,10 +140,15 @@ xcrun stapler staple ~/Desktop/ImageIntact-Export/ImageIntact.app
 ```bash
 # Create a folder for DMG contents
 mkdir -p ~/Desktop/dmg-contents
-cp -R ~/Desktop/ImageIntact-Export/ImageIntact.app ~/Desktop/dmg-contents/
+
+# Copy your exported NOTARIZED app into it
+# (Use the app you exported from Xcode after notarization, not the archive)
+cp -R ~/Desktop/ImageIntact.app ~/Desktop/dmg-contents/
+
+# Create a symbolic link to Applications folder (for drag-and-drop installation)
 ln -s /Applications ~/Desktop/dmg-contents/Applications
 
-# Create DMG
+# Create the DMG (IMPORTANT: -format UDZO with letter O, not zero!)
 hdiutil create -volname "ImageIntact" \
   -srcfolder ~/Desktop/dmg-contents \
   -ov -format UDZO \
@@ -124,30 +156,89 @@ hdiutil create -volname "ImageIntact" \
 
 # Clean up
 rm -rf ~/Desktop/dmg-contents
+```
 
-# Optional: Notarize the DMG as well
+### Optional but Recommended: Notarize the DMG
+Even though the app inside is notarized, notarizing the DMG prevents Gatekeeper warnings:
+
+```bash
+# Submit DMG for notarization (using the same profile from Step 5)
 xcrun notarytool submit ~/Desktop/ImageIntact-v1.2.0.dmg \
   --keychain-profile "AC_PASSWORD" \
   --wait
 
+# Staple the notarization to the DMG
 xcrun stapler staple ~/Desktop/ImageIntact-v1.2.0.dmg
+
+# Verify notarization worked
+spctl -a -t open --context context:primary-signature -v ~/Desktop/ImageIntact-v1.2.0.dmg
+# Should output: "accepted"
 ```
 
 ## Step 7: Create GitHub Release
 
+### Option A: Using GitHub Web Interface (Recommended for control)
+
+1. **Prepare your branch:**
+   ```bash
+   # First, make sure all changes are pushed
+   git status
+   git push
+   
+   # If on feature branch, merge to main first:
+   git checkout main
+   git merge feature/add-eta-display
+   git push
+   ```
+
+2. **Create and push a tag:**
+   ```bash
+   git tag -a v1.2.0 -m "Release version 1.2.0"
+   git push origin v1.2.0
+   ```
+
+3. **Go to GitHub releases page:**
+   - Navigate to: https://github.com/Tonal-Photo/ImageIntact/releases
+   - Click "Draft a new release"
+
+4. **Fill in the release details:**
+   - **Choose a tag:** Select `v1.2.0` (the tag you just created)
+   - **Release title:** `ImageIntact v1.2.0`
+   - **Description:** (see template below)
+   - **Attach the DMG:** Drag and drop `ImageIntact-v1.2.0.dmg` or use "Attach binaries"
+   - **Set as latest release:** Check the box (should be default)
+   - Click "Publish release"
+
+### Option B: Using GitHub CLI
+
 ```bash
-# Make sure you're on the right branch
-git checkout main  # or feature/add-eta-display
+# Make sure you're on main branch with all changes
+git checkout main
 git pull
 
-# Create a tag
+# Create and push tag
 git tag -a v1.2.0 -m "Release version 1.2.0"
 git push origin v1.2.0
 
-# Create release with GitHub CLI
+# Create release with DMG
 gh release create v1.2.0 \
   --title "ImageIntact v1.2.0" \
-  --notes "## What's New in v1.2
+  --notes-file release-notes.md \
+  ~/Desktop/ImageIntact-v1.2.0.dmg
+
+# Or with inline notes:
+gh release create v1.2.0 \
+  --title "ImageIntact v1.2.0" \
+  --notes $'## What\'s New in v1.2.0\n\n### Major Features\n- **Parallel Destination Processing** - Each destination runs independently at full speed\n- **Real-time ETA** - See estimated time remaining for each destination\n- **Automatic Updates** - Daily checks for new versions from GitHub\n- **Improved Progress Tracking** - Per-destination progress bars with state indicators\n- **Better Performance** - Adaptive worker pools (1-8 threads) based on destination speed\n\n### Improvements\n- Queue-based architecture for better performance\n- Smoother progress updates (10Hz refresh rate)\n- Fixed completion detection issues\n- Updated documentation and help\n\n### Bug Fixes\n- Fixed progress bars not updating during file copies\n- Fixed app not detecting completion properly\n- Fixed deadlock issues with parallel destinations\n- Resolved jumpy progress bar behavior\n\n### Requirements\n- macOS 14.0 (Sonoma) or later\n- Recommended: macOS 15.0 (Sequoia) for best performance\n\n### Installation\n1. Download the DMG file below\n2. Open the DMG\n3. Drag ImageIntact to your Applications folder\n4. On first launch, approve the security prompt\n\n### SHA-256 Checksum\n(Generate after upload with: shasum -a 256 ImageIntact-v1.2.0.dmg)' \
+  ~/Desktop/ImageIntact-v1.2.0.dmg
+```
+
+### Release Notes Template
+
+Copy this for the release description:
+
+```markdown
+## What's New in v1.2.0
 
 ### Major Features
 - **Parallel Destination Processing** - Each destination runs independently at full speed
@@ -162,24 +253,67 @@ gh release create v1.2.0 \
 - Fixed completion detection issues
 - Updated documentation and help
 
+### Bug Fixes
+- Fixed progress bars not updating during file copies
+- Fixed app not detecting completion properly
+- Fixed deadlock issues with parallel destinations
+- Resolved jumpy progress bar behavior
+
 ### Requirements
 - macOS 14.0 (Sonoma) or later
-- Recommended: macOS 15.0 (Sequoia) for best performance" \
-  ~/Desktop/ImageIntact-v1.2.0.dmg
+- Recommended: macOS 15.0 (Sequoia) for best performance
 
-# Mark as latest release (it should be automatic)
-gh release edit v1.2.0 --latest
+### Installation
+1. Download the DMG file below
+2. Open the DMG
+3. Drag ImageIntact to your Applications folder
+4. Launch and enjoy!
+
+### Verification
+To verify the download integrity, check the SHA-256 checksum:
+```
+shasum -a 256 ImageIntact-v1.2.0.dmg
+```
+Should match: (will be added after upload)
 ```
 
-## Step 8: Verify Release
+## Step 8: Post-Release Tasks
 
+### Generate and Add SHA-256 Checksum
+After uploading the DMG:
+```bash
+# Generate checksum
+shasum -a 256 ~/Desktop/ImageIntact-v1.2.0.dmg
+
+# Edit the release on GitHub to add the checksum to the description
+```
+
+### Verify Release
 1. Go to https://github.com/Tonal-Photo/ImageIntact/releases
 2. Confirm v1.2.0 shows as "Latest"
-3. Download the DMG and test installation
-4. Open ImageIntact and verify:
-   - Version shows correctly
-   - Check for Updates shows "You're up to date"
-   - All features working
+3. Download the DMG from GitHub (not your local copy)
+4. Verify the download:
+   ```bash
+   # Check DMG is notarized
+   spctl -a -t open --context context:primary-signature -v ~/Downloads/ImageIntact-v1.2.0.dmg
+   # Should say: "accepted"
+   
+   # Verify checksum matches
+   shasum -a 256 ~/Downloads/ImageIntact-v1.2.0.dmg
+   ```
+5. Install and test:
+   - Open the downloaded DMG
+   - Drag to Applications
+   - Launch ImageIntact
+   - Check Help → About shows v1.2.0
+   - Check ImageIntact menu → Check for Updates
+   - Should show "You're up to date!"
+
+### Update Branch Protection (if needed)
+If you released from a feature branch, consider:
+- Merging the feature branch to main
+- Deleting the feature branch
+- Or keeping it for continued development
 
 ## Step 9: Clean Up
 
@@ -193,7 +327,27 @@ rm ~/Desktop/ImageIntact.zip
 
 ## Troubleshooting
 
-### Notarization Issues
+### Notarization Credentials Issues
+
+#### "AC_PASSWORD" Profile Not Found
+If you get an error about the profile not existing, you need to set it up:
+1. Create app-specific password at https://appleid.apple.com
+2. Store it with the command in Step 5
+
+#### Finding Your Team ID
+Your Team ID is in:
+- Xcode → Preferences → Accounts → Select your account → View Details
+- Apple Developer website → Membership → Team ID
+- For this project: 84HPHY846S
+
+#### Checking What Profiles You Have
+```bash
+# This will fail but show you what profiles exist:
+xcrun notarytool history --keychain-profile "WRONG_NAME"
+# Error message will list available profiles
+```
+
+### Other Notarization Issues
 - Make sure you're using an app-specific password, not your Apple ID password
 - Check that your Developer ID certificate is valid
 - Ensure you have agreed to latest Apple developer agreements
