@@ -94,7 +94,7 @@ extension BackupManager {
         }
         
         // Initialize destination progress tracking
-        initializeDestinations(destinations)
+        await initializeDestinations(destinations)
         
         // ============================
         // PHASE 2: Build Source Manifest
