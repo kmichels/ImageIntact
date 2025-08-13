@@ -27,8 +27,8 @@ struct DestinationItem: Identifiable {
 class BackupManager {
     // MARK: - Published Properties
     var sourceURL: URL? = nil
-    var destinationURLs: [URL?] = BackupManager.loadDestinationBookmarks()
-    var destinationItems: [DestinationItem] = BackupManager.loadDestinationItems()
+    var destinationURLs: [URL?] = []
+    var destinationItems: [DestinationItem] = []
     var isProcessing = false
     var statusMessage = ""
     var totalFiles = 0
@@ -48,7 +48,12 @@ class BackupManager {
     var copySpeed: Double = 0.0 // MB/s
     var copyStartTime: Date = Date()
     var totalBytesCopied: Int64 = 0
-    private var atomicFileCounter = 0
+    
+    // Thread-safe progress state
+    let progressState = BackupProgressState()  // Made internal for extension access
+    
+    // Resource management
+    let resourceManager = ResourceManager()  // Made internal for extension access
     
     // ETA tracking
     var totalBytesToCopy: Int64 = 0
@@ -56,7 +61,7 @@ class BackupManager {
     private var recentSpeedSamples: [Double] = []
     private var lastETAUpdate: Date = Date()
     
-    // Per-destination progress (simple version)
+    // UI-visible progress (updated from actor)
     var destinationProgress: [String: Int] = [:] // destinationName -> completed files
     var destinationStates: [String: String] = [:] // destinationName -> "copying" | "verifying" | "complete"
     var overallStatusText: String = "" // For showing mixed states like "1 copying, 1 verifying"
@@ -97,26 +102,23 @@ class BackupManager {
     var logEntries: [LogEntry] = []
     private var currentOperation: DispatchWorkItem?
     var currentCoordinator: BackupCoordinator?  // Made internal so extension can access it
+    var currentMonitorTask: Task<Void, Never>?  // Made internal so extension can access it
     
     // MARK: - Initialization
     init() {
+        // Load destinations first (only once)
+        let loadedURLs = BackupManager.loadDestinationBookmarks()
+        self.destinationURLs = loadedURLs
+        self.destinationItems = loadedURLs.map { DestinationItem(url: $0) }
+        
         // Load source URL and trigger scan if it exists
         if let savedSourceURL = BackupManager.loadBookmark(forKey: sourceKey) {
             self.sourceURL = savedSourceURL
+            print("Loaded source: \(savedSourceURL.lastPathComponent)")
             // Trigger scan for the loaded source
             Task {
                 await scanSourceFolder(savedSourceURL)
             }
-        }
-        
-        // Initialize destination items if needed
-        if destinationItems.isEmpty && !destinationURLs.isEmpty {
-            destinationItems = destinationURLs.map { DestinationItem(url: $0) }
-        }
-        
-        // Ensure at least one destination slot
-        if destinationItems.isEmpty {
-            destinationItems = [DestinationItem()]
         }
         
         // Analyze drives for loaded destinations and check accessibility
@@ -373,21 +375,41 @@ class BackupManager {
         statusMessage = "Cancelling backup..."
         currentOperation?.cancel()
         
+        // Cancel the monitor task
+        currentMonitorTask?.cancel()
+        currentMonitorTask = nil
+        
         // Cancel the queue-based coordinator if it's running
         if let coordinator = currentCoordinator {
             Task { @MainActor in
                 coordinator.cancelBackup()
             }
         }
+        currentCoordinator = nil
+        
+        // Clean up resources
+        Task {
+            await resourceManager.cleanup()
+        }
     }
     
     // MARK: - Private Methods
     private func saveBookmark(url: URL, key: String) {
         do {
+            // Start accessing the security-scoped resource before creating bookmark
+            let accessing = url.startAccessingSecurityScopedResource()
+            defer {
+                if accessing {
+                    url.stopAccessingSecurityScopedResource()
+                }
+            }
+            
             let bookmark = try url.bookmarkData(options: .withSecurityScope, includingResourceValuesForKeys: nil, relativeTo: nil)
             UserDefaults.standard.set(bookmark, forKey: key)
+            UserDefaults.standard.synchronize() // Force save immediately
+            print("Successfully saved bookmark for \(key): \(url.lastPathComponent)")
         } catch {
-            print("Failed to save bookmark: \(error)")
+            print("Failed to save bookmark for \(key): \(error)")
         }
     }
     
@@ -401,14 +423,14 @@ class BackupManager {
         let keys = ["dest1Bookmark", "dest2Bookmark", "dest3Bookmark", "dest4Bookmark"]
         var urls: [URL?] = []
         
-        // Load all saved bookmarks in their exact positions
+        // Load bookmarks sequentially until we hit a gap
         for key in keys {
             if let url = loadBookmark(forKey: key) {
                 print("Loaded destination from \(key): \(url.lastPathComponent)")
                 urls.append(url)
             } else {
                 print("No bookmark found for \(key)")
-                // Stop looking for more bookmarks after finding an empty slot
+                // Stop at first missing bookmark to avoid gaps
                 break
             }
         }
@@ -422,10 +444,11 @@ class BackupManager {
         return urls
     }
     
-    static func loadDestinationItems() -> [DestinationItem] {
-        let urls = loadDestinationBookmarks()
-        return urls.map { DestinationItem(url: $0) }
-    }
+    // No longer needed - we load directly in init
+    // static func loadDestinationItems() -> [DestinationItem] {
+    //     let urls = loadDestinationBookmarks()
+    //     return urls.map { DestinationItem(url: $0) }
+    // }
     
     private func tagSourceFolder(at url: URL) {
         let tagFile = url.appendingPathComponent(".imageintact_source")
@@ -464,11 +487,13 @@ class BackupManager {
     // MARK: - Simple Progress Updates
     @MainActor
     func updateProgress(fileName: String, destinationName: String) {
-        // Thread-safe increment
-        atomicFileCounter += 1
-        currentFileIndex = atomicFileCounter
-        currentFileName = fileName
-        currentDestinationName = destinationName
+        Task {
+            // Thread-safe increment through actor
+            let newIndex = await progressState.incrementFileCounter()
+            currentFileIndex = newIndex
+            currentFileName = fileName
+            currentDestinationName = destinationName
+        }
     }
     
     @MainActor
@@ -529,7 +554,17 @@ class BackupManager {
         }
         
         let remainingMB = Double(remainingBytes) / (1024 * 1024)
-        estimatedSecondsRemaining = remainingMB / averageSpeed
+        let calculatedETA = remainingMB / averageSpeed
+        
+        // Sanitize ETA to reasonable bounds (max 24 hours)
+        if calculatedETA.isNaN || calculatedETA.isInfinite || calculatedETA < 0 {
+            estimatedSecondsRemaining = nil
+        } else if calculatedETA > 86400 { // More than 24 hours
+            estimatedSecondsRemaining = 86400
+        } else {
+            estimatedSecondsRemaining = calculatedETA
+        }
+        
         print("ETA Debug: estimatedSecondsRemaining=\(estimatedSecondsRemaining ?? -1)")
     }
     
@@ -571,26 +606,39 @@ class BackupManager {
         copySpeed = 0.0
         copyStartTime = Date()
         totalBytesCopied = 0
-        atomicFileCounter = 0
         destinationProgress.removeAll()
+        destinationStates.removeAll()
         
         // Reset ETA tracking
         totalBytesToCopy = 0
         estimatedSecondsRemaining = nil
         recentSpeedSamples.removeAll()
         lastETAUpdate = Date()
+        
+        // Reset actor state
+        Task {
+            await progressState.resetAll()
+        }
     }
     
     @MainActor
-    func initializeDestinations(_ destinations: [URL]) {
+    func initializeDestinations(_ destinations: [URL]) async {
+        let destNames = destinations.map { $0.lastPathComponent }
+        await progressState.initializeDestinations(destNames)
+        
+        // Update local cache for UI
         for destination in destinations {
             destinationProgress[destination.lastPathComponent] = 0
+            destinationStates[destination.lastPathComponent] = "copying"
         }
     }
     
     @MainActor
     func incrementDestinationProgress(_ destinationName: String) {
-        destinationProgress[destinationName, default: 0] += 1
+        Task {
+            let newValue = await progressState.incrementDestinationProgress(for: destinationName)
+            destinationProgress[destinationName] = newValue
+        }
     }
     
     // MARK: - File Scanning Methods
@@ -697,7 +745,7 @@ class BackupManager {
 extension BackupManager {
     // Static checksum calculation method used by all backup engines
     // Now uses native Swift SHA-256 for maximum reliability with all file types
-    static func sha256ChecksumStatic(for fileURL: URL, shouldCancel: Bool) throws -> String {
+    static func sha256ChecksumStatic(for fileURL: URL, shouldCancel: Bool, isNetworkVolume: Bool = false) throws -> String {
         // First check if file exists
         guard FileManager.default.fileExists(atPath: fileURL.path) else {
             throw NSError(domain: "ImageIntact", code: 1, userInfo: [NSLocalizedDescriptionKey: "File does not exist: \(fileURL.lastPathComponent)"])

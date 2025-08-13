@@ -11,6 +11,7 @@ class BackupCoordinator: ObservableObject {
     private var destinationQueues: [DestinationQueue] = []
     private var manifest: [FileManifestEntry] = []
     private var shouldCancel = false
+    private var collectedFailures: [(file: String, destination: String, error: String)] = []
     
     struct DestinationStatus {
         let name: String
@@ -62,10 +63,11 @@ class BackupCoordinator: ObservableObject {
             // Add tasks to queue
             await queue.addTasks(tasks)
             
-            // Set up progress callback (from async context)
+            // Set up progress callback (from async context) with weak capture
+            let weakDestination = destination
             await queue.setProgressCallback { [weak self] completed, total in
                 Task { @MainActor in
-                    self?.updateDestinationProgress(destination: destination, completed: completed, total: total)
+                    self?.updateDestinationProgress(destination: weakDestination, completed: completed, total: total)
                 }
             }
         }
@@ -75,7 +77,8 @@ class BackupCoordinator: ObservableObject {
         
         await withTaskGroup(of: Void.self) { group in
             for queue in destinationQueues {
-                group.addTask { [weak self] in
+                group.addTask { [weak self, weak queue] in
+                    guard let queue = queue else { return }
                     await queue.start()
                     
                     // Wait for completion
@@ -84,15 +87,18 @@ class BackupCoordinator: ObservableObject {
                         let cancelled = await MainActor.run { [weak self] in
                             self?.shouldCancel ?? true
                         }
-                        if cancelled { break }
+                        if cancelled { 
+                            await queue.stop()
+                            break 
+                        }
                         try? await Task.sleep(nanoseconds: 100_000_000) // Check every 0.1s
                     }
                 }
             }
             
-            // Start monitoring task
-            group.addTask {
-                await self.monitorProgress()
+            // Start monitoring task with weak self
+            group.addTask { [weak self] in
+                await self?.monitorProgress()
             }
             
             // Wait for all to complete
@@ -107,14 +113,29 @@ class BackupCoordinator: ObservableObject {
     }
     
     func cancelBackup() {
+        guard !shouldCancel else { return }  // Prevent multiple cancellations
         shouldCancel = true
         statusMessage = "Cancelling backup..."
         
-        Task {
-            for queue in destinationQueues {
-                await queue.stop()
+        Task { [weak self] in
+            guard let self = self else { return }
+            // Stop all queues in parallel for faster cancellation
+            await withTaskGroup(of: Void.self) { group in
+                for queue in self.destinationQueues {
+                    group.addTask {
+                        await queue.stop()
+                    }
+                }
             }
+            // Clear queues to release memory
+            self.destinationQueues.removeAll()
+            // Only set isRunning to false after cleanup
+            self.isRunning = false
         }
+    }
+    
+    func getFailures() -> [(file: String, destination: String, error: String)] {
+        return collectedFailures
     }
     
     // MARK: - Task Creation
@@ -201,7 +222,9 @@ class BackupCoordinator: ObservableObject {
                 completedOperations += status.completed // Files copied
                 completedOperations += status.verifiedCount // Files verified
             }
-            overallProgress = totalOperations > 0 ? Double(completedOperations) / Double(totalOperations) : 0
+            let calculatedProgress = totalOperations > 0 ? Double(completedOperations) / Double(totalOperations) : 0
+            // Sanitize to 0-1 range to prevent UI issues
+            overallProgress = max(0.0, min(1.0, calculatedProgress))
             
             // Update status message
             let activeCount = destinationStatuses.values.filter { !$0.isComplete }.count
@@ -229,9 +252,12 @@ class BackupCoordinator: ObservableObject {
         if var status = destinationStatuses[destination.lastPathComponent] {
             status.completed = completed
             destinationStatuses[destination.lastPathComponent] = status
+            print("📊 Progress update: \(destination.lastPathComponent) - \(completed)/\(total)")
             
             // Don't update overall progress here - it causes jumps due to stale data
             // The monitor loop will update it with fresh data from all queues
+        } else {
+            print("⚠️ No status found for \(destination.lastPathComponent)")
         }
     }
     
@@ -253,6 +279,14 @@ class BackupCoordinator: ObservableObject {
             
             if !failures.isEmpty {
                 allFailures.append((destination: destination.lastPathComponent, failures: failures))
+                // Store failures for external access
+                for failure in failures {
+                    collectedFailures.append((
+                        file: failure.file,
+                        destination: destination.lastPathComponent,
+                        error: failure.error
+                    ))
+                }
             }
         }
         

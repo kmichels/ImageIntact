@@ -23,7 +23,16 @@ extension BackupManager {
         defer {
             isProcessing = false
             shouldCancel = false
-            currentCoordinator = nil  // Clear coordinator reference
+            
+            // Clean up references to prevent memory leaks
+            currentCoordinator = nil
+            currentMonitorTask?.cancel()
+            currentMonitorTask = nil
+            
+            // Clean up all resources
+            Task {
+                await resourceManager.cleanup()
+            }
             
             // Calculate final stats
             let totalTime = Date().timeIntervalSince(backupStartTime)
@@ -36,16 +45,16 @@ extension BackupManager {
             }
         }
         
-        // Access security-scoped resources
-        let sourceAccess = source.startAccessingSecurityScopedResource()
-        let destAccesses = destinations.map { $0.startAccessingSecurityScopedResource() }
+        // Access security-scoped resources through resource manager
+        let sourceAccess = await resourceManager.startAccessingSecurityScopedResource(source)
+        for destination in destinations {
+            _ = await resourceManager.startAccessingSecurityScopedResource(destination)
+        }
         
         defer {
-            if sourceAccess { source.stopAccessingSecurityScopedResource() }
-            for (index, access) in destAccesses.enumerated() {
-                if access {
-                    destinations[index].stopAccessingSecurityScopedResource()
-                }
+            // Resource manager will handle cleanup
+            Task {
+                await resourceManager.stopAccessingAllSecurityScopedResources()
             }
         }
         
@@ -64,19 +73,21 @@ extension BackupManager {
         totalFiles = manifest.count
         
         // Initialize destination progress and states for all destinations
-        for destination in destinations {
-            destinationProgress[destination.lastPathComponent] = 0
-            destinationStates[destination.lastPathComponent] = "copying"
-        }
+        await initializeDestinations(destinations)
         
         // PHASE 2: Create and start the queue coordinator
         let coordinator = BackupCoordinator()
         currentCoordinator = coordinator  // Store reference for cancellation
         
         // Monitor coordinator status with polling for more frequent updates
-        let monitorTask = Task { @MainActor in
-            while !Task.isCancelled && coordinator.isRunning && !shouldCancel {
-                updateUIFromCoordinator(coordinator)
+        let monitorTask = Task { @MainActor [weak self, weak coordinator] in
+            guard let self = self, let coordinator = coordinator else { return }
+            
+            // Wait a moment for the coordinator to start
+            try? await Task.sleep(nanoseconds: 100_000_000) // 0.1s
+            
+            while !Task.isCancelled && !self.shouldCancel {
+                self.updateUIFromCoordinator(coordinator)
                 
                 // Check if all destinations are complete
                 let allDone = coordinator.destinationStatuses.values.allSatisfy { 
@@ -84,13 +95,13 @@ extension BackupManager {
                 }
                 if allDone {
                     // Final update and exit
-                    updateUIFromCoordinator(coordinator)
+                    self.updateUIFromCoordinator(coordinator)
                     print("📊 All destinations complete, exiting monitor task")
                     break
                 }
                 
                 // Check if user cancelled
-                if shouldCancel {
+                if self.shouldCancel {
                     print("📊 User cancelled, exiting monitor task")
                     break
                 }
@@ -99,9 +110,13 @@ extension BackupManager {
                 try? await Task.sleep(nanoseconds: 100_000_000) // 10Hz for smooth updates
             }
             // One final update after loop exits
-            updateUIFromCoordinator(coordinator)
+            self.updateUIFromCoordinator(coordinator)
             print("📊 Monitor task completed")
         }
+        
+        // Store monitor task reference for potential cancellation
+        currentMonitorTask = monitorTask
+        await resourceManager.track(task: monitorTask)
         
         // Start the smart backup
         currentPhase = .copyingFiles
@@ -113,9 +128,13 @@ extension BackupManager {
         print("📊 Monitor task done, setting phase to complete")
         
         // Copy coordinator's failed files to our list
-        for _ in coordinator.destinationStatuses.values {
-            // Note: We'd need to expose failed files from coordinator
-            // For now, just track completion
+        let failures = coordinator.getFailures()
+        for failure in failures {
+            failedFiles.append((
+                file: failure.file,
+                destination: failure.destination,
+                error: failure.error
+            ))
         }
         
         currentPhase = .complete
@@ -149,10 +168,28 @@ extension BackupManager {
                 fileCount += 1
                 statusMessage = "Analyzing file \(fileCount)..."
                 
-                // Calculate checksum
-                let checksum = try await Task.detached(priority: .userInitiated) {
-                    try BackupManager.sha256ChecksumStatic(for: url, shouldCancel: self.shouldCancel)
-                }.value
+                // Calculate checksum with better error handling
+                let checksum: String
+                do {
+                    checksum = try await Task.detached(priority: .userInitiated) {
+                        try BackupManager.sha256ChecksumStatic(for: url, shouldCancel: self.shouldCancel)
+                    }.value
+                } catch {
+                    // Log specific error and continue with next file
+                    print("⚠️ Checksum failed for \(url.lastPathComponent): \(error.localizedDescription)")
+                    failedFiles.append((
+                        file: url.lastPathComponent,
+                        destination: "manifest",
+                        error: error.localizedDescription
+                    ))
+                    continue
+                }
+                
+                // Check cancellation after potentially long checksum operation
+                guard !shouldCancel else { 
+                    print("🛑 Manifest building cancelled by user")
+                    return nil 
+                }
                 
                 let relativePath = url.path.replacingOccurrences(of: source.path + "/", with: "")
                 let size = resourceValues.fileSize ?? 0
@@ -175,6 +212,7 @@ extension BackupManager {
     }
     
     /// Update our UI based on coordinator's status
+    /// Already marked @MainActor to ensure thread safety
     @MainActor
     private func updateUIFromCoordinator(_ coordinator: BackupCoordinator) {
         // Aggregate status from all destinations
@@ -189,17 +227,35 @@ extension BackupManager {
         
         for (name, status) in coordinator.destinationStatuses {
             // Update the destinationProgress dictionary for UI display
+            // This is safe because we're already on @MainActor
             if status.isVerifying {
                 // Show verification progress
                 destinationProgress[name] = status.verifiedCount
                 destinationStates[name] = "verifying"
                 verifyingDestinations.append(name)
+                
+                // Also update actor state for consistency
+                Task {
+                    await progressState.setDestinationProgress(status.verifiedCount, for: name)
+                    await progressState.setDestinationState("verifying", for: name)
+                }
             } else if status.isComplete {
                 destinationProgress[name] = status.total
                 destinationStates[name] = "complete"
+                
+                Task {
+                    await progressState.setDestinationProgress(status.total, for: name)
+                    await progressState.setDestinationState("complete", for: name)
+                }
             } else {
                 destinationProgress[name] = status.completed
                 destinationStates[name] = "copying"
+                print("🔄 UI Update: \(name) - \(status.completed)/\(status.total)")
+                
+                Task {
+                    await progressState.setDestinationProgress(status.completed, for: name)
+                    await progressState.setDestinationState("copying", for: name)
+                }
             }
             
             // Parse speed (e.g., "45.2 MB/s" -> 45.2)
@@ -246,8 +302,8 @@ extension BackupManager {
             statusMessage = "Processing..."
         }
         
-        // Update overall progress
-        overallProgress = coordinator.overallProgress
+        // Update overall progress (sanitize to 0-1 range)
+        overallProgress = max(0.0, min(1.0, coordinator.overallProgress))
         
         // For overall status text, show counts instead of phase
         if completeCount > 0 || copyingCount > 0 || verifyingCount > 0 {

@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 
 /// Manages the backup queue for a single destination
 actor DestinationQueue {
@@ -32,10 +33,11 @@ actor DestinationQueue {
         self.onStatusUpdate = callback
     }
     
-    // Worker configuration
+    // Worker configuration with resource limits
     private var currentWorkerCount: Int = 2
     private let minWorkers = 1
-    private let maxWorkers = 8
+    private let maxWorkers = 4  // Reduced from 8 to prevent resource exhaustion
+    private let maxMemoryUsageMB = 500  // Maximum memory usage before throttling
     
     init(destination: URL) {
         self.destination = destination
@@ -88,11 +90,15 @@ actor DestinationQueue {
         shouldCancel = true
         isRunning = false
         
-        // Cancel all worker tasks
+        // Cancel all worker tasks immediately
         for task in workerTasks {
             task.cancel()
         }
         workerTasks.removeAll()
+        
+        // Clear callbacks to prevent retain cycles
+        onProgress = nil
+        onStatusUpdate = nil
     }
     
     // MARK: - Worker Management
@@ -100,7 +106,11 @@ actor DestinationQueue {
     private func runWorker() async {
         let workerId = UUID()
         activeWorkers.insert(workerId)
-        defer { activeWorkers.remove(workerId) }
+        defer { 
+            activeWorkers.remove(workerId)
+            // Clean up any resources used by this worker
+            print("🧹 Worker \(workerId.uuidString.prefix(8)) cleaned up")
+        }
         
         print("👷 Worker \(workerId.uuidString.prefix(8)) started for \(destination.lastPathComponent)")
         
@@ -149,7 +159,8 @@ actor DestinationQueue {
             let currentCompleted = completedFiles
             let currentTotal = totalFiles
             if let progressCallback = onProgress {
-                await MainActor.run {
+                // We need to escape the actor context to call the callback
+                Task { @MainActor in
                     progressCallback(currentCompleted, currentTotal)
                 }
             }
@@ -162,6 +173,14 @@ actor DestinationQueue {
         while !shouldCancel && isRunning {
             // Wait a bit before adjusting
             try? await Task.sleep(nanoseconds: 5_000_000_000) // 5 seconds
+            
+            // Check memory usage before adjusting workers
+            let memoryUsage = getMemoryUsage()
+            if memoryUsage > maxMemoryUsageMB {
+                print("⚠️ High memory usage (\(memoryUsage)MB), limiting workers for \(destination.lastPathComponent)")
+                // Don't add more workers if memory is high
+                continue
+            }
             
             let recommendedWorkers = await throughputMonitor.recommendedWorkerCount
             
@@ -216,11 +235,18 @@ actor DestinationQueue {
                 try FileManager.default.removeItem(at: destPath)
             }
             
-            // Copy the file
-            try FileManager.default.copyItem(at: task.sourceURL, to: destPath)
-            
-            print("✅ Copied \(task.relativePath) to \(destination.lastPathComponent)")
-            return .success
+            // Copy the file with proper error handling
+            do {
+                try FileManager.default.copyItem(at: task.sourceURL, to: destPath)
+                print("✅ Copied \(task.relativePath) to \(destination.lastPathComponent)")
+                return .success
+            } catch {
+                // Clean up partial file if copy failed
+                if FileManager.default.fileExists(atPath: destPath.path) {
+                    try? FileManager.default.removeItem(at: destPath)
+                }
+                throw error
+            }
             
         } catch {
             if shouldCancel {
@@ -263,6 +289,27 @@ actor DestinationQueue {
             let minutes = Int((seconds.truncatingRemainder(dividingBy: 3600)) / 60)
             return "\(hours)h \(minutes)m"
         }
+    }
+    
+    // MARK: - Resource Monitoring
+    
+    private func getMemoryUsage() -> Int {
+        var info = mach_task_basic_info()
+        var count = mach_msg_type_number_t(MemoryLayout<mach_task_basic_info>.size) / 4
+        
+        let result = withUnsafeMutablePointer(to: &info) {
+            $0.withMemoryRebound(to: integer_t.self, capacity: 1) {
+                task_info(mach_task_self_,
+                         task_flavor_t(MACH_TASK_BASIC_INFO),
+                         $0,
+                         &count)
+            }
+        }
+        
+        if result == KERN_SUCCESS {
+            return Int(info.resident_size / 1024 / 1024) // Convert to MB
+        }
+        return 0
     }
     
     // MARK: - Verification
@@ -317,7 +364,7 @@ actor DestinationQueue {
             if let progressCallback = onProgress {
                 let currentVerified = verifiedFiles
                 let currentTotal = totalFiles
-                await MainActor.run {
+                Task { @MainActor in
                     progressCallback(currentVerified, currentTotal)
                 }
             }
