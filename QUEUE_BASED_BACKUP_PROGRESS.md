@@ -200,12 +200,13 @@ The queue-based backup system is now the default with these improvements:
    - Added 4x/second polling for responsive UI updates
    - No more lag in status changes
 
-### Three Commits Made:
+### Four Commits Made:
 1. Backend implementation (queue system with per-destination verification)
 2. UI fixes (progress bars and status messages)
 3. Per-destination state tracking (copying/verifying/complete)
+4. Overall progress display with mixed states
 
-## FINAL STATUS: COMPLETE! 🎉
+## FINAL STATUS: COMPLETE! 🎉🎉🎉
 
 The queue-based backup system is now fully functional with correct UI:
 - Each destination shows its own state (Copying/Verifying/Complete)
@@ -219,5 +220,16 @@ The queue-based backup system is now fully functional with correct UI:
 - "Complete ✓" (green) - Fully done with backup and verification
 - Green dot indicator for completed destinations
 
+### Overall Progress Bar:
+Instead of showing a single phase (which doesn't make sense with parallel processing), 
+the overall progress now shows counts: "1 complete, 1 copying" or "2 verifying"
+This gives clear visibility into what each destination is doing.
+
+### Final Improvements (Commit 4):
+- Fast destinations now properly show "Verifying" (added 0.1s delay for UI visibility)
+- Overall progress correctly updates phase and detects completion
+- Overall status text shows mixed states instead of single phase
+- Phase pills still show for initial phases (Analyze, Manifest)
+
 ---
-Last updated: Queue system COMPLETE with full UI state tracking!
+Last updated: Queue system FULLY COMPLETE with smart overall progress display!

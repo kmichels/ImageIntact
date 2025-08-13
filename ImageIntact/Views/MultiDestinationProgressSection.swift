@@ -191,12 +191,10 @@ struct MultiDestinationProgress: View {
                 
                 Spacer()
                 
-                Text("Files: \(backupManager.currentFileIndex)/\(backupManager.totalFiles)")
-                    .font(.subheadline)
-                
-                if backupManager.copySpeed > 0 {
-                    Text("(\(String(format: "%.1f", backupManager.copySpeed)) MB/s)")
-                        .font(.caption)
+                // Show aggregate progress
+                if backupManager.overallProgress > 0 {
+                    Text("\(Int(backupManager.overallProgress * 100))% Complete")
+                        .font(.subheadline)
                         .foregroundColor(.secondary)
                 }
                 

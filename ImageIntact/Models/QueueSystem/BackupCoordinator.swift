@@ -101,7 +101,9 @@ class BackupCoordinator: ObservableObject {
         
         // Final status
         await finalizeBackup()
+        print("🎯 BackupCoordinator: Setting isRunning to false")
         isRunning = false
+        print("🎯 BackupCoordinator: startBackup() complete")
     }
     
     func cancelBackup() {

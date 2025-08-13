@@ -247,7 +247,9 @@ actor DestinationQueue {
     }
     
     func isComplete() -> Bool {
-        return completedFiles >= totalFiles && isRunning
+        // Consider complete if all files are processed (copied + verified)
+        // Don't require isRunning since queue stops after verification
+        return verifiedFiles >= totalFiles && !isVerifying
     }
     
     private func formatTime(_ seconds: TimeInterval) -> String {

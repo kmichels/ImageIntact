@@ -73,21 +73,25 @@ extension BackupManager {
         
         // Monitor coordinator status with polling for more frequent updates
         let monitorTask = Task {
-            while !Task.isCancelled {
+            while !Task.isCancelled && coordinator.isRunning {
                 updateUIFromCoordinator(coordinator)
                 
                 // Check if all destinations are complete
                 let allDone = coordinator.destinationStatuses.values.allSatisfy { 
                     $0.isComplete && !$0.isVerifying 
                 }
-                if allDone && !coordinator.isRunning {
+                if allDone {
                     // Final update and exit
                     updateUIFromCoordinator(coordinator)
+                    print("📊 All destinations complete, exiting monitor task")
                     break
                 }
                 
                 try? await Task.sleep(nanoseconds: 250_000_000) // Update 4x per second
             }
+            // One final update after loop exits
+            updateUIFromCoordinator(coordinator)
+            print("📊 Monitor task completed")
         }
         
         // Start the smart backup
@@ -95,7 +99,9 @@ extension BackupManager {
         await coordinator.startBackup(source: source, destinations: destinations, manifest: manifest)
         
         // Wait for monitoring to finish
+        print("📊 Waiting for monitor task to complete...")
         await monitorTask.value
+        print("📊 Monitor task done, setting phase to complete")
         
         // Copy coordinator's failed files to our list
         for _ in coordinator.destinationStatuses.values {
@@ -104,6 +110,7 @@ extension BackupManager {
         }
         
         currentPhase = .complete
+        print("📊 Phase set to complete, defer block will run next")
     }
     
     /// Build manifest of files to copy
