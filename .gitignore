@@ -9,7 +9,10 @@ xcuserdata/
 *.xccheckout
 *.moved-aside
 *.xcuserstate
+
+# Documentation - ignore all .md except README
 *.md
+!README.md
 
 # macOS
 .DS_Store
