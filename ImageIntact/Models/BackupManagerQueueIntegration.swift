@@ -87,9 +87,8 @@ extension BackupManager {
                     break
                 }
                 
-                // Update faster initially, then slow down
-                let updateInterval = overallProgress < 0.1 ? 100_000_000 : 250_000_000 // 10Hz initially, then 4Hz
-                try? await Task.sleep(nanoseconds: UInt64(updateInterval))
+                // Update frequently for smooth progress
+                try? await Task.sleep(nanoseconds: 100_000_000) // 10Hz for smooth updates
             }
             // One final update after loop exits
             updateUIFromCoordinator(coordinator)

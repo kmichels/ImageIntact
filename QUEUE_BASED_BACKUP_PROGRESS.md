@@ -200,12 +200,13 @@ The queue-based backup system is now the default with these improvements:
    - Added 4x/second polling for responsive UI updates
    - No more lag in status changes
 
-### Five Commits Made:
+### Six Commits Made:
 1. Backend implementation (queue system with per-destination verification)
 2. UI fixes (progress bars and status messages)
 3. Per-destination state tracking (copying/verifying/complete)
 4. Overall progress display with mixed states
 5. Completion detection fix and UI cleanup
+6. **CRITICAL: Fixed deadlock preventing completion**
 
 ## FINAL STATUS: PRODUCTION READY! 🚀🎉🎉🎉
 
@@ -241,5 +242,15 @@ This gives clear visibility into what each destination is doing.
 The bug was that isComplete() required isRunning to be true, but queues stop after verification.
 Now correctly checks if all files are verified instead.
 
+### Critical Deadlock Fix (Commit 6):
+- **THE BUG**: BackupCoordinator's `monitorProgress()` created a deadlock
+  - TaskGroup waited for monitor task to finish
+  - Monitor task waited for `isRunning = false`
+  - But `isRunning` only set to false AFTER TaskGroup completes!
+- **THE FIX**: Monitor now checks if all queues complete and exits early
+- **UI Performance**: Monitor task runs on MainActor with adaptive update rate
+  - 10Hz initially for responsive start
+  - 4Hz after 10% progress to reduce overhead
+
 ---
-Last updated: PRODUCTION READY - All critical bugs fixed!
+Last updated: PRODUCTION READY - Deadlock fixed, all systems operational!

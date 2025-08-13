@@ -63,6 +63,14 @@ struct ContentView: View {
                         }
                     }
                 }
+                .onChange(of: backupManager.currentPhase) { _, phase in
+                    // Also scroll when we enter copying phase (in case initial scroll didn't work)
+                    if phase == .copyingFiles && backupManager.isProcessing {
+                        withAnimation(.easeInOut(duration: 0.3)) {
+                            scrollProxy.scrollTo("progressSection", anchor: .top)
+                        }
+                    }
+                }
             }
             
             // Bottom action area - always visible

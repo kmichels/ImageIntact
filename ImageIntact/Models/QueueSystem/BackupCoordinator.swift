@@ -194,10 +194,14 @@ class BackupCoordinator: ObservableObject {
                 }
             }
             
-            // Calculate overall progress
-            let totalFiles = destinationQueues.count * manifest.count
-            let completedFiles = destinationStatuses.values.reduce(0) { $0 + $1.completed }
-            overallProgress = totalFiles > 0 ? Double(completedFiles) / Double(totalFiles) : 0
+            // Calculate overall progress (include both copying and verification)
+            let totalOperations = destinationQueues.count * manifest.count * 2 // *2 for copy + verify
+            var completedOperations = 0
+            for status in destinationStatuses.values {
+                completedOperations += status.completed // Files copied
+                completedOperations += status.verifiedCount // Files verified
+            }
+            overallProgress = totalOperations > 0 ? Double(completedOperations) / Double(totalOperations) : 0
             
             // Update status message
             let activeCount = destinationStatuses.values.filter { !$0.isComplete }.count
@@ -213,7 +217,7 @@ class BackupCoordinator: ObservableObject {
                 break
             }
             
-            try? await Task.sleep(nanoseconds: 500_000_000) // Update every 0.5s
+            try? await Task.sleep(nanoseconds: 250_000_000) // Update every 0.25s for smoother progress
         }
         print("📊 BackupCoordinator: monitorProgress() finished")
     }
