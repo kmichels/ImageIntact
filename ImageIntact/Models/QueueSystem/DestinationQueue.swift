@@ -90,20 +90,20 @@ actor DestinationQueue {
         shouldCancel = true
         isRunning = false
         
-        // Cancel all worker tasks immediately
+        // Cancel all worker tasks
         for task in workerTasks {
             task.cancel()
         }
-        workerTasks.removeAll()
+        
+        // Wait briefly for tasks to acknowledge cancellation
+        Task {
+            try? await Task.sleep(nanoseconds: 100_000_000) // 0.1s
+            workerTasks.removeAll()
+        }
         
         // Clear callbacks to prevent retain cycles
         onProgress = nil
         onStatusUpdate = nil
-        
-        // Force queue to clear
-        Task {
-            await queue.clear()
-        }
     }
     
     // MARK: - Worker Management
@@ -175,9 +175,6 @@ actor DestinationQueue {
     
     private func manageWorkerCount() async {
         while !shouldCancel && isRunning {
-            // Check for task cancellation
-            if Task.isCancelled { return }
-            
             // Wait a bit before adjusting
             try? await Task.sleep(nanoseconds: 5_000_000_000) // 5 seconds
             
@@ -324,8 +321,6 @@ actor DestinationQueue {
     private func startVerificationWhenCopyingComplete(allTasks: [FileTask]) async {
         // Wait for all copying to complete
         while completedFiles < totalFiles && !shouldCancel {
-            // Check for task cancellation
-            if Task.isCancelled { return }
             try? await Task.sleep(nanoseconds: 1_000_000_000) // Check every second
         }
         
@@ -340,7 +335,6 @@ actor DestinationQueue {
         // Verify each file
         for task in allTasks {
             guard !shouldCancel else { break }
-            if Task.isCancelled { break }
             
             let destPath = destination.appendingPathComponent(task.relativePath)
             
