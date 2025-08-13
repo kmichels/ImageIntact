@@ -90,16 +90,11 @@ actor DestinationQueue {
         shouldCancel = true
         isRunning = false
         
-        // Cancel all worker tasks
+        // Cancel all worker tasks immediately
         for task in workerTasks {
             task.cancel()
         }
-        
-        // Wait briefly for tasks to acknowledge cancellation
-        Task {
-            try? await Task.sleep(nanoseconds: 100_000_000) // 0.1s
-            workerTasks.removeAll()
-        }
+        workerTasks.removeAll()
         
         // Clear callbacks to prevent retain cycles
         onProgress = nil

@@ -87,7 +87,10 @@ class BackupCoordinator: ObservableObject {
                         let cancelled = await MainActor.run { [weak self] in
                             self?.shouldCancel ?? true
                         }
-                        if cancelled { break }
+                        if cancelled { 
+                            await queue.stop()
+                            break 
+                        }
                         try? await Task.sleep(nanoseconds: 100_000_000) // Check every 0.1s
                     }
                 }
@@ -112,11 +115,17 @@ class BackupCoordinator: ObservableObject {
     func cancelBackup() {
         shouldCancel = true
         statusMessage = "Cancelling backup..."
+        isRunning = false  // Set immediately to stop monitors
         
         Task { [weak self] in
             guard let self = self else { return }
-            for queue in self.destinationQueues {
-                await queue.stop()
+            // Stop all queues in parallel for faster cancellation
+            await withTaskGroup(of: Void.self) { group in
+                for queue in self.destinationQueues {
+                    group.addTask {
+                        await queue.stop()
+                    }
+                }
             }
             // Clear queues to release memory
             self.destinationQueues.removeAll()
