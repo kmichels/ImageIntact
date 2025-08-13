@@ -246,6 +246,7 @@ extension BackupManager {
             } else {
                 destinationProgress[name] = status.completed
                 destinationStates[name] = "copying"
+                print("🔄 UI Update: \(name) - \(status.completed)/\(status.total)")
                 
                 Task {
                     await progressState.setDestinationProgress(status.completed, for: name)

@@ -159,7 +159,8 @@ actor DestinationQueue {
             let currentCompleted = completedFiles
             let currentTotal = totalFiles
             if let progressCallback = onProgress {
-                await MainActor.run {
+                // We need to escape the actor context to call the callback
+                Task { @MainActor in
                     progressCallback(currentCompleted, currentTotal)
                 }
             }
@@ -363,7 +364,7 @@ actor DestinationQueue {
             if let progressCallback = onProgress {
                 let currentVerified = verifiedFiles
                 let currentTotal = totalFiles
-                await MainActor.run {
+                Task { @MainActor in
                     progressCallback(currentVerified, currentTotal)
                 }
             }

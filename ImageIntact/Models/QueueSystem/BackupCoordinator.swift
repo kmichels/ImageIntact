@@ -113,9 +113,9 @@ class BackupCoordinator: ObservableObject {
     }
     
     func cancelBackup() {
+        guard !shouldCancel else { return }  // Prevent multiple cancellations
         shouldCancel = true
         statusMessage = "Cancelling backup..."
-        isRunning = false  // Set immediately to stop monitors
         
         Task { [weak self] in
             guard let self = self else { return }
@@ -129,6 +129,8 @@ class BackupCoordinator: ObservableObject {
             }
             // Clear queues to release memory
             self.destinationQueues.removeAll()
+            // Only set isRunning to false after cleanup
+            self.isRunning = false
         }
     }
     
@@ -250,9 +252,12 @@ class BackupCoordinator: ObservableObject {
         if var status = destinationStatuses[destination.lastPathComponent] {
             status.completed = completed
             destinationStatuses[destination.lastPathComponent] = status
+            print("📊 Progress update: \(destination.lastPathComponent) - \(completed)/\(total)")
             
             // Don't update overall progress here - it causes jumps due to stale data
             // The monitor loop will update it with fresh data from all queues
+        } else {
+            print("⚠️ No status found for \(destination.lastPathComponent)")
         }
     }
     
