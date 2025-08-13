@@ -46,7 +46,7 @@ extension BackupManager {
         }
         
         // Access security-scoped resources through resource manager
-        let sourceAccess = await resourceManager.startAccessingSecurityScopedResource(source)
+        _ = await resourceManager.startAccessingSecurityScopedResource(source)
         for destination in destinations {
             _ = await resourceManager.startAccessingSecurityScopedResource(destination)
         }

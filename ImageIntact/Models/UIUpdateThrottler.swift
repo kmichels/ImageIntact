@@ -34,10 +34,12 @@ class UIUpdateThrottler {
             // Schedule update for when minimum interval has passed
             let delay = minimumInterval - timeSinceLastUpdate
             updateTimer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
-                guard let self = self else { return }
-                self.pendingUpdate?()
-                self.pendingUpdate = nil
-                self.lastUpdateTime = Date()
+                Task { @MainActor in
+                    guard let self = self else { return }
+                    self.pendingUpdate?()
+                    self.pendingUpdate = nil
+                    self.lastUpdateTime = Date()
+                }
             }
         }
     }
