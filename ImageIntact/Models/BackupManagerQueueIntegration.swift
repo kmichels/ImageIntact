@@ -99,6 +99,7 @@ extension BackupManager {
                 // Check if user cancelled
                 if self.shouldCancel {
                     print("📊 User cancelled, exiting monitor task")
+                    coordinator.cancelBackup()
                     break
                 }
                 
@@ -116,9 +117,27 @@ extension BackupManager {
         
         // Start the smart backup
         currentPhase = .copyingFiles
-        await coordinator.startBackup(source: source, destinations: destinations, manifest: manifest)
         
-        // Wait for monitoring to finish
+        // Run backup in a separate task so we can cancel it
+        let backupTask = Task {
+            await coordinator.startBackup(source: source, destinations: destinations, manifest: manifest)
+        }
+        
+        // Wait for either backup completion or cancellation
+        while coordinator.isRunning && !shouldCancel {
+            try? await Task.sleep(nanoseconds: 100_000_000) // Check every 0.1s
+        }
+        
+        // If cancelled, stop everything immediately
+        if shouldCancel {
+            backupTask.cancel()
+            monitorTask.cancel()
+            coordinator.cancelBackup()
+            print("📊 Backup cancelled by user")
+            return
+        }
+        
+        // Wait for monitoring to finish (only if not cancelled)
         print("📊 Waiting for monitor task to complete...")
         await monitorTask.value
         print("📊 Monitor task done, setting phase to complete")

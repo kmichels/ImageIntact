@@ -87,7 +87,15 @@ class BackupCoordinator: ObservableObject {
                         let cancelled = await MainActor.run { [weak self] in
                             self?.shouldCancel ?? true
                         }
-                        if cancelled { break }
+                        if cancelled { 
+                            await queue.stop()
+                            break 
+                        }
+                        // Also check Task cancellation
+                        if Task.isCancelled {
+                            await queue.stop()
+                            break
+                        }
                         try? await Task.sleep(nanoseconds: 100_000_000) // Check every 0.1s
                     }
                 }
@@ -113,14 +121,18 @@ class BackupCoordinator: ObservableObject {
         shouldCancel = true
         statusMessage = "Cancelling backup..."
         
-        Task { [weak self] in
-            guard let self = self else { return }
-            for queue in self.destinationQueues {
+        // Stop all queues immediately without waiting
+        for queue in destinationQueues {
+            Task.detached {
                 await queue.stop()
             }
-            // Clear queues to release memory
-            self.destinationQueues.removeAll()
         }
+        
+        // Clear queues immediately
+        destinationQueues.removeAll()
+        
+        // Mark as not running immediately
+        isRunning = false
     }
     
     func getFailures() -> [(file: String, destination: String, error: String)] {
@@ -176,6 +188,9 @@ class BackupCoordinator: ObservableObject {
     
     private func monitorProgress() async {
         while isRunning && !shouldCancel {
+            // Check for task cancellation
+            if Task.isCancelled { return }
+            
             // Update status for each destination
             var allQueuesComplete = true
             for queue in destinationQueues {
