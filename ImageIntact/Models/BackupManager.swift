@@ -50,7 +50,7 @@ class BackupManager {
     var totalBytesCopied: Int64 = 0
     
     // Thread-safe progress state
-    private let progressState = BackupProgressState()
+    let progressState = BackupProgressState()  // Made internal for extension access
     
     // ETA tracking
     var totalBytesToCopy: Int64 = 0
@@ -591,16 +591,14 @@ class BackupManager {
     }
     
     @MainActor
-    func initializeDestinations(_ destinations: [URL]) {
-        Task {
-            let destNames = destinations.map { $0.lastPathComponent }
-            await progressState.initializeDestinations(destNames)
-            
-            // Update local cache for UI
-            for destination in destinations {
-                destinationProgress[destination.lastPathComponent] = 0
-                destinationStates[destination.lastPathComponent] = "copying"
-            }
+    func initializeDestinations(_ destinations: [URL]) async {
+        let destNames = destinations.map { $0.lastPathComponent }
+        await progressState.initializeDestinations(destNames)
+        
+        // Update local cache for UI
+        for destination in destinations {
+            destinationProgress[destination.lastPathComponent] = 0
+            destinationStates[destination.lastPathComponent] = "copying"
         }
     }
     
