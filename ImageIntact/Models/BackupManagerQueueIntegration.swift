@@ -29,6 +29,11 @@ extension BackupManager {
             currentMonitorTask?.cancel()
             currentMonitorTask = nil
             
+            // Clean up all resources
+            Task {
+                await resourceManager.cleanup()
+            }
+            
             // Calculate final stats
             let totalTime = Date().timeIntervalSince(backupStartTime)
             let timeString = formatTimeForQueue(totalTime)
@@ -40,16 +45,16 @@ extension BackupManager {
             }
         }
         
-        // Access security-scoped resources
-        let sourceAccess = source.startAccessingSecurityScopedResource()
-        let destAccesses = destinations.map { $0.startAccessingSecurityScopedResource() }
+        // Access security-scoped resources through resource manager
+        let sourceAccess = await resourceManager.startAccessingSecurityScopedResource(source)
+        for destination in destinations {
+            _ = await resourceManager.startAccessingSecurityScopedResource(destination)
+        }
         
         defer {
-            if sourceAccess { source.stopAccessingSecurityScopedResource() }
-            for (index, access) in destAccesses.enumerated() {
-                if access {
-                    destinations[index].stopAccessingSecurityScopedResource()
-                }
+            // Resource manager will handle cleanup
+            Task {
+                await resourceManager.stopAccessingAllSecurityScopedResources()
             }
         }
         
@@ -75,8 +80,8 @@ extension BackupManager {
         currentCoordinator = coordinator  // Store reference for cancellation
         
         // Monitor coordinator status with polling for more frequent updates
-        let monitorTask = Task { @MainActor [weak self] in
-            guard let self = self else { return }
+        let monitorTask = Task { @MainActor [weak self, weak coordinator] in
+            guard let self = self, let coordinator = coordinator else { return }
             while !Task.isCancelled && coordinator.isRunning && !self.shouldCancel {
                 self.updateUIFromCoordinator(coordinator)
                 
@@ -107,6 +112,7 @@ extension BackupManager {
         
         // Store monitor task reference for potential cancellation
         currentMonitorTask = monitorTask
+        await resourceManager.track(task: monitorTask)
         
         // Start the smart backup
         currentPhase = .copyingFiles

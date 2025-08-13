@@ -63,10 +63,11 @@ class BackupCoordinator: ObservableObject {
             // Add tasks to queue
             await queue.addTasks(tasks)
             
-            // Set up progress callback (from async context)
+            // Set up progress callback (from async context) with weak capture
+            let weakDestination = destination
             await queue.setProgressCallback { [weak self] completed, total in
                 Task { @MainActor in
-                    self?.updateDestinationProgress(destination: destination, completed: completed, total: total)
+                    self?.updateDestinationProgress(destination: weakDestination, completed: completed, total: total)
                 }
             }
         }
@@ -76,7 +77,8 @@ class BackupCoordinator: ObservableObject {
         
         await withTaskGroup(of: Void.self) { group in
             for queue in destinationQueues {
-                group.addTask { [weak self] in
+                group.addTask { [weak self, weak queue] in
+                    guard let queue = queue else { return }
                     await queue.start()
                     
                     // Wait for completion
@@ -91,9 +93,9 @@ class BackupCoordinator: ObservableObject {
                 }
             }
             
-            // Start monitoring task
-            group.addTask {
-                await self.monitorProgress()
+            // Start monitoring task with weak self
+            group.addTask { [weak self] in
+                await self?.monitorProgress()
             }
             
             // Wait for all to complete
@@ -111,10 +113,13 @@ class BackupCoordinator: ObservableObject {
         shouldCancel = true
         statusMessage = "Cancelling backup..."
         
-        Task {
-            for queue in destinationQueues {
+        Task { [weak self] in
+            guard let self = self else { return }
+            for queue in self.destinationQueues {
                 await queue.stop()
             }
+            // Clear queues to release memory
+            self.destinationQueues.removeAll()
         }
     }
     

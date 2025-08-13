@@ -52,6 +52,9 @@ class BackupManager {
     // Thread-safe progress state
     let progressState = BackupProgressState()  // Made internal for extension access
     
+    // Resource management
+    let resourceManager = ResourceManager()  // Made internal for extension access
+    
     // ETA tracking
     var totalBytesToCopy: Int64 = 0
     var estimatedSecondsRemaining: TimeInterval? = nil
@@ -378,12 +381,19 @@ class BackupManager {
         
         // Cancel the monitor task
         currentMonitorTask?.cancel()
+        currentMonitorTask = nil
         
         // Cancel the queue-based coordinator if it's running
         if let coordinator = currentCoordinator {
             Task { @MainActor in
                 coordinator.cancelBackup()
             }
+        }
+        currentCoordinator = nil
+        
+        // Clean up resources
+        Task {
+            await resourceManager.cleanup()
         }
     }
     
