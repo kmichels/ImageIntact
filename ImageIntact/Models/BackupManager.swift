@@ -96,7 +96,7 @@ class BackupManager {
     
     var logEntries: [LogEntry] = []
     private var currentOperation: DispatchWorkItem?
-    private var currentCoordinator: BackupCoordinator?
+    var currentCoordinator: BackupCoordinator?  // Made internal so extension can access it
     
     // MARK: - Initialization
     init() {
