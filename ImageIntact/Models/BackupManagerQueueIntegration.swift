@@ -72,7 +72,7 @@ extension BackupManager {
         let coordinator = BackupCoordinator()
         
         // Monitor coordinator status with polling for more frequent updates
-        let monitorTask = Task {
+        let monitorTask = Task { @MainActor in
             while !Task.isCancelled && coordinator.isRunning {
                 updateUIFromCoordinator(coordinator)
                 
@@ -87,7 +87,9 @@ extension BackupManager {
                     break
                 }
                 
-                try? await Task.sleep(nanoseconds: 250_000_000) // Update 4x per second
+                // Update faster initially, then slow down
+                let updateInterval = overallProgress < 0.1 ? 100_000_000 : 250_000_000 // 10Hz initially, then 4Hz
+                try? await Task.sleep(nanoseconds: UInt64(updateInterval))
             }
             // One final update after loop exits
             updateUIFromCoordinator(coordinator)

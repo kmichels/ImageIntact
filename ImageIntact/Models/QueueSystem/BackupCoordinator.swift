@@ -167,13 +167,18 @@ class BackupCoordinator: ObservableObject {
     private func monitorProgress() async {
         while isRunning && !shouldCancel {
             // Update status for each destination
+            var allQueuesComplete = true
             for queue in destinationQueues {
                 let status = await queue.getStatus()
                 let destination = await queue.destination
                 let verifiedFiles = await queue.verifiedFiles
                 let isVerifying = await queue.isVerifying
+                let queueComplete = await queue.isComplete()
                 
-                let isComplete = await queue.isComplete() && !isVerifying
+                if !queueComplete {
+                    allQueuesComplete = false
+                }
+                
                 await MainActor.run {
                     destinationStatuses[destination.lastPathComponent] = DestinationStatus(
                         name: destination.lastPathComponent,
@@ -181,7 +186,7 @@ class BackupCoordinator: ObservableObject {
                         total: status.total,
                         speed: status.speed,
                         eta: status.eta,
-                        isComplete: isComplete,
+                        isComplete: queueComplete,
                         hasFailed: false,
                         isVerifying: isVerifying,
                         verifiedCount: verifiedFiles
@@ -202,8 +207,15 @@ class BackupCoordinator: ObservableObject {
                 statusMessage = "All destinations complete!"
             }
             
+            // Exit early if all queues are complete
+            if allQueuesComplete {
+                print("📊 BackupCoordinator: All queues complete, exiting monitorProgress")
+                break
+            }
+            
             try? await Task.sleep(nanoseconds: 500_000_000) // Update every 0.5s
         }
+        print("📊 BackupCoordinator: monitorProgress() finished")
     }
     
     private func updateDestinationProgress(destination: URL, completed: Int, total: Int) {
