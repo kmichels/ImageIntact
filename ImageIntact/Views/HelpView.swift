@@ -26,6 +26,18 @@ struct HelpView: View {
             // Content
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
+                    // What's New
+                    HelpSection(title: "What's New in v1.2") {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("• **Independent destinations** - Each runs at full speed")
+                            Text("• **Real-time ETA** - See time remaining per destination")
+                            Text("• **Automatic updates** - Daily checks for new versions")
+                            Text("• **Better progress** - Per-destination tracking")
+                            Text("• **Adaptive performance** - 1-8 workers per destination")
+                        }
+                        .font(.subheadline)
+                    }
+                    
                     // Getting Started
                     HelpSection(title: "Getting Started") {
                         VStack(alignment: .leading, spacing: 12) {
@@ -87,22 +99,43 @@ struct HelpView: View {
                     }
                     
                     // Performance
-                    HelpSection(title: "Performance") {
+                    HelpSection(title: "Performance (v1.2)") {
                         VStack(alignment: .leading, spacing: 12) {
                             Text("ImageIntact automatically optimizes performance based on your destinations:")
                             
                             VStack(alignment: .leading, spacing: 8) {
+                                HelpPoint(title: "Independent Destinations", 
+                                         description: "Each destination runs at full speed - fast SSDs don't wait for slow network drives")
+                                
+                                HelpPoint(title: "Queue-Based System", 
+                                         description: "Smart task scheduling with 1-8 adaptive workers per destination")
+                                
+                                HelpPoint(title: "Real-time ETA", 
+                                         description: "See estimated time remaining for each destination")
+                                
                                 HelpPoint(title: "SHA-256 Checksums", 
-                                         description: "Uses cryptographically secure SHA-256 checksums for reliable verification")
+                                         description: "Cryptographically secure verification using native Swift")
+                            }
+                        }
+                    }
+                    
+                    // Automatic Updates
+                    HelpSection(title: "Automatic Updates (v1.2)") {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("ImageIntact can automatically check for updates:")
+                            
+                            VStack(alignment: .leading, spacing: 8) {
+                                HelpPoint(title: "Daily Checks", 
+                                         description: "Automatically checks once per day on launch")
                                 
-                                HelpPoint(title: "Phase-Based Architecture", 
-                                         description: "Optimized workflow: analyze → manifest → copy → verify")
+                                HelpPoint(title: "Manual Check", 
+                                         description: "Use ImageIntact menu → Check for Updates")
                                 
-                                HelpPoint(title: "Smart Concurrency", 
-                                         description: "Up to 8 parallel operations for modern SSDs")
+                                HelpPoint(title: "Safe Downloads", 
+                                         description: "Downloads to your Downloads folder with progress tracking")
                                 
-                                HelpPoint(title: "Progress Monitoring", 
-                                         description: "Real-time progress tracking with phase indicators")
+                                HelpPoint(title: "Version Skipping", 
+                                         description: "You can skip specific versions if desired")
                             }
                         }
                     }
@@ -115,6 +148,7 @@ struct HelpView: View {
                             HelpShortcut(key: "⌘+", action: "Add destination")
                             HelpShortcut(key: "⌘R", action: "Run backup")
                             HelpShortcut(key: "⌘K", action: "Clear all selections")
+                            HelpShortcut(key: "⌘?", action: "Show this help")
                         }
                     }
                     

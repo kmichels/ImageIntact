@@ -16,15 +16,17 @@ Born from 25+ years in Tech and a deep love for photography, as well as a desire
 - **Checksum verification** - Every file is verified using SHA-256 for cryptographically secure integrity checking
 - **Detailed logging** - Complete audit trail of all operations
 
-### 🚀 Performance
-- **Phase-based backup** - Optimized workflow: analyze → build manifest → copy → verify
-- **Smart concurrency** - Up to 8 parallel checksum operations for modern SSDs
+### 🚀 Performance (v1.2)
+- **Independent destinations** - Each destination runs at full speed - no waiting for slow drives
+- **Queue-based architecture** - Smart task scheduling with 1-8 adaptive workers per destination
+- **Real-time ETA** - See estimated time remaining for each destination
 - **Skip identical files** - Only copies what's needed
-- **Progress tracking** - See exactly what's being copied in real-time
+- **Per-destination progress** - Monitor each backup location independently
 - **Detailed completion stats** - Shows files processed, data volume, and time taken
 
 ### 📊 Advanced Features
-- **Multiple destinations** - Back up to up to 4 locations simultaneously
+- **Multiple destinations** - Back up to 4 locations, each running independently
+- **Automatic updates** - Check for new versions from GitHub (daily)
 - **Session tracking** - Each backup run has a unique ID for correlation
 - **Checksum manifests** - Proof of successful backups for each destination
 - **Modified file detection** - Catches files that changed but kept the same size
@@ -37,7 +39,7 @@ Born from 25+ years in Tech and a deep love for photography, as well as a desire
 ## Installation
 
 ### Option 1: Download Pre-built Release (Recommended)
-1. Download the latest release from the [Releases](https://github.com/kmichels/ImageIntact/releases) page
+1. Download the latest release from the [Releases](https://github.com/Tonal-Photo/ImageIntact/releases) page
 2. Open the DMG and drag ImageIntact to your Applications folder
 3. On first launch, macOS will ask for permission to access folders - approve this
 
@@ -45,13 +47,21 @@ Born from 25+ years in Tech and a deep love for photography, as well as a desire
 The `main` branch may contain newer features and fixes not yet in the official releases.
 
 ```bash
-git clone https://github.com/kmichels/ImageIntact.git
+git clone https://github.com/Tonal-Photo/ImageIntact.git
 cd ImageIntact
 open ImageIntact.xcodeproj
 # Then build and run in Xcode (Cmd+R)
 ```
 
-> **Note:** Each release links to its specific source code snapshot. Check the [Releases](https://github.com/kmichels/ImageIntact/releases) page to see what's new in the latest development version versus the stable release.
+> **Note:** Each release links to its specific source code snapshot. Check the [Releases](https://github.com/Tonal-Photo/ImageIntact/releases) page to see what's new in the latest development version versus the stable release.
+
+## What's New in v1.2
+
+- **Parallel Destination Processing** - Each destination now runs completely independently at its maximum speed
+- **Real-time ETA** - See estimated time remaining for each destination
+- **Automatic Updates** - Daily checks for new versions (can be triggered manually via menu)
+- **Improved Progress Tracking** - Per-destination progress bars with state indicators
+- **Better Performance** - Adaptive worker pools (1-8 threads) based on destination speed
 
 ## Usage
 
