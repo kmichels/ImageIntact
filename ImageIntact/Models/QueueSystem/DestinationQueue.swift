@@ -17,10 +17,20 @@ actor DestinationQueue {
     private(set) var failedFiles: [(file: String, error: String)] = []
     private(set) var bytesTransferred: Int64 = 0
     private(set) var totalBytes: Int64 = 0
+    private(set) var verifiedFiles: Int = 0
+    private(set) var isVerifying = false
     
-    // Callbacks for UI updates
-    var onProgress: ((Int, Int) -> Void)?
-    var onStatusUpdate: ((String) -> Void)?
+    // Callbacks for UI updates (needs to be set from async context)
+    private var onProgress: ((Int, Int) -> Void)?
+    private var onStatusUpdate: ((String) -> Void)?
+    
+    func setProgressCallback(_ callback: @escaping (Int, Int) -> Void) {
+        self.onProgress = callback
+    }
+    
+    func setStatusCallback(_ callback: @escaping (String) -> Void) {
+        self.onStatusUpdate = callback
+    }
     
     // Worker configuration
     private var currentWorkerCount: Int = 2
@@ -50,6 +60,9 @@ actor DestinationQueue {
         
         print("🚀 Starting queue for \(destination.lastPathComponent) with \(await queue.count) files")
         
+        // Keep track of all files for verification
+        let allTasks = await queue.allTasks()
+        
         // Start initial workers
         for _ in 0..<currentWorkerCount {
             let task = Task {
@@ -63,6 +76,12 @@ actor DestinationQueue {
             await manageWorkerCount()
         }
         workerTasks.append(managerTask)
+        
+        // Start verification monitor
+        let verifyTask = Task {
+            await startVerificationWhenCopyingComplete(allTasks: allTasks)
+        }
+        workerTasks.append(verifyTask)
     }
     
     func stop() {
@@ -126,9 +145,13 @@ actor DestinationQueue {
                 break
             }
             
-            // Update progress
-            await MainActor.run {
-                onProgress?(completedFiles, totalFiles)
+            // Update progress (capture values first to avoid actor isolation)
+            let currentCompleted = completedFiles
+            let currentTotal = totalFiles
+            if let progressCallback = onProgress {
+                await MainActor.run {
+                    progressCallback(currentCompleted, currentTotal)
+                }
             }
         }
         
@@ -238,5 +261,64 @@ actor DestinationQueue {
             let minutes = Int((seconds.truncatingRemainder(dividingBy: 3600)) / 60)
             return "\(hours)h \(minutes)m"
         }
+    }
+    
+    // MARK: - Verification
+    
+    private func startVerificationWhenCopyingComplete(allTasks: [FileTask]) async {
+        // Wait for all copying to complete
+        while completedFiles < totalFiles && !shouldCancel {
+            try? await Task.sleep(nanoseconds: 1_000_000_000) // Check every second
+        }
+        
+        guard !shouldCancel else { return }
+        
+        print("✅ Copying complete for \(destination.lastPathComponent), starting verification...")
+        isVerifying = true
+        
+        // Verify each file
+        for task in allTasks {
+            guard !shouldCancel else { break }
+            
+            let destPath = destination.appendingPathComponent(task.relativePath)
+            
+            do {
+                // Check if file exists
+                guard FileManager.default.fileExists(atPath: destPath.path) else {
+                    print("❌ Verification failed: \(task.relativePath) missing at \(destination.lastPathComponent)")
+                    failedFiles.append((file: task.relativePath, error: "File missing after copy"))
+                    continue
+                }
+                
+                // Verify checksum
+                let actualChecksum = try await BackupManager.sha256ChecksumStatic(
+                    for: destPath,
+                    shouldCancel: shouldCancel
+                )
+                
+                if actualChecksum == task.checksum {
+                    verifiedFiles += 1
+                    print("✅ Verified: \(task.relativePath) at \(destination.lastPathComponent)")
+                } else {
+                    print("❌ Checksum mismatch: \(task.relativePath) at \(destination.lastPathComponent)")
+                    failedFiles.append((file: task.relativePath, error: "Checksum mismatch"))
+                }
+            } catch {
+                print("❌ Verification error for \(task.relativePath): \(error)")
+                failedFiles.append((file: task.relativePath, error: error.localizedDescription))
+            }
+            
+            // Update progress
+            if let progressCallback = onProgress {
+                let currentVerified = verifiedFiles
+                let currentTotal = totalFiles
+                await MainActor.run {
+                    progressCallback(currentVerified, currentTotal)
+                }
+            }
+        }
+        
+        isVerifying = false
+        print("🎉 Verification complete for \(destination.lastPathComponent): \(verifiedFiles)/\(totalFiles) verified")
     }
 }

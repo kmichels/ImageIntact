@@ -358,9 +358,9 @@ class BackupManager {
         debugLog = []
         hasWrittenDebugLog = false
         
-        // Run the new phase-based backup operation
+        // Use the new queue-based backup system for parallel destination processing
         Task {
-            await performPhaseBasedBackup(source: source, destinations: destinations)
+            await performQueueBasedBackup(source: source, destinations: destinations)
         }
     }
     

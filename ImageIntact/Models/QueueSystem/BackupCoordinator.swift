@@ -20,6 +20,8 @@ class BackupCoordinator: ObservableObject {
         var eta: String?
         var isComplete: Bool
         var hasFailed: Bool
+        var isVerifying: Bool
+        var verifiedCount: Int
     }
     
     // MARK: - Main Entry Point
@@ -52,14 +54,16 @@ class BackupCoordinator: ObservableObject {
                 speed: "0 MB/s",
                 eta: nil,
                 isComplete: false,
-                hasFailed: false
+                hasFailed: false,
+                isVerifying: false,
+                verifiedCount: 0
             )
             
             // Add tasks to queue
             await queue.addTasks(tasks)
             
-            // Set up progress callback
-            queue.onProgress = { [weak self] completed, total in
+            // Set up progress callback (from async context)
+            await queue.setProgressCallback { [weak self] completed, total in
                 Task { @MainActor in
                     self?.updateDestinationProgress(destination: destination, completed: completed, total: total)
                 }
@@ -71,11 +75,16 @@ class BackupCoordinator: ObservableObject {
         
         await withTaskGroup(of: Void.self) { group in
             for queue in destinationQueues {
-                group.addTask {
+                group.addTask { [weak self] in
                     await queue.start()
                     
                     // Wait for completion
-                    while await !queue.isComplete() && !self.shouldCancel {
+                    while await !queue.isComplete() {
+                        // Check cancellation from main actor
+                        let cancelled = await MainActor.run {
+                            self?.shouldCancel ?? true
+                        }
+                        if cancelled { break }
                         try? await Task.sleep(nanoseconds: 100_000_000) // Check every 0.1s
                     }
                 }
@@ -159,7 +168,10 @@ class BackupCoordinator: ObservableObject {
             for queue in destinationQueues {
                 let status = await queue.getStatus()
                 let destination = await queue.destination
+                let verifiedFiles = await queue.verifiedFiles
+                let isVerifying = await queue.isVerifying
                 
+                let isComplete = await queue.isComplete() && !isVerifying
                 await MainActor.run {
                     destinationStatuses[destination.lastPathComponent] = DestinationStatus(
                         name: destination.lastPathComponent,
@@ -167,8 +179,10 @@ class BackupCoordinator: ObservableObject {
                         total: status.total,
                         speed: status.speed,
                         eta: status.eta,
-                        isComplete: await queue.isComplete(),
-                        hasFailed: false
+                        isComplete: isComplete,
+                        hasFailed: false,
+                        isVerifying: isVerifying,
+                        verifiedCount: verifiedFiles
                     )
                 }
             }

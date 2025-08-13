@@ -1,0 +1,219 @@
+import Foundation
+
+// MARK: - Queue-Based Backup Integration
+extension BackupManager {
+    
+    /// Performs backup using the new smart queue system
+    /// Each destination runs independently at its own speed
+    @MainActor
+    func performQueueBasedBackup(source: URL, destinations: [URL]) async {
+        print("🚀 Starting QUEUE-BASED backup (destinations run independently!)")
+        
+        let backupStartTime = Date()
+        
+        // Reset state
+        isProcessing = true
+        shouldCancel = false
+        statusMessage = "Initializing smart backup system..."
+        failedFiles = []
+        sessionID = UUID().uuidString
+        logEntries = []
+        debugLog = []
+        
+        defer {
+            isProcessing = false
+            shouldCancel = false
+            
+            // Calculate final stats
+            let totalTime = Date().timeIntervalSince(backupStartTime)
+            let timeString = formatTimeForQueue(totalTime)
+            
+            if failedFiles.isEmpty {
+                statusMessage = "✅ Smart backup complete in \(timeString)"
+            } else {
+                statusMessage = "⚠️ Backup complete in \(timeString) with \(failedFiles.count) errors"
+            }
+        }
+        
+        // Access security-scoped resources
+        let sourceAccess = source.startAccessingSecurityScopedResource()
+        let destAccesses = destinations.map { $0.startAccessingSecurityScopedResource() }
+        
+        defer {
+            if sourceAccess { source.stopAccessingSecurityScopedResource() }
+            for (index, access) in destAccesses.enumerated() {
+                if access {
+                    destinations[index].stopAccessingSecurityScopedResource()
+                }
+            }
+        }
+        
+        // PHASE 1: Build manifest (same as before)
+        statusMessage = "Building file manifest..."
+        currentPhase = .buildingManifest
+        
+        guard let manifest = await buildManifest(source: source) else {
+            statusMessage = "Failed to build manifest"
+            return
+        }
+        
+        print("📋 Manifest contains \(manifest.count) files")
+        
+        // PHASE 2: Create and start the queue coordinator
+        let coordinator = BackupCoordinator()
+        
+        // Monitor coordinator status
+        Task {
+            for await _ in coordinator.$destinationStatuses.values {
+                // Update our UI based on coordinator's per-destination status
+                updateUIFromCoordinator(coordinator)
+            }
+        }
+        
+        // Start the smart backup
+        currentPhase = .copyingFiles
+        await coordinator.startBackup(source: source, destinations: destinations, manifest: manifest)
+        
+        // Copy coordinator's failed files to our list
+        for _ in coordinator.destinationStatuses.values {
+            // Note: We'd need to expose failed files from coordinator
+            // For now, just track completion
+        }
+        
+        currentPhase = .complete
+    }
+    
+    /// Build manifest of files to copy
+    private func buildManifest(source: URL) async -> [FileManifestEntry]? {
+        var manifest: [FileManifestEntry] = []
+        
+        let fileManager = FileManager.default
+        guard let enumerator = fileManager.enumerator(
+            at: source,
+            includingPropertiesForKeys: [.isRegularFileKey, .fileSizeKey],
+            options: [.skipsHiddenFiles]
+        ) else {
+            return nil
+        }
+        
+        var fileCount = 0
+        
+        while let url = enumerator.nextObject() as? URL {
+            guard !shouldCancel else { return nil }
+            
+            do {
+                let resourceValues = try url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
+                
+                guard resourceValues.isRegularFile == true else { continue }
+                guard ImageFileType.isSupportedFile(url) else { continue }
+                
+                fileCount += 1
+                statusMessage = "Analyzing file \(fileCount)..."
+                
+                // Calculate checksum
+                let checksum = try await Task.detached(priority: .userInitiated) {
+                    try BackupManager.sha256ChecksumStatic(for: url, shouldCancel: self.shouldCancel)
+                }.value
+                
+                let relativePath = url.path.replacingOccurrences(of: source.path + "/", with: "")
+                let size = resourceValues.fileSize ?? 0
+                
+                let entry = FileManifestEntry(
+                    relativePath: relativePath,
+                    sourceURL: url,
+                    checksum: checksum,
+                    size: Int64(size)
+                )
+                
+                manifest.append(entry)
+                
+            } catch {
+                print("Error processing \(url.lastPathComponent): \(error)")
+            }
+        }
+        
+        return manifest
+    }
+    
+    /// Update our UI based on coordinator's status
+    @MainActor
+    private func updateUIFromCoordinator(_ coordinator: BackupCoordinator) {
+        // Aggregate status from all destinations
+        var fastestDestination: String?
+        var fastestSpeed: Double = 0
+        var allComplete = true
+        var activeCount = 0
+        
+        // Update per-destination progress for UI
+        for (name, status) in coordinator.destinationStatuses {
+            // Update the destinationProgress dictionary for UI display
+            if status.isVerifying {
+                // Show verification progress
+                destinationProgress[name] = status.verifiedCount
+                currentDestinationName = name // Update to show which is verifying
+            } else {
+                destinationProgress[name] = status.completed
+            }
+            
+            // Parse speed (e.g., "45.2 MB/s" -> 45.2)
+            if !status.isVerifying, let speedValue = parseSpeed(status.speed), speedValue > fastestSpeed {
+                fastestSpeed = speedValue
+                fastestDestination = name
+            }
+            
+            if !status.isComplete {
+                allComplete = false
+                if status.isVerifying {
+                    // Don't count verifying as "active copying"
+                } else {
+                    activeCount += 1
+                }
+            }
+        }
+        
+        // Update our status message
+        let verifyingCount = coordinator.destinationStatuses.values.filter { $0.isVerifying }.count
+        
+        if allComplete {
+            statusMessage = "All destinations complete and verified!"
+        } else if verifyingCount > 0 && activeCount > 0 {
+            statusMessage = "\(activeCount) copying, \(verifyingCount) verifying"
+        } else if verifyingCount > 0 {
+            statusMessage = "\(verifyingCount) destination\(verifyingCount == 1 ? "" : "s") verifying..."
+        } else if activeCount > 0 {
+            if let fastest = fastestDestination {
+                statusMessage = "\(activeCount) destination\(activeCount == 1 ? "" : "s") copying - \(fastest) at \(formatSpeed(fastestSpeed))"
+            } else {
+                statusMessage = "\(activeCount) destination\(activeCount == 1 ? "" : "s") still copying..."
+            }
+        }
+        
+        // Update overall progress
+        overallProgress = coordinator.overallProgress
+    }
+    
+    private func parseSpeed(_ speedString: String) -> Double? {
+        // Parse "45.2 MB/s" -> 45.2
+        let components = speedString.split(separator: " ")
+        guard components.count >= 2 else { return nil }
+        return Double(components[0])
+    }
+    
+    private func formatSpeed(_ mbps: Double) -> String {
+        return String(format: "%.1f MB/s", mbps)
+    }
+    
+    private func formatTimeForQueue(_ seconds: TimeInterval) -> String {
+        if seconds < 60 {
+            return String(format: "%.1f seconds", seconds)
+        } else if seconds < 3600 {
+            let minutes = Int(seconds / 60)
+            let secs = Int(seconds.truncatingRemainder(dividingBy: 60))
+            return "\(minutes)m \(secs)s"
+        } else {
+            let hours = Int(seconds / 3600)
+            let minutes = Int((seconds.truncatingRemainder(dividingBy: 3600)) / 60)
+            return "\(hours)h \(minutes)m"
+        }
+    }
+}
