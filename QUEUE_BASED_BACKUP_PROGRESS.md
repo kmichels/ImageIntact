@@ -200,13 +200,14 @@ The queue-based backup system is now the default with these improvements:
    - Added 4x/second polling for responsive UI updates
    - No more lag in status changes
 
-### Six Commits Made:
+### Seven Commits Made:
 1. Backend implementation (queue system with per-destination verification)
 2. UI fixes (progress bars and status messages)
 3. Per-destination state tracking (copying/verifying/complete)
 4. Overall progress display with mixed states
 5. Completion detection fix and UI cleanup
 6. **CRITICAL: Fixed deadlock preventing completion**
+7. Progress calculation and smoothness improvements
 
 ## FINAL STATUS: PRODUCTION READY! 🚀🎉🎉🎉
 
@@ -252,5 +253,11 @@ Now correctly checks if all files are verified instead.
   - 10Hz initially for responsive start
   - 4Hz after 10% progress to reduce overhead
 
+### Final Polish (Commit 7):
+- **Overall progress now includes verification** - Shows 50% when copied, 100% when verified
+- **Smooth progress updates** - 10Hz UI updates, 4Hz coordinator updates
+- **Auto-scroll restored** - Triggers when copying phase starts
+- **No more jumpy progress bars** - Especially noticeable on slow destinations
+
 ---
-Last updated: PRODUCTION READY - Deadlock fixed, all systems operational!
+Last updated: PRODUCTION READY - Smooth, accurate, and fully functional!

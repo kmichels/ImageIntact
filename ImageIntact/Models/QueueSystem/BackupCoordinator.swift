@@ -223,8 +223,20 @@ class BackupCoordinator: ObservableObject {
     }
     
     private func updateDestinationProgress(destination: URL, completed: Int, total: Int) {
-        // This is called from queue callbacks
-        // The main status update happens in monitorProgress()
+        // Update the status immediately when a file completes
+        if var status = destinationStatuses[destination.lastPathComponent] {
+            status.completed = completed
+            destinationStatuses[destination.lastPathComponent] = status
+            
+            // Also update overall progress immediately
+            let totalOperations = destinationQueues.count * manifest.count * 2
+            var completedOperations = 0
+            for status in destinationStatuses.values {
+                completedOperations += status.completed
+                completedOperations += status.verifiedCount
+            }
+            overallProgress = totalOperations > 0 ? Double(completedOperations) / Double(totalOperations) : 0
+        }
     }
     
     // MARK: - Finalization
