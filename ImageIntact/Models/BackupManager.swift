@@ -96,6 +96,7 @@ class BackupManager {
     
     var logEntries: [LogEntry] = []
     private var currentOperation: DispatchWorkItem?
+    var currentCoordinator: BackupCoordinator?  // Made internal so extension can access it
     
     // MARK: - Initialization
     init() {
@@ -371,6 +372,13 @@ class BackupManager {
         shouldCancel = true
         statusMessage = "Cancelling backup..."
         currentOperation?.cancel()
+        
+        // Cancel the queue-based coordinator if it's running
+        if let coordinator = currentCoordinator {
+            Task { @MainActor in
+                coordinator.cancelBackup()
+            }
+        }
     }
     
     // MARK: - Private Methods

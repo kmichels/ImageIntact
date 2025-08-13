@@ -23,6 +23,7 @@ extension BackupManager {
         defer {
             isProcessing = false
             shouldCancel = false
+            currentCoordinator = nil  // Clear coordinator reference
             
             // Calculate final stats
             let totalTime = Date().timeIntervalSince(backupStartTime)
@@ -70,10 +71,11 @@ extension BackupManager {
         
         // PHASE 2: Create and start the queue coordinator
         let coordinator = BackupCoordinator()
+        currentCoordinator = coordinator  // Store reference for cancellation
         
         // Monitor coordinator status with polling for more frequent updates
         let monitorTask = Task { @MainActor in
-            while !Task.isCancelled && coordinator.isRunning {
+            while !Task.isCancelled && coordinator.isRunning && !shouldCancel {
                 updateUIFromCoordinator(coordinator)
                 
                 // Check if all destinations are complete
@@ -84,6 +86,12 @@ extension BackupManager {
                     // Final update and exit
                     updateUIFromCoordinator(coordinator)
                     print("📊 All destinations complete, exiting monitor task")
+                    break
+                }
+                
+                // Check if user cancelled
+                if shouldCancel {
+                    print("📊 User cancelled, exiting monitor task")
                     break
                 }
                 
