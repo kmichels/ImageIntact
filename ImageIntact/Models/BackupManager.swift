@@ -99,7 +99,7 @@ class BackupManager {
     var logEntries: [LogEntry] = []
     private var currentOperation: DispatchWorkItem?
     var currentCoordinator: BackupCoordinator?  // Made internal so extension can access it
-    private var currentMonitorTask: Task<Void, Never>?  // Track monitor task for cancellation
+    var currentMonitorTask: Task<Void, Never>?  // Made internal so extension can access it
     
     // MARK: - Initialization
     init() {
