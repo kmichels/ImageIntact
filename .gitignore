@@ -9,6 +9,7 @@ xcuserdata/
 *.xccheckout
 *.moved-aside
 *.xcuserstate
+*.md
 
 # macOS
 .DS_Store
