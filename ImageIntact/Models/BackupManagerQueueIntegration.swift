@@ -59,20 +59,33 @@ extension BackupManager {
         
         print("📋 Manifest contains \(manifest.count) files")
         
+        // Set totalFiles so UI shows progress bars
+        totalFiles = manifest.count
+        
+        // Initialize destination progress for all destinations
+        for destination in destinations {
+            destinationProgress[destination.lastPathComponent] = 0
+        }
+        
         // PHASE 2: Create and start the queue coordinator
         let coordinator = BackupCoordinator()
         
-        // Monitor coordinator status
-        Task {
-            for await _ in coordinator.$destinationStatuses.values {
-                // Update our UI based on coordinator's per-destination status
+        // Monitor coordinator status with polling for more frequent updates
+        let monitorTask = Task {
+            while coordinator.isRunning {
                 updateUIFromCoordinator(coordinator)
+                try? await Task.sleep(nanoseconds: 250_000_000) // Update 4x per second
             }
+            // Final update
+            updateUIFromCoordinator(coordinator)
         }
         
         // Start the smart backup
         currentPhase = .copyingFiles
         await coordinator.startBackup(source: source, destinations: destinations, manifest: manifest)
+        
+        // Wait for monitoring to finish
+        await monitorTask.value
         
         // Copy coordinator's failed files to our list
         for _ in coordinator.destinationStatuses.values {
@@ -145,12 +158,15 @@ extension BackupManager {
         var activeCount = 0
         
         // Update per-destination progress for UI
+        var copyingCount = 0
+        var verifyingDestinations: [String] = []
+        
         for (name, status) in coordinator.destinationStatuses {
             // Update the destinationProgress dictionary for UI display
             if status.isVerifying {
                 // Show verification progress
                 destinationProgress[name] = status.verifiedCount
-                currentDestinationName = name // Update to show which is verifying
+                verifyingDestinations.append(name)
             } else {
                 destinationProgress[name] = status.completed
             }
@@ -161,31 +177,36 @@ extension BackupManager {
                 fastestDestination = name
             }
             
+            // Count states more accurately
             if !status.isComplete {
                 allComplete = false
                 if status.isVerifying {
-                    // Don't count verifying as "active copying"
-                } else {
+                    // Already added to verifyingDestinations
+                } else if status.completed < status.total {
+                    copyingCount += 1
                     activeCount += 1
                 }
             }
         }
         
         // Update our status message
-        let verifyingCount = coordinator.destinationStatuses.values.filter { $0.isVerifying }.count
+        let verifyingCount = verifyingDestinations.count
         
         if allComplete {
             statusMessage = "All destinations complete and verified!"
-        } else if verifyingCount > 0 && activeCount > 0 {
-            statusMessage = "\(activeCount) copying, \(verifyingCount) verifying"
+        } else if copyingCount > 0 && verifyingCount > 0 {
+            statusMessage = "\(copyingCount) copying, \(verifyingCount) verifying"
         } else if verifyingCount > 0 {
-            statusMessage = "\(verifyingCount) destination\(verifyingCount == 1 ? "" : "s") verifying..."
-        } else if activeCount > 0 {
+            let names = verifyingDestinations.joined(separator: ", ")
+            statusMessage = "Verifying: \(names)"
+        } else if copyingCount > 0 {
             if let fastest = fastestDestination {
-                statusMessage = "\(activeCount) destination\(activeCount == 1 ? "" : "s") copying - \(fastest) at \(formatSpeed(fastestSpeed))"
+                statusMessage = "\(copyingCount) destination\(copyingCount == 1 ? "" : "s") copying - \(fastest) at \(formatSpeed(fastestSpeed))"
             } else {
-                statusMessage = "\(activeCount) destination\(activeCount == 1 ? "" : "s") still copying..."
+                statusMessage = "\(copyingCount) destination\(copyingCount == 1 ? "" : "s") copying..."
             }
+        } else {
+            statusMessage = "Processing..."
         }
         
         // Update overall progress
