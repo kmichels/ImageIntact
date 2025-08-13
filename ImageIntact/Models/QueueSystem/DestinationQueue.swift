@@ -276,6 +276,9 @@ actor DestinationQueue {
         print("✅ Copying complete for \(destination.lastPathComponent), starting verification...")
         isVerifying = true
         
+        // Small delay to ensure UI catches the state change for fast operations
+        try? await Task.sleep(nanoseconds: 100_000_000) // 0.1 seconds
+        
         // Verify each file
         for task in allTasks {
             guard !shouldCancel else { break }

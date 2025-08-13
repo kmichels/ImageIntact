@@ -206,26 +206,42 @@ extension BackupManager {
         
         // Update our status message
         let verifyingCount = verifyingDestinations.count
+        let completeCount = coordinator.destinationStatuses.values.filter { $0.isComplete }.count
         
         if allComplete {
             statusMessage = "All destinations complete and verified!"
+            currentPhase = .complete
         } else if copyingCount > 0 && verifyingCount > 0 {
             statusMessage = "\(copyingCount) copying, \(verifyingCount) verifying"
+            // Set phase based on majority
+            currentPhase = copyingCount > verifyingCount ? .copyingFiles : .verifyingDestinations
         } else if verifyingCount > 0 {
             let names = verifyingDestinations.joined(separator: ", ")
             statusMessage = "Verifying: \(names)"
+            currentPhase = .verifyingDestinations
         } else if copyingCount > 0 {
             if let fastest = fastestDestination {
                 statusMessage = "\(copyingCount) destination\(copyingCount == 1 ? "" : "s") copying - \(fastest) at \(formatSpeed(fastestSpeed))"
             } else {
                 statusMessage = "\(copyingCount) destination\(copyingCount == 1 ? "" : "s") copying..."
             }
+            currentPhase = .copyingFiles
         } else {
             statusMessage = "Processing..."
         }
         
         // Update overall progress
         overallProgress = coordinator.overallProgress
+        
+        // For overall status text, show counts instead of phase
+        if completeCount > 0 || copyingCount > 0 || verifyingCount > 0 {
+            overallStatusText = buildOverallStatusText(
+                copying: copyingCount,
+                verifying: verifyingCount,
+                complete: completeCount,
+                total: coordinator.destinationStatuses.count
+            )
+        }
     }
     
     private func parseSpeed(_ speedString: String) -> Double? {
@@ -251,5 +267,25 @@ extension BackupManager {
             let minutes = Int((seconds.truncatingRemainder(dividingBy: 3600)) / 60)
             return "\(hours)h \(minutes)m"
         }
+    }
+    
+    private func buildOverallStatusText(copying: Int, verifying: Int, complete: Int, total: Int) -> String {
+        var parts: [String] = []
+        
+        if complete > 0 {
+            parts.append("\(complete) complete")
+        }
+        if copying > 0 {
+            parts.append("\(copying) copying")
+        }
+        if verifying > 0 {
+            parts.append("\(verifying) verifying")
+        }
+        
+        if parts.isEmpty {
+            return "Processing \(total) destinations"
+        }
+        
+        return parts.joined(separator: ", ")
     }
 }

@@ -218,9 +218,19 @@ struct MultiDestinationProgress: View {
                         .font(.caption2)
                         .foregroundColor(.secondary)
                     Spacer()
-                    Text(phaseDescription(for: backupManager.currentPhase))
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
+                    if !backupManager.overallStatusText.isEmpty {
+                        Text(backupManager.overallStatusText)
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    } else if backupManager.currentPhase == .buildingManifest {
+                        Text("Building manifest...")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    } else if backupManager.currentPhase == .complete {
+                        Text("Complete")
+                            .font(.caption2)
+                            .foregroundColor(.green)
+                    }
                 }
                 ProgressView(value: backupManager.overallProgress)
                     .progressViewStyle(.linear)
