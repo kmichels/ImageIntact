@@ -416,22 +416,32 @@ class BackupManager {
     static func loadDestinationBookmarks() -> [URL?] {
         let keys = ["dest1Bookmark", "dest2Bookmark", "dest3Bookmark", "dest4Bookmark"]
         var urls: [URL?] = []
+        var foundAny = false
         
         // Load all saved bookmarks in their exact positions
         for key in keys {
             if let url = loadBookmark(forKey: key) {
                 print("Loaded destination from \(key): \(url.lastPathComponent)")
                 urls.append(url)
+                foundAny = true
             } else {
                 print("No bookmark found for \(key)")
-                // Stop looking for more bookmarks after finding an empty slot
-                break
+                // Only add nil if we've found at least one bookmark
+                // This preserves the position of bookmarks
+                if foundAny {
+                    urls.append(nil)
+                }
             }
         }
         
         // Always show at least one slot
         if urls.isEmpty {
             urls = [nil]
+        }
+        
+        // Trim trailing nils but keep at least one slot
+        while urls.count > 1 && urls.last == nil {
+            urls.removeLast()
         }
         
         print("Total destinations loaded: \(urls.count)")

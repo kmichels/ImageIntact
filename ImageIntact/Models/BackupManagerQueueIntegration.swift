@@ -82,7 +82,11 @@ extension BackupManager {
         // Monitor coordinator status with polling for more frequent updates
         let monitorTask = Task { @MainActor [weak self, weak coordinator] in
             guard let self = self, let coordinator = coordinator else { return }
-            while !Task.isCancelled && coordinator.isRunning && !self.shouldCancel {
+            
+            // Wait a moment for the coordinator to start
+            try? await Task.sleep(nanoseconds: 100_000_000) // 0.1s
+            
+            while !Task.isCancelled && !self.shouldCancel {
                 self.updateUIFromCoordinator(coordinator)
                 
                 // Check if all destinations are complete
