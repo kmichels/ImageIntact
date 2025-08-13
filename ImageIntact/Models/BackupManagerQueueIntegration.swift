@@ -291,8 +291,8 @@ extension BackupManager {
             statusMessage = "Processing..."
         }
         
-        // Update overall progress
-        overallProgress = coordinator.overallProgress
+        // Update overall progress (sanitize to 0-1 range)
+        overallProgress = max(0.0, min(1.0, coordinator.overallProgress))
         
         // For overall status text, show counts instead of phase
         if completeCount > 0 || copyingCount > 0 || verifyingCount > 0 {

@@ -537,7 +537,17 @@ class BackupManager {
         }
         
         let remainingMB = Double(remainingBytes) / (1024 * 1024)
-        estimatedSecondsRemaining = remainingMB / averageSpeed
+        let calculatedETA = remainingMB / averageSpeed
+        
+        // Sanitize ETA to reasonable bounds (max 24 hours)
+        if calculatedETA.isNaN || calculatedETA.isInfinite || calculatedETA < 0 {
+            estimatedSecondsRemaining = nil
+        } else if calculatedETA > 86400 { // More than 24 hours
+            estimatedSecondsRemaining = 86400
+        } else {
+            estimatedSecondsRemaining = calculatedETA
+        }
+        
         print("ETA Debug: estimatedSecondsRemaining=\(estimatedSecondsRemaining ?? -1)")
     }
     

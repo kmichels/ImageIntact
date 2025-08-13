@@ -206,7 +206,9 @@ class BackupCoordinator: ObservableObject {
                 completedOperations += status.completed // Files copied
                 completedOperations += status.verifiedCount // Files verified
             }
-            overallProgress = totalOperations > 0 ? Double(completedOperations) / Double(totalOperations) : 0
+            let calculatedProgress = totalOperations > 0 ? Double(completedOperations) / Double(totalOperations) : 0
+            // Sanitize to 0-1 range to prevent UI issues
+            overallProgress = max(0.0, min(1.0, calculatedProgress))
             
             // Update status message
             let activeCount = destinationStatuses.values.filter { !$0.isComplete }.count
