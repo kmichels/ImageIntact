@@ -58,6 +58,7 @@ class BackupManager {
     
     // Per-destination progress (simple version)
     var destinationProgress: [String: Int] = [:] // destinationName -> completed files
+    var destinationStates: [String: String] = [:] // destinationName -> "copying" | "verifying" | "complete"
     
     // Destination drive analysis
     var destinationDriveInfo: [UUID: DriveAnalyzer.DriveInfo] = [:] // Use UUID instead of index to avoid mismatch

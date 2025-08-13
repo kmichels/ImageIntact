@@ -62,9 +62,10 @@ extension BackupManager {
         // Set totalFiles so UI shows progress bars
         totalFiles = manifest.count
         
-        // Initialize destination progress for all destinations
+        // Initialize destination progress and states for all destinations
         for destination in destinations {
             destinationProgress[destination.lastPathComponent] = 0
+            destinationStates[destination.lastPathComponent] = "copying"
         }
         
         // PHASE 2: Create and start the queue coordinator
@@ -72,12 +73,21 @@ extension BackupManager {
         
         // Monitor coordinator status with polling for more frequent updates
         let monitorTask = Task {
-            while coordinator.isRunning {
+            while !Task.isCancelled {
                 updateUIFromCoordinator(coordinator)
+                
+                // Check if all destinations are complete
+                let allDone = coordinator.destinationStatuses.values.allSatisfy { 
+                    $0.isComplete && !$0.isVerifying 
+                }
+                if allDone && !coordinator.isRunning {
+                    // Final update and exit
+                    updateUIFromCoordinator(coordinator)
+                    break
+                }
+                
                 try? await Task.sleep(nanoseconds: 250_000_000) // Update 4x per second
             }
-            // Final update
-            updateUIFromCoordinator(coordinator)
         }
         
         // Start the smart backup
@@ -166,9 +176,14 @@ extension BackupManager {
             if status.isVerifying {
                 // Show verification progress
                 destinationProgress[name] = status.verifiedCount
+                destinationStates[name] = "verifying"
                 verifyingDestinations.append(name)
+            } else if status.isComplete {
+                destinationProgress[name] = status.total
+                destinationStates[name] = "complete"
             } else {
                 destinationProgress[name] = status.completed
+                destinationStates[name] = "copying"
             }
             
             // Parse speed (e.g., "45.2 MB/s" -> 45.2)

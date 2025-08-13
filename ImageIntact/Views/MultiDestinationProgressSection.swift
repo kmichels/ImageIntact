@@ -244,7 +244,8 @@ struct MultiDestinationProgress: View {
                         completedFiles: backupManager.destinationProgress[destination.lastPathComponent] ?? 0,
                         totalFiles: backupManager.totalFiles,
                         isActive: backupManager.currentDestinationName == destination.lastPathComponent,
-                        phase: backupManager.currentPhase
+                        phase: backupManager.currentPhase,
+                        state: backupManager.destinationStates[destination.lastPathComponent] ?? "copying"
                     )
                 }
             }
@@ -281,6 +282,7 @@ struct DestinationProgressRow: View {
     let totalFiles: Int
     let isActive: Bool
     var phase: BackupPhase = .copyingFiles
+    var state: String = "copying"
     
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -291,27 +293,27 @@ struct DestinationProgressRow: View {
                 
                 Spacer()
                 
-                if phase == .verifyingDestinations {
+                if state == "complete" {
+                    Text("Complete ✓")
+                        .font(.caption)
+                        .foregroundColor(.green)
+                } else if state == "verifying" {
                     Text("Verifying...")
                         .font(.caption)
                         .foregroundColor(.orange)
-                } else if phase == .copyingFiles {
+                } else if state == "copying" {
                     Text("Copying...")
                         .font(.caption)
                         .foregroundColor(.blue)
-                } else if phase == .flushingToDisk {
-                    Text("Flushing...")
-                        .font(.caption)
-                        .foregroundColor(.purple)
                 } else {
                     Text("\(completedFiles)/\(totalFiles)")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
                 
-                // Activity indicator
+                // Activity indicator - show green for active, blue for complete
                 Circle()
-                    .fill(isActive ? Color.green : Color.clear)
+                    .fill(state == "complete" ? Color.green : (isActive ? Color.blue : Color.clear))
                     .frame(width: 8, height: 8)
             }
             

@@ -184,5 +184,25 @@ The queue-based backup system is now the default with these improvements:
 - Verification progress replaces copy progress in the same bar
 - Phase pills (Analyze, Manifest, Copy, Flush, Verify) remain visible
 
+## UI FIXES COMPLETE! ✅
+
+### Fixed Issues:
+1. **Progress bars not showing**
+   - Now sets `totalFiles` after manifest build
+   - Initializes `destinationProgress` for all destinations
+   
+2. **Incorrect status messages**
+   - More accurate counting (separate copying vs verifying states)
+   - Shows "X copying, Y verifying" correctly
+   - Shows "Verifying: destination_name" when appropriate
+   
+3. **Update frequency**
+   - Added 4x/second polling for responsive UI updates
+   - No more lag in status changes
+
+### Two Commits Made:
+1. Backend implementation (queue system with per-destination verification)
+2. UI fixes (progress bars and status messages)
+
 ---
-Last updated: Queue system with per-destination verification - BUILD SUCCESSFUL!
+Last updated: Queue system FULLY WORKING with correct UI!
