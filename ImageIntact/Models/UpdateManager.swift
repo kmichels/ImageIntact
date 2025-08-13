@@ -1,250 +1,244 @@
+import Foundation
 import SwiftUI
 
+/// Manages application updates using a protocol-based provider system
 @Observable
 class UpdateManager {
     // MARK: - Published Properties
+    var isCheckingForUpdates = false
+    var availableUpdate: AppUpdate?
     var showUpdateAlert = false
-    var availableUpdate: UpdateInfo?
-    var isDownloadingUpdate = false
     var downloadProgress: Double = 0.0
-    var downloadedUpdatePath: URL?
+    var isDownloadingUpdate = false
+    var lastError: UpdateError?
     
-    // MARK: - Data Structures
-    struct UpdateInfo {
-        let version: String
-        let releaseNotes: String
-        let downloadURL: String
-        let fileName: String
-        let fileSize: Int64
-        let publishedAt: Date
+    private var updateProvider: UpdateProvider
+    private var settings = UpdateSettings.load()
+    private var downloadTask: Task<Void, Never>?
+    
+    /// Get current app version from Info.plist
+    var currentVersion: String {
+        return Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0"
+    }
+    
+    init(provider: UpdateProvider? = nil) {
+        // Default to GitHub provider, but allow injection for testing
+        self.updateProvider = provider ?? GitHubUpdateProvider()
+        print("UpdateManager initialized with \(updateProvider.providerName)")
     }
     
     // MARK: - Public Methods
+    
+    /// Check for updates (called on app launch if auto-check enabled)
     func checkForUpdates() {
-        // Check if user has disabled updates
-        guard !UserDefaults.standard.bool(forKey: "updatesDisabled") else {
-            print("🔄 Update checks disabled by user")
+        guard settings.shouldCheckForUpdates() else {
+            print("Skipping automatic update check")
             return
         }
-        
-        // Check if we should check for updates (on launch + monthly)
-        let lastUpdateCheck = UserDefaults.standard.object(forKey: "lastUpdateCheck") as? Date ?? Date.distantPast
-        let monthAgo = Calendar.current.date(byAdding: .month, value: -1, to: Date()) ?? Date.distantPast
-        
-        guard lastUpdateCheck < monthAgo else {
-            print("🔄 Update check not needed (checked recently)")
-            return
-        }
-        
-        print("🔄 Checking for updates...")
         
         Task {
             await performUpdateCheck()
         }
     }
     
+    /// Manually check for updates (via menu command)
     @MainActor
     func performUpdateCheck() async {
+        guard !isCheckingForUpdates else { return }
+        
+        isCheckingForUpdates = true
+        lastError = nil
+        
+        defer {
+            isCheckingForUpdates = false
+            settings.markUpdateCheck()
+        }
+        
         do {
-            // Get current version from bundle
-            guard let currentVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String else {
-                print("❌ Could not determine current version")
-                return
-            }
+            print("Checking for updates via \(updateProvider.providerName)...")
+            let update = try await updateProvider.checkForUpdates(currentVersion: currentVersion)
             
-            print("🔄 Current version: \(currentVersion)")
-            
-            // Fetch latest release from GitHub
-            guard let url = URL(string: "https://api.github.com/repos/kmichels/ImageIntact/releases/latest") else {
-                print("❌ Invalid GitHub API URL")
-                return
-            }
-            
-            let (data, response) = try await URLSession.shared.data(from: url)
-            
-            guard let httpResponse = response as? HTTPURLResponse,
-                  httpResponse.statusCode == 200 else {
-                print("❌ GitHub API request failed")
-                return
-            }
-            
-            guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let tagName = json["tag_name"] as? String,
-                  let publishedAtString = json["published_at"] as? String,
-                  let assets = json["assets"] as? [[String: Any]],
-                  let firstAsset = assets.first,
-                  let downloadURL = firstAsset["browser_download_url"] as? String,
-                  let fileName = firstAsset["name"] as? String,
-                  let fileSize = firstAsset["size"] as? Int64 else {
-                print("❌ Could not parse GitHub API response or find downloadable asset")
-                return
-            }
-            
-            // Parse published date
-            let dateFormatter = ISO8601DateFormatter()
-            let publishedAt = dateFormatter.date(from: publishedAtString) ?? Date()
-            
-            // Extract version number (remove 'v' prefix if present)
-            let latestVersion = tagName.hasPrefix("v") ? String(tagName.dropFirst()) : tagName
-            
-            print("🔄 Latest version: \(latestVersion)")
-            
-            // Check if this version was skipped
-            let skippedVersion = UserDefaults.standard.string(forKey: "skippedVersion")
-            if skippedVersion == latestVersion {
-                print("🔄 Version \(latestVersion) was skipped by user")
-                UserDefaults.standard.set(Date(), forKey: "lastUpdateCheck")
-                return
-            }
-            
-            // Compare versions (simple string comparison should work for semantic versions)
-            if latestVersion.compare(currentVersion, options: .numeric) == .orderedDescending {
-                print("🎉 Update available: \(currentVersion) -> \(latestVersion)")
+            if let update = update {
+                // Check if this version is skipped
+                if settings.isVersionSkipped(update.version) {
+                    print("Version \(update.version) is skipped by user preference")
+                    return
+                }
                 
-                // Get release notes
-                let releaseNotes = (json["body"] as? String)?.prefix(200) ?? "Check the release notes for more details."
+                // Check OS compatibility
+                if let minOS = update.minimumOSVersion {
+                    if !isOSCompatible(minimumVersion: minOS) {
+                        print("Update requires macOS \(minOS) or later")
+                        lastError = .unsupportedPlatform
+                        return
+                    }
+                }
                 
-                let updateInfo = UpdateInfo(
-                    version: latestVersion,
-                    releaseNotes: String(releaseNotes),
-                    downloadURL: downloadURL,
-                    fileName: fileName,
-                    fileSize: fileSize,
-                    publishedAt: publishedAt
-                )
-                
-                self.availableUpdate = updateInfo
-                self.showUpdateAlert = true
+                print("Update available: v\(update.version)")
+                availableUpdate = update
+                showUpdateAlert = true
             } else {
-                print("✅ App is up to date")
+                print("No updates available (current: v\(currentVersion))")
+                
+                // Show alert if manually triggered
+                if !settings.automaticallyCheckForUpdates {
+                    showNoUpdatesAlert()
+                }
             }
-            
-            // Update last check time
-            UserDefaults.standard.set(Date(), forKey: "lastUpdateCheck")
-            
         } catch {
-            print("❌ Update check failed: \(error.localizedDescription)")
+            print("Update check failed: \(error)")
+            lastError = error as? UpdateError ?? .networkError(error)
+            
+            // Only show error if manually triggered
+            if !settings.automaticallyCheckForUpdates {
+                showErrorAlert()
+            }
         }
     }
     
+    /// Download the available update
     @MainActor
-    func downloadUpdate(_ update: UpdateInfo) async {
+    func downloadUpdate(_ update: AppUpdate) async {
+        guard !isDownloadingUpdate else { return }
+        
         isDownloadingUpdate = true
         downloadProgress = 0.0
         
-        do {
-            guard let url = URL(string: update.downloadURL) else {
-                print("❌ Invalid download URL: \(update.downloadURL)")
-                isDownloadingUpdate = false
-                return
-            }
-            
-            print("🔍 Download URL: \(url)")
-            
-            // Create download destination in Downloads folder
-            let downloadsURL = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first!
-            let destinationURL = downloadsURL.appendingPathComponent(update.fileName)
-            
-            print("🎯 Destination: \(destinationURL.path)")
-            
-            // Remove existing file if it exists
-            try? FileManager.default.removeItem(at: destinationURL)
-            
-            print("📥 Starting download...")
-            
-            // Simulate progress for user feedback (since real progress tracking requires URLSessionDownloadDelegate)
-            let progressTask = Task {
-                for i in 1...10 {
-                    guard !Task.isCancelled else { break }
-                    try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds for slower progress
-                    await MainActor.run {
-                        self.downloadProgress = Double(i) / 10.0
+        downloadTask = Task {
+            do {
+                print("Downloading update v\(update.version)...")
+                let localURL = try await updateProvider.downloadUpdate(update) { progress in
+                    Task { @MainActor in
+                        self.downloadProgress = progress
                     }
                 }
+                
+                print("Update downloaded to: \(localURL)")
+                
+                // Open the DMG
+                NSWorkspace.shared.open(localURL)
+                
+                // Dismiss the alert
+                showUpdateAlert = false
+                isDownloadingUpdate = false
+                
+                // Show completion message
+                showDownloadCompleteAlert(at: localURL)
+                
+            } catch {
+                print("Download failed: \(error)")
+                lastError = error as? UpdateError ?? .downloadFailed(error)
+                isDownloadingUpdate = false
+                showErrorAlert()
             }
-            
-            let (tempURL, _) = try await URLSession.shared.download(from: url)
-            
-            // Cancel progress simulation
-            progressTask.cancel()
-            await MainActor.run {
-                self.downloadProgress = 1.0
-            }
-            
-            print("✅ Downloaded to temp location: \(tempURL.path)")
-            
-            // Check if temp file exists and has content
-            let fileSize = (try? FileManager.default.attributesOfItem(atPath: tempURL.path)[.size] as? Int64) ?? 0
-            print("📦 Downloaded file size: \(fileSize) bytes")
-            
-            // Move from temp location to Downloads
-            try FileManager.default.moveItem(at: tempURL, to: destinationURL)
-            
-            print("✅ Download completed: \(destinationURL.path)")
-            
-            // Verify the file exists at destination
-            if FileManager.default.fileExists(atPath: destinationURL.path) {
-                print("✅ File confirmed at destination")
-            } else {
-                print("❌ File not found at destination!")
-            }
-            
-            // Store the downloaded file path
-            downloadedUpdatePath = destinationURL
-            
-            // Reset download state
-            isDownloadingUpdate = false
-            showUpdateAlert = false
-            
-            // Show install prompt
-            showInstallPrompt(for: destinationURL, version: update.version)
-            
-        } catch {
-            print("❌ Download failed with error: \(error)")
-            print("❌ Error details: \(error.localizedDescription)")
-            isDownloadingUpdate = false
-            
-            // Show error alert
-            let alert = NSAlert()
-            alert.messageText = "Download Failed"
-            alert.informativeText = "Could not download the update: \(error.localizedDescription)\n\nURL: \(update.downloadURL)"
-            alert.alertStyle = .warning
-            alert.addButton(withTitle: "OK")
-            alert.runModal()
         }
     }
     
+    /// Cancel ongoing download
     func cancelDownload() {
-        // TODO: Implement download cancellation if needed
+        downloadTask?.cancel()
+        downloadTask = nil
         isDownloadingUpdate = false
-        showUpdateAlert = false
+        downloadProgress = 0.0
     }
     
+    /// Skip a version
     func skipVersion(_ version: String) {
-        UserDefaults.standard.set(version, forKey: "skippedVersion")
+        var updatedSettings = settings
+        updatedSettings.skipVersion(version)
+        settings = updatedSettings
+        showUpdateAlert = false
+        availableUpdate = nil
     }
     
-    // MARK: - Private Methods
-    private func showInstallPrompt(for fileURL: URL, version: String) {
+    // MARK: - Settings Management
+    
+    /// Enable or disable automatic update checks
+    func setAutomaticChecking(_ enabled: Bool) {
+        settings.automaticallyCheckForUpdates = enabled
+        settings.save()
+    }
+    
+    /// Set update check interval
+    func setCheckInterval(_ interval: TimeInterval) {
+        settings.checkInterval = interval
+        settings.save()
+    }
+    
+    // MARK: - Helper Methods
+    
+    /// Check if current OS is compatible with minimum version
+    private func isOSCompatible(minimumVersion: String) -> Bool {
+        let currentOS = ProcessInfo.processInfo.operatingSystemVersion
+        let currentOSString = "\(currentOS.majorVersion).\(currentOS.minorVersion)"
+        
+        return currentOSString.compare(minimumVersion, options: .numeric) != .orderedAscending
+    }
+    
+    /// Show alert when no updates are available
+    private func showNoUpdatesAlert() {
         let alert = NSAlert()
-        alert.messageText = "Update Downloaded"
-        alert.informativeText = """
-        ImageIntact \(version) has been downloaded to your Downloads folder.
-        
-        To install:
-        1. Quit ImageIntact
-        2. Open the downloaded file: \(fileURL.lastPathComponent)
-        3. Follow the installation instructions
-        
-        Would you like to show the file in Finder now?
-        """
+        alert.messageText = "You're up to date!"
+        alert.informativeText = "ImageIntact \(currentVersion) is the latest version available."
         alert.alertStyle = .informational
-        alert.addButton(withTitle: "Show in Finder")
-        alert.addButton(withTitle: "Later")
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
+    }
+    
+    /// Show error alert
+    private func showErrorAlert() {
+        guard let error = lastError else { return }
         
-        let response = alert.runModal()
-        if response == .alertFirstButtonReturn {
-            NSWorkspace.shared.selectFile(fileURL.path, inFileViewerRootedAtPath: fileURL.deletingLastPathComponent().path)
-        }
+        let alert = NSAlert()
+        alert.messageText = "Update Check Failed"
+        alert.informativeText = error.localizedDescription
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
+    }
+    
+    /// Show download complete alert
+    private func showDownloadCompleteAlert(at url: URL) {
+        let alert = NSAlert()
+        alert.messageText = "Download Complete"
+        alert.informativeText = "The update has been downloaded to:\n\n\(url.path)\n\nThe DMG will now open. Please drag ImageIntact to your Applications folder to complete the update."
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
     }
 }
+
+// MARK: - Mock Provider for Testing
+
+#if DEBUG
+/// Mock provider for testing update UI without hitting GitHub
+class MockUpdateProvider: UpdateProvider {
+    var providerName: String { "Mock Provider" }
+    
+    func checkForUpdates(currentVersion: String) async throws -> AppUpdate? {
+        // Simulate network delay
+        try await Task.sleep(nanoseconds: 1_000_000_000)
+        
+        // Return a fake update
+        return AppUpdate(
+            version: "99.9.9",
+            releaseNotes: "This is a test update for development purposes.\n\n• Feature 1\n• Feature 2\n• Bug fixes",
+            downloadURL: URL(string: "https://example.com/test.dmg")!,
+            publishedDate: Date(),
+            minimumOSVersion: "14.0",
+            fileSize: 10_000_000
+        )
+    }
+    
+    func downloadUpdate(_ update: AppUpdate, progress: @escaping (Double) -> Void) async throws -> URL {
+        // Simulate download progress
+        for i in 0...10 {
+            try await Task.sleep(nanoseconds: 100_000_000)
+            progress(Double(i) / 10.0)
+        }
+        
+        // Return a fake path
+        return FileManager.default.temporaryDirectory.appendingPathComponent("test.dmg")
+    }
+}
+#endif

@@ -119,43 +119,61 @@ struct ContentView: View {
             HelpView(isPresented: $showHelpWindow)
         }
         .alert("Update Available", isPresented: $updateManager.showUpdateAlert, presenting: updateManager.availableUpdate) { update in
-            if updateManager.isDownloadingUpdate {
-                Button("Cancel Download") {
-                    updateManager.cancelDownload()
+            Button("Download & Install") {
+                Task {
+                    await updateManager.downloadUpdate(update)
                 }
-                .keyboardShortcut(.cancelAction)
-            } else {
-                Button("Download & Install") {
-                    Task {
-                        await updateManager.downloadUpdate(update)
-                    }
-                }
-                .keyboardShortcut(.defaultAction)
-                
-                Button("Later") { }
-                    .keyboardShortcut(.cancelAction)
-                
-                Button("Skip This Version") {
-                    updateManager.skipVersion(update.version)
-                }
+            }
+            .keyboardShortcut(.defaultAction)
+            
+            Button("Later") { 
+                updateManager.showUpdateAlert = false
+            }
+            .keyboardShortcut(.cancelAction)
+            
+            Button("Skip This Version") {
+                updateManager.skipVersion(update.version)
             }
         } message: { update in
-            if updateManager.isDownloadingUpdate {
-                VStack {
-                    Text("Downloading ImageIntact \(update.version)...")
-                    ProgressView(value: updateManager.downloadProgress, total: 1.0)
-                        .frame(width: 200)
-                    Text("\(Int(updateManager.downloadProgress * 100))%")
-                        .font(.caption)
-                }
-            } else {
-                VStack {
-                    Text("Version \(update.version) is available!")
-                        .fontWeight(.medium)
-                    Text("\(update.releaseNotes)")
-                        .padding(.top, 4)
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Version \(update.version) is now available!")
+                    .fontWeight(.medium)
+                
+                // Show release notes (truncated if too long)
+                let notes = update.releaseNotes
+                let truncatedNotes = notes.count > 500 ? 
+                    String(notes.prefix(500)) + "..." : notes
+                Text(truncatedNotes)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                
+                if let fileSize = update.fileSize {
+                    Text("Download size: \(formatFileSize(fileSize))")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
                 }
             }
+        }
+        .sheet(isPresented: .constant(updateManager.isDownloadingUpdate)) {
+            VStack(spacing: 20) {
+                Text("Downloading Update...")
+                    .font(.headline)
+                
+                ProgressView(value: updateManager.downloadProgress, total: 1.0)
+                    .progressViewStyle(.linear)
+                    .frame(width: 300)
+                
+                Text("\(Int(updateManager.downloadProgress * 100))%")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                
+                Button("Cancel") {
+                    updateManager.cancelDownload()
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(40)
+            .frame(width: 400)
         }
     }
     
@@ -406,6 +424,13 @@ struct ContentView: View {
                 UserDefaults.standard.set(true, forKey: "hasSeenWelcome")
             }
         }
+    }
+    
+    // MARK: - Helper Methods
+    func formatFileSize(_ bytes: Int64) -> String {
+        let formatter = ByteCountFormatter()
+        formatter.countStyle = .binary
+        return formatter.string(fromByteCount: bytes)
     }
 }
 
