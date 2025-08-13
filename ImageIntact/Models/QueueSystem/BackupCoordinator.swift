@@ -11,6 +11,7 @@ class BackupCoordinator: ObservableObject {
     private var destinationQueues: [DestinationQueue] = []
     private var manifest: [FileManifestEntry] = []
     private var shouldCancel = false
+    private var collectedFailures: [(file: String, destination: String, error: String)] = []
     
     struct DestinationStatus {
         let name: String
@@ -115,6 +116,10 @@ class BackupCoordinator: ObservableObject {
                 await queue.stop()
             }
         }
+    }
+    
+    func getFailures() -> [(file: String, destination: String, error: String)] {
+        return collectedFailures
     }
     
     // MARK: - Task Creation
@@ -253,6 +258,14 @@ class BackupCoordinator: ObservableObject {
             
             if !failures.isEmpty {
                 allFailures.append((destination: destination.lastPathComponent, failures: failures))
+                // Store failures for external access
+                for failure in failures {
+                    collectedFailures.append((
+                        file: failure.file,
+                        destination: destination.lastPathComponent,
+                        error: failure.error
+                    ))
+                }
             }
         }
         

@@ -118,9 +118,13 @@ extension BackupManager {
         print("📊 Monitor task done, setting phase to complete")
         
         // Copy coordinator's failed files to our list
-        for _ in coordinator.destinationStatuses.values {
-            // Note: We'd need to expose failed files from coordinator
-            // For now, just track completion
+        let failures = coordinator.getFailures()
+        for failure in failures {
+            failedFiles.append((
+                file: failure.file,
+                destination: failure.destination,
+                error: failure.error
+            ))
         }
         
         currentPhase = .complete
@@ -154,10 +158,22 @@ extension BackupManager {
                 fileCount += 1
                 statusMessage = "Analyzing file \(fileCount)..."
                 
-                // Calculate checksum
-                let checksum = try await Task.detached(priority: .userInitiated) {
-                    try BackupManager.sha256ChecksumStatic(for: url, shouldCancel: self.shouldCancel)
-                }.value
+                // Calculate checksum with better error handling
+                let checksum: String
+                do {
+                    checksum = try await Task.detached(priority: .userInitiated) {
+                        try BackupManager.sha256ChecksumStatic(for: url, shouldCancel: self.shouldCancel)
+                    }.value
+                } catch {
+                    // Log specific error and continue with next file
+                    print("⚠️ Checksum failed for \(url.lastPathComponent): \(error.localizedDescription)")
+                    failedFiles.append((
+                        file: url.lastPathComponent,
+                        destination: "manifest",
+                        error: error.localizedDescription
+                    ))
+                    continue
+                }
                 
                 // Check cancellation after potentially long checksum operation
                 guard !shouldCancel else { 

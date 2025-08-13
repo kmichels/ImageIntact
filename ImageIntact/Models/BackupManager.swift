@@ -718,7 +718,7 @@ class BackupManager {
 extension BackupManager {
     // Static checksum calculation method used by all backup engines
     // Now uses native Swift SHA-256 for maximum reliability with all file types
-    static func sha256ChecksumStatic(for fileURL: URL, shouldCancel: Bool) throws -> String {
+    static func sha256ChecksumStatic(for fileURL: URL, shouldCancel: Bool, isNetworkVolume: Bool = false) throws -> String {
         // First check if file exists
         guard FileManager.default.fileExists(atPath: fileURL.path) else {
             throw NSError(domain: "ImageIntact", code: 1, userInfo: [NSLocalizedDescriptionKey: "File does not exist: \(fileURL.lastPathComponent)"])
