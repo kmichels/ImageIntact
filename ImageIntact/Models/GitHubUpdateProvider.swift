@@ -58,13 +58,13 @@ class GitHubUpdateProvider: UpdateProvider {
             // Extract release notes
             let releaseNotes = json["body"] as? String ?? "No release notes available"
             
-            // Find macOS .dmg asset
+            // Find .dmg asset (accept any DMG file)
             guard let assets = json["assets"] as? [[String: Any]],
                   let dmgAsset = assets.first(where: { asset in
                       guard let name = asset["name"] as? String else { return false }
-                      return name.hasSuffix(".dmg") && name.contains("macOS")
+                      return name.hasSuffix(".dmg")
                   }) else {
-                print("No macOS DMG found in release assets")
+                print("No DMG found in release assets")
                 throw UpdateError.invalidResponse
             }
             
