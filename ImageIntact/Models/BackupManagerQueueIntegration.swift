@@ -23,7 +23,11 @@ extension BackupManager {
         defer {
             isProcessing = false
             shouldCancel = false
-            currentCoordinator = nil  // Clear coordinator reference
+            
+            // Clean up references to prevent memory leaks
+            currentCoordinator = nil
+            currentMonitorTask?.cancel()
+            currentMonitorTask = nil
             
             // Calculate final stats
             let totalTime = Date().timeIntervalSince(backupStartTime)
@@ -71,9 +75,10 @@ extension BackupManager {
         currentCoordinator = coordinator  // Store reference for cancellation
         
         // Monitor coordinator status with polling for more frequent updates
-        let monitorTask = Task { @MainActor in
-            while !Task.isCancelled && coordinator.isRunning && !shouldCancel {
-                updateUIFromCoordinator(coordinator)
+        let monitorTask = Task { @MainActor [weak self] in
+            guard let self = self else { return }
+            while !Task.isCancelled && coordinator.isRunning && !self.shouldCancel {
+                self.updateUIFromCoordinator(coordinator)
                 
                 // Check if all destinations are complete
                 let allDone = coordinator.destinationStatuses.values.allSatisfy { 
@@ -81,13 +86,13 @@ extension BackupManager {
                 }
                 if allDone {
                     // Final update and exit
-                    updateUIFromCoordinator(coordinator)
+                    self.updateUIFromCoordinator(coordinator)
                     print("📊 All destinations complete, exiting monitor task")
                     break
                 }
                 
                 // Check if user cancelled
-                if shouldCancel {
+                if self.shouldCancel {
                     print("📊 User cancelled, exiting monitor task")
                     break
                 }
@@ -96,9 +101,12 @@ extension BackupManager {
                 try? await Task.sleep(nanoseconds: 100_000_000) // 10Hz for smooth updates
             }
             // One final update after loop exits
-            updateUIFromCoordinator(coordinator)
+            self.updateUIFromCoordinator(coordinator)
             print("📊 Monitor task completed")
         }
+        
+        // Store monitor task reference for potential cancellation
+        currentMonitorTask = monitorTask
         
         // Start the smart backup
         currentPhase = .copyingFiles
