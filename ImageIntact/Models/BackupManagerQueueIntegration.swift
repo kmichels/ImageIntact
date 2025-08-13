@@ -64,10 +64,7 @@ extension BackupManager {
         totalFiles = manifest.count
         
         // Initialize destination progress and states for all destinations
-        for destination in destinations {
-            destinationProgress[destination.lastPathComponent] = 0
-            destinationStates[destination.lastPathComponent] = "copying"
-        }
+        await initializeDestinations(destinations)
         
         // PHASE 2: Create and start the queue coordinator
         let coordinator = BackupCoordinator()
@@ -175,6 +172,7 @@ extension BackupManager {
     }
     
     /// Update our UI based on coordinator's status
+    /// Already marked @MainActor to ensure thread safety
     @MainActor
     private func updateUIFromCoordinator(_ coordinator: BackupCoordinator) {
         // Aggregate status from all destinations
@@ -189,17 +187,34 @@ extension BackupManager {
         
         for (name, status) in coordinator.destinationStatuses {
             // Update the destinationProgress dictionary for UI display
+            // This is safe because we're already on @MainActor
             if status.isVerifying {
                 // Show verification progress
                 destinationProgress[name] = status.verifiedCount
                 destinationStates[name] = "verifying"
                 verifyingDestinations.append(name)
+                
+                // Also update actor state for consistency
+                Task {
+                    await progressState.setDestinationProgress(status.verifiedCount, for: name)
+                    await progressState.setDestinationState("verifying", for: name)
+                }
             } else if status.isComplete {
                 destinationProgress[name] = status.total
                 destinationStates[name] = "complete"
+                
+                Task {
+                    await progressState.setDestinationProgress(status.total, for: name)
+                    await progressState.setDestinationState("complete", for: name)
+                }
             } else {
                 destinationProgress[name] = status.completed
                 destinationStates[name] = "copying"
+                
+                Task {
+                    await progressState.setDestinationProgress(status.completed, for: name)
+                    await progressState.setDestinationState("copying", for: name)
+                }
             }
             
             // Parse speed (e.g., "45.2 MB/s" -> 45.2)

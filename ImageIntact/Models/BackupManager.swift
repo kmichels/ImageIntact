@@ -48,7 +48,9 @@ class BackupManager {
     var copySpeed: Double = 0.0 // MB/s
     var copyStartTime: Date = Date()
     var totalBytesCopied: Int64 = 0
-    private var atomicFileCounter = 0
+    
+    // Thread-safe progress state
+    private let progressState = BackupProgressState()
     
     // ETA tracking
     var totalBytesToCopy: Int64 = 0
@@ -56,7 +58,7 @@ class BackupManager {
     private var recentSpeedSamples: [Double] = []
     private var lastETAUpdate: Date = Date()
     
-    // Per-destination progress (simple version)
+    // UI-visible progress (updated from actor)
     var destinationProgress: [String: Int] = [:] // destinationName -> completed files
     var destinationStates: [String: String] = [:] // destinationName -> "copying" | "verifying" | "complete"
     var overallStatusText: String = "" // For showing mixed states like "1 copying, 1 verifying"
@@ -464,11 +466,13 @@ class BackupManager {
     // MARK: - Simple Progress Updates
     @MainActor
     func updateProgress(fileName: String, destinationName: String) {
-        // Thread-safe increment
-        atomicFileCounter += 1
-        currentFileIndex = atomicFileCounter
-        currentFileName = fileName
-        currentDestinationName = destinationName
+        Task {
+            // Thread-safe increment through actor
+            let newIndex = await progressState.incrementFileCounter()
+            currentFileIndex = newIndex
+            currentFileName = fileName
+            currentDestinationName = destinationName
+        }
     }
     
     @MainActor
@@ -571,26 +575,41 @@ class BackupManager {
         copySpeed = 0.0
         copyStartTime = Date()
         totalBytesCopied = 0
-        atomicFileCounter = 0
         destinationProgress.removeAll()
+        destinationStates.removeAll()
         
         // Reset ETA tracking
         totalBytesToCopy = 0
         estimatedSecondsRemaining = nil
         recentSpeedSamples.removeAll()
         lastETAUpdate = Date()
+        
+        // Reset actor state
+        Task {
+            await progressState.resetAll()
+        }
     }
     
     @MainActor
     func initializeDestinations(_ destinations: [URL]) {
-        for destination in destinations {
-            destinationProgress[destination.lastPathComponent] = 0
+        Task {
+            let destNames = destinations.map { $0.lastPathComponent }
+            await progressState.initializeDestinations(destNames)
+            
+            // Update local cache for UI
+            for destination in destinations {
+                destinationProgress[destination.lastPathComponent] = 0
+                destinationStates[destination.lastPathComponent] = "copying"
+            }
         }
     }
     
     @MainActor
     func incrementDestinationProgress(_ destinationName: String) {
-        destinationProgress[destinationName, default: 0] += 1
+        Task {
+            let newValue = await progressState.incrementDestinationProgress(for: destinationName)
+            destinationProgress[destinationName] = newValue
+        }
     }
     
     // MARK: - File Scanning Methods
