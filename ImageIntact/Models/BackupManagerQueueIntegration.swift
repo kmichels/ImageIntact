@@ -159,6 +159,12 @@ extension BackupManager {
                     try BackupManager.sha256ChecksumStatic(for: url, shouldCancel: self.shouldCancel)
                 }.value
                 
+                // Check cancellation after potentially long checksum operation
+                guard !shouldCancel else { 
+                    print("🛑 Manifest building cancelled by user")
+                    return nil 
+                }
+                
                 let relativePath = url.path.replacingOccurrences(of: source.path + "/", with: "")
                 let size = resourceValues.fileSize ?? 0
                 
