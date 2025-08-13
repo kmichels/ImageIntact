@@ -204,7 +204,7 @@ actor DestinationQueue {
                    let destSize = destAttributes[.size] as? Int64,
                    destSize == task.size {
                     // Size matches, verify checksum
-                    let existingChecksum = try await BackupManager.sha256ChecksumStatic(
+                    let existingChecksum = try BackupManager.sha256ChecksumStatic(
                         for: destPath,
                         shouldCancel: shouldCancel
                     )
@@ -296,7 +296,7 @@ actor DestinationQueue {
                 }
                 
                 // Verify checksum
-                let actualChecksum = try await BackupManager.sha256ChecksumStatic(
+                let actualChecksum = try BackupManager.sha256ChecksumStatic(
                     for: destPath,
                     shouldCancel: shouldCancel
                 )

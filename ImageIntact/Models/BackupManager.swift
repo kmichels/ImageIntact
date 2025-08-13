@@ -119,7 +119,7 @@ class BackupManager {
         }
         
         // Analyze drives for loaded destinations and check accessibility
-        for (index, item) in destinationItems.enumerated() {
+        for item in destinationItems {
             if let url = item.url {
                 let itemID = item.id
                 Task {

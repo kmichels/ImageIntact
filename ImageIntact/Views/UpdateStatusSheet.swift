@@ -1,33 +1,41 @@
 import SwiftUI
 
 struct UpdateStatusSheet: View {
-    let updateManager: UpdateManager
-    let currentVersion: String
     let result: UpdateCheckResult
+    let currentVersion: String
+    let onDownload: (AppUpdate) -> Void
+    let onSkipVersion: (String) -> Void
+    let onCancel: () -> Void
     
     @Environment(\.dismiss) private var dismiss
     
     var body: some View {
         VStack(spacing: 20) {
-            switch result {
-            case .checking:
-                checkingView
-                
-            case .upToDate:
-                upToDateView
-                
-            case .updateAvailable(let update):
-                updateAvailableView(update)
-                
-            case .error(let error):
-                errorView(error)
-                
-            case .downloading(let progress):
-                downloadingView(progress)
-            }
+            contentView
         }
         .padding(40)
-        .frame(minWidth: 400, maxWidth: 500)
+        .frame(width: 450)
+        .fixedSize()
+    }
+    
+    @ViewBuilder
+    private var contentView: some View {
+        switch result {
+        case .checking:
+            checkingView
+            
+        case .upToDate:
+            upToDateView
+            
+        case .updateAvailable(let update):
+            updateAvailableView(update)
+            
+        case .error(let error):
+            errorView(error)
+            
+        case .downloading(let progress):
+            downloadingView(progress)
+        }
     }
     
     // MARK: - State Views
@@ -84,16 +92,22 @@ struct UpdateStatusSheet: View {
                 .multilineTextAlignment(.center)
             
             // Release notes
-            ScrollView {
-                Text(update.releaseNotes)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(8)
+            Group {
+                if !update.releaseNotes.isEmpty {
+                    ScrollView {
+                        Text(update.releaseNotes)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(8)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .frame(height: 100)
+                    .frame(maxWidth: .infinity)
+                    .background(Color(NSColor.controlBackgroundColor))
+                    .cornerRadius(6)
+                }
             }
-            .frame(maxHeight: 100)
-            .background(Color(NSColor.controlBackgroundColor))
-            .cornerRadius(6)
             
             // File size if available
             if let fileSize = update.fileSize {
@@ -104,7 +118,7 @@ struct UpdateStatusSheet: View {
             
             HStack(spacing: 12) {
                 Button("Skip This Version") {
-                    updateManager.skipVersion(update.version)
+                    onSkipVersion(update.version)
                     dismiss()
                 }
                 .buttonStyle(.plain)
@@ -115,9 +129,7 @@ struct UpdateStatusSheet: View {
                 .keyboardShortcut(.cancelAction)
                 
                 Button("Download") {
-                    Task {
-                        await updateManager.downloadUpdate(update)
-                    }
+                    onDownload(update)
                 }
                 .buttonStyle(.borderedProminent)
                 .keyboardShortcut(.defaultAction)
@@ -161,7 +173,7 @@ struct UpdateStatusSheet: View {
                 .foregroundColor(.secondary)
             
             Button("Cancel") {
-                updateManager.cancelDownload()
+                onCancel()
                 dismiss()
             }
             .buttonStyle(.plain)

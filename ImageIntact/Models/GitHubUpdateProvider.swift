@@ -47,11 +47,13 @@ class GitHubUpdateProvider: UpdateProvider {
             }
             let version = tagName.hasPrefix("v") ? String(tagName.dropFirst()) : tagName
             
-            // Check if update is newer
-            guard version.compare(currentVersion, options: .numeric) == .orderedDescending else {
-                print("Current version \(currentVersion) is up to date (latest: \(version))")
+            // Check if update is newer (latest must be greater than current)
+            let comparison = version.compare(currentVersion, options: .numeric)
+            if comparison != .orderedDescending {
+                print("No update needed: current v\(currentVersion) >= latest v\(version)")
                 return nil
             }
+            print("Update available: v\(currentVersion) -> v\(version)")
             
             // Extract release notes
             let releaseNotes = json["body"] as? String ?? "No release notes available"

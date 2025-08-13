@@ -81,7 +81,7 @@ class BackupCoordinator: ObservableObject {
                     // Wait for completion
                     while await !queue.isComplete() {
                         // Check cancellation from main actor
-                        let cancelled = await MainActor.run {
+                        let cancelled = await MainActor.run { [weak self] in
                             self?.shouldCancel ?? true
                         }
                         if cancelled { break }
@@ -170,7 +170,7 @@ class BackupCoordinator: ObservableObject {
             var allQueuesComplete = true
             for queue in destinationQueues {
                 let status = await queue.getStatus()
-                let destination = await queue.destination
+                let destination = queue.destination
                 let verifiedFiles = await queue.verifiedFiles
                 let isVerifying = await queue.isVerifying
                 let queueComplete = await queue.isComplete()
@@ -244,7 +244,7 @@ class BackupCoordinator: ObservableObject {
         var allFailures: [(destination: String, failures: [(file: String, error: String)])] = []
         
         for queue in destinationQueues {
-            let destination = await queue.destination
+            let destination = queue.destination
             let completed = await queue.completedFiles
             let failures = await queue.failedFiles
             

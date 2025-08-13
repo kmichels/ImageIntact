@@ -274,7 +274,6 @@ class DriveAnalyzer {
     
     private static func findConnectionType(for service: io_object_t) -> ConnectionType {
         var parent: io_object_t = 0
-        var connectionType = ConnectionType.unknown
         var foundPCI = false
         var foundThunderbolt = false
         
@@ -402,7 +401,7 @@ class DriveAnalyzer {
         }
         
         print("DriveAnalyzer: Final decision: Unknown")
-        return connectionType
+        return .unknown
     }
     
     private static func detectThunderboltVersion(for service: io_object_t) -> ConnectionType {

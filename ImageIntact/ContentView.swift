@@ -156,9 +156,19 @@ struct ContentView: View {
         }
         .sheet(isPresented: $updateManager.showUpdateSheet) {
             UpdateStatusSheet(
-                updateManager: updateManager,
+                result: updateManager.updateCheckResult,
                 currentVersion: updateManager.currentVersion,
-                result: updateManager.updateCheckResult
+                onDownload: { update in
+                    Task {
+                        await updateManager.downloadUpdate(update)
+                    }
+                },
+                onSkipVersion: { version in
+                    updateManager.skipVersion(version)
+                },
+                onCancel: {
+                    updateManager.cancelDownload()
+                }
             )
         }
     }
