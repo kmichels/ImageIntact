@@ -1,6 +1,15 @@
 import Foundation
 import SwiftUI
 
+// MARK: - Update Check Result States
+enum UpdateCheckResult {
+    case checking
+    case upToDate
+    case updateAvailable(AppUpdate)
+    case error(Error)
+    case downloading(progress: Double)
+}
+
 /// Manages application updates using a protocol-based provider system
 @Observable
 class UpdateManager {
@@ -11,6 +20,8 @@ class UpdateManager {
     var downloadProgress: Double = 0.0
     var isDownloadingUpdate = false
     var lastError: UpdateError?
+    var showUpdateSheet = false
+    var updateCheckResult: UpdateCheckResult = .checking
     
     private var updateProvider: UpdateProvider
     private var settings = UpdateSettings.load()
@@ -43,8 +54,13 @@ class UpdateManager {
     
     /// Manually check for updates (via menu command)
     @MainActor
-    func performUpdateCheck() async {
+    func performUpdateCheck(isManual: Bool = false) async {
         guard !isCheckingForUpdates else { return }
+        
+        if isManual {
+            showUpdateSheet = true
+            updateCheckResult = .checking
+        }
         
         isCheckingForUpdates = true
         lastError = nil
@@ -52,6 +68,11 @@ class UpdateManager {
         defer {
             isCheckingForUpdates = false
             settings.markUpdateCheck()
+        }
+        
+        // Add a small delay so the user sees the checking state
+        if isManual {
+            try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
         }
         
         do {
@@ -62,6 +83,9 @@ class UpdateManager {
                 // Check if this version is skipped
                 if settings.isVersionSkipped(update.version) {
                     print("Version \(update.version) is skipped by user preference")
+                    if isManual {
+                        updateCheckResult = .upToDate
+                    }
                     return
                 }
                 
@@ -70,28 +94,34 @@ class UpdateManager {
                     if !isOSCompatible(minimumVersion: minOS) {
                         print("Update requires macOS \(minOS) or later")
                         lastError = .unsupportedPlatform
+                        if isManual {
+                            updateCheckResult = .error(UpdateError.unsupportedPlatform)
+                        }
                         return
                     }
                 }
                 
                 print("Update available: v\(update.version)")
                 availableUpdate = update
-                showUpdateAlert = true
+                if isManual {
+                    updateCheckResult = .updateAvailable(update)
+                } else {
+                    // For automatic checks, use the old alert system
+                    showUpdateAlert = true
+                }
             } else {
                 print("No updates available (current: v\(currentVersion))")
                 
-                // Show alert if manually triggered
-                if !settings.automaticallyCheckForUpdates {
-                    showNoUpdatesAlert()
+                if isManual {
+                    updateCheckResult = .upToDate
                 }
             }
         } catch {
             print("Update check failed: \(error)")
             lastError = error as? UpdateError ?? .networkError(error)
             
-            // Only show error if manually triggered
-            if !settings.automaticallyCheckForUpdates {
-                showErrorAlert()
+            if isManual {
+                updateCheckResult = .error(error)
             }
         }
     }
@@ -103,6 +133,7 @@ class UpdateManager {
         
         isDownloadingUpdate = true
         downloadProgress = 0.0
+        updateCheckResult = .downloading(progress: 0.0)
         
         downloadTask = Task {
             do {
@@ -110,6 +141,7 @@ class UpdateManager {
                 let localURL = try await updateProvider.downloadUpdate(update) { progress in
                     Task { @MainActor in
                         self.downloadProgress = progress
+                        self.updateCheckResult = .downloading(progress: progress)
                     }
                 }
                 
@@ -118,8 +150,9 @@ class UpdateManager {
                 // Open the DMG
                 NSWorkspace.shared.open(localURL)
                 
-                // Dismiss the alert
+                // Dismiss sheets
                 showUpdateAlert = false
+                showUpdateSheet = false
                 isDownloadingUpdate = false
                 
                 // Show completion message
@@ -129,7 +162,7 @@ class UpdateManager {
                 print("Download failed: \(error)")
                 lastError = error as? UpdateError ?? .downloadFailed(error)
                 isDownloadingUpdate = false
-                showErrorAlert()
+                updateCheckResult = .error(error)
             }
         }
     }

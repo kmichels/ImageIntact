@@ -154,26 +154,12 @@ struct ContentView: View {
                 }
             }
         }
-        .sheet(isPresented: .constant(updateManager.isDownloadingUpdate)) {
-            VStack(spacing: 20) {
-                Text("Downloading Update...")
-                    .font(.headline)
-                
-                ProgressView(value: updateManager.downloadProgress, total: 1.0)
-                    .progressViewStyle(.linear)
-                    .frame(width: 300)
-                
-                Text("\(Int(updateManager.downloadProgress * 100))%")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                
-                Button("Cancel") {
-                    updateManager.cancelDownload()
-                }
-                .buttonStyle(.plain)
-            }
-            .padding(40)
-            .frame(width: 400)
+        .sheet(isPresented: $updateManager.showUpdateSheet) {
+            UpdateStatusSheet(
+                updateManager: updateManager,
+                currentVersion: updateManager.currentVersion,
+                result: updateManager.updateCheckResult
+            )
         }
     }
     
@@ -253,7 +239,7 @@ struct ContentView: View {
             queue: .main
         ) { _ in
             Task {
-                await updateManager.performUpdateCheck()
+                await updateManager.performUpdateCheck(isManual: true)
             }
         }
     }
