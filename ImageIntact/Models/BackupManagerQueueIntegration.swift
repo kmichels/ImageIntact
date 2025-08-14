@@ -86,6 +86,12 @@ extension BackupManager {
             // Wait a moment for the coordinator to start
             try? await Task.sleep(nanoseconds: 100_000_000) // 0.1s
             
+            // Track stall detection
+            var lastProgressCheck = Date()
+            var previousProgress: [String: Int] = [:]
+            var stallCounts: [String: Int] = [:]
+            let maxStallDuration: TimeInterval = 60.0 // 60 seconds without progress = stalled
+            
             while !Task.isCancelled && !self.shouldCancel {
                 self.updateUIFromCoordinator(coordinator)
                 
@@ -98,6 +104,53 @@ extension BackupManager {
                     self.updateUIFromCoordinator(coordinator)
                     print("📊 All destinations complete, exiting monitor task")
                     break
+                }
+                
+                // Stall detection - check if any destination is making progress
+                let now = Date()
+                if now.timeIntervalSince(lastProgressCheck) >= 5.0 { // Check every 5 seconds
+                    var stalledDestinations: [String] = []
+                    
+                    for (dest, status) in coordinator.destinationStatuses {
+                        if !status.isComplete {
+                            let currentProgress = status.completed + status.verifiedCount
+                            let previousCount = previousProgress[dest] ?? 0
+                            
+                            if currentProgress == previousCount && currentProgress > 0 {
+                                // No progress made
+                                stallCounts[dest] = (stallCounts[dest] ?? 0) + 1
+                                
+                                if Double(stallCounts[dest] ?? 0) * 5.0 >= maxStallDuration {
+                                    stalledDestinations.append(dest)
+                                }
+                            } else {
+                                // Progress made, reset stall count
+                                stallCounts[dest] = 0
+                            }
+                            
+                            previousProgress[dest] = currentProgress
+                        }
+                    }
+                    
+                    if !stalledDestinations.isEmpty {
+                        print("⚠️ Detected stalled destinations after \(maxStallDuration)s: \(stalledDestinations.joined(separator: ", "))")
+                        self.debugLog.append("⚠️ Backup stalled for: \(stalledDestinations.joined(separator: ", "))")
+                        
+                        // Add failed file entries for stalled destinations
+                        for dest in stalledDestinations {
+                            self.failedFiles.append((
+                                file: "Network timeout",
+                                destination: dest,
+                                error: "Destination stopped responding after \(Int(maxStallDuration)) seconds"
+                            ))
+                        }
+                        
+                        // Force complete the monitor to prevent infinite loop
+                        print("📊 Exiting monitor due to stalled destinations")
+                        break
+                    }
+                    
+                    lastProgressCheck = now
                 }
                 
                 // Check if user cancelled
@@ -116,7 +169,7 @@ extension BackupManager {
         
         // Store monitor task reference for potential cancellation
         currentMonitorTask = monitorTask
-        await resourceManager.track(task: monitorTask)
+        await resourceManager.track(task: monitorTask as Task<Void, Never>)
         
         // Start the smart backup
         currentPhase = .copyingFiles
