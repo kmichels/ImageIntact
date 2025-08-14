@@ -281,6 +281,9 @@ extension BackupManager {
     /// Already marked @MainActor to ensure thread safety
     @MainActor
     private func updateUIFromCoordinator(_ coordinator: BackupCoordinator) {
+        // Debug: log update call
+        print("🔄 updateUIFromCoordinator called")
+        
         // Aggregate status from all destinations
         var fastestDestination: String?
         var fastestSpeed: Double = 0
@@ -310,7 +313,9 @@ extension BackupManager {
                 // Debug log when entering verification
                 let wasVerifying = destinationStates[name] == "verifying"
                 if !wasVerifying {
-                    print("📝 \(name) entering verification phase (copied=\(status.completed), verified=\(status.verifiedCount), total=\(status.total), isVerifying=true)")
+                    print("🔵 UI UPDATE: \(name) entering verification phase (copied=\(status.completed), verified=\(status.verifiedCount), total=\(status.total), isVerifying=true)")
+                } else {
+                    print("🔵 UI UPDATE: \(name) still verifying (verified=\(status.verifiedCount)/\(status.total))")
                 }
                 
                 // For verification, keep showing full progress (files are already copied)

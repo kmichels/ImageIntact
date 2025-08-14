@@ -45,6 +45,20 @@ class BackupCoordinator: ObservableObject {
         // Create a queue for each destination
         for destination in destinations {
             let queue = DestinationQueue(destination: destination)
+            
+            // Set up verification state callback
+            await queue.setVerificationCallback { [weak self] isVerifying, verifiedCount in
+                Task { @MainActor in
+                    guard let self = self else { return }
+                    if var status = self.destinationStatuses[destination.lastPathComponent] {
+                        status.isVerifying = isVerifying
+                        status.verifiedCount = verifiedCount
+                        self.destinationStatuses[destination.lastPathComponent] = status
+                        print("📝 Verification update: \(destination.lastPathComponent) - isVerifying=\(isVerifying), verified=\(verifiedCount)")
+                    }
+                }
+            }
+            
             destinationQueues.append(queue)
             
             // Initialize status
@@ -186,14 +200,16 @@ class BackupCoordinator: ObservableObject {
     // MARK: - Progress Monitoring
     
     private func monitorProgress() async {
-        while isRunning && !shouldCancel {
+        // Keep monitoring until all queues are truly complete (including verification)
+        var allQueuesActuallyComplete = false
+        while !allQueuesActuallyComplete && !shouldCancel {
             // Update status for each destination
             var allQueuesComplete = true
             for queue in destinationQueues {
                 let status = await queue.getStatus()
                 let destination = queue.destination
-                let verifiedFiles = await queue.verifiedFiles
-                let isVerifying = await queue.isVerifying
+                let verifiedFiles = await queue.getVerifiedCount()
+                let isVerifying = await queue.getIsVerifying()
                 let queueComplete = await queue.isComplete()
                 
                 if !queueComplete {
@@ -202,7 +218,7 @@ class BackupCoordinator: ObservableObject {
                 
                 // Debug log to check if verifiedFiles is being read correctly
                 if verifiedFiles > 0 || isVerifying {
-                    print("📊 Coordinator: \(destination.lastPathComponent) - verified=\(verifiedFiles), isVerifying=\(isVerifying), isComplete=\(queueComplete)")
+                    print("📊 Coordinator: \(destination.lastPathComponent) - completed=\(status.completed)/\(status.total), verified=\(verifiedFiles), isVerifying=\(isVerifying), isComplete=\(queueComplete)")
                 }
                 
                 await MainActor.run {
@@ -239,10 +255,12 @@ class BackupCoordinator: ObservableObject {
                 statusMessage = "All destinations complete!"
             }
             
+            // Update the flag to check if we should exit
+            allQueuesActuallyComplete = allQueuesComplete
+            
             // Exit early if all queues are complete
             if allQueuesComplete {
-                print("📊 BackupCoordinator: All queues complete, exiting monitorProgress")
-                break
+                print("📊 BackupCoordinator: All queues complete (including verification), exiting monitorProgress")
             }
             
             try? await Task.sleep(nanoseconds: 250_000_000) // Update every 0.25s for smoother progress
