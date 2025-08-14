@@ -686,7 +686,7 @@ class BackupManager {
         }
         
         do {
-            let results = try await fileScanner.scan(directory: url) { progress in
+            let (results, totalBytes) = try await fileScanner.scanWithSize(directory: url) { progress in
                 Task { @MainActor in
                     if progress.scanned % 100 == 0 {
                         self.scanProgress = "Scanned \(progress.scanned) files..."
@@ -696,6 +696,7 @@ class BackupManager {
             
             await MainActor.run {
                 self.sourceFileTypes = results
+                self.sourceTotalBytes = totalBytes
                 self.scanProgress = ImageFileScanner.formatScanResults(results, groupRaw: false)
                 self.isScanning = false
             }
