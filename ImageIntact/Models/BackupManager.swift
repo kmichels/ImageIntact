@@ -78,6 +78,7 @@ class BackupManager {
     var sourceFileTypes: [ImageFileType: Int] = [:]
     var isScanning = false
     var scanProgress: String = ""
+    var sourceTotalBytes: Int64 = 0  // Total bytes from manifest
     private let fileScanner = ImageFileScanner()
     
     // Backup options
@@ -201,6 +202,7 @@ class BackupManager {
         // Clear previous scan results
         sourceFileTypes = [:]
         scanProgress = ""
+        sourceTotalBytes = 0
         
         // Start background scan for image files
         Task {
@@ -571,10 +573,11 @@ class BackupManager {
         let remainingBytes = totalBytesToCopy - totalBytesCopied
         
         // Debug logging
-        print("ETA Debug: totalBytesToCopy=\(totalBytesToCopy), totalBytesCopied=\(totalBytesCopied), remainingBytes=\(remainingBytes), averageSpeed=\(averageSpeed)")
+        print("ETA Debug: totalBytesToCopy=\(totalBytesToCopy), totalBytesCopied=\(totalBytesCopied), remainingBytes=\(remainingBytes), averageSpeed=\(averageSpeed) MB/s, copySpeed=\(copySpeed) MB/s")
         
         guard remainingBytes > 0 && averageSpeed > 0 else {
             estimatedSecondsRemaining = nil
+            print("ETA Debug: No ETA - remainingBytes=\(remainingBytes), averageSpeed=\(averageSpeed)")
             return
         }
         
@@ -590,7 +593,7 @@ class BackupManager {
             estimatedSecondsRemaining = calculatedETA
         }
         
-        print("ETA Debug: estimatedSecondsRemaining=\(estimatedSecondsRemaining ?? -1)")
+        print("ETA Debug: remainingMB=\(remainingMB), calculatedETA=\(calculatedETA), final estimatedSecondsRemaining=\(estimatedSecondsRemaining ?? -1)")
     }
     
     func formattedETA() -> String {
@@ -672,6 +675,7 @@ class BackupManager {
         isScanning = true
         scanProgress = "Scanning for image files..."
         sourceFileTypes = [:]
+        sourceTotalBytes = 0
         
         // Access the security-scoped resource
         let accessing = url.startAccessingSecurityScopedResource()
@@ -707,7 +711,16 @@ class BackupManager {
         if sourceFileTypes.isEmpty {
             return isScanning ? scanProgress : ""
         }
-        return ImageFileScanner.formatScanResults(sourceFileTypes, groupRaw: groupRaw)
+        
+        var result = ImageFileScanner.formatScanResults(sourceFileTypes, groupRaw: groupRaw)
+        
+        // Add total size if we have it from the manifest
+        if sourceTotalBytes > 0 {
+            let gb = Double(sourceTotalBytes) / (1024 * 1024 * 1024)
+            result += String(format: " • %.1f GB", gb)
+        }
+        
+        return result
     }
     
     func getDestinationEstimate(at index: Int) -> String? {
@@ -725,14 +738,15 @@ class BackupManager {
             return "Network Drive • Too many variables to estimate time"
         }
         
-        // Calculate total size from source file types
+        // Calculate total size
         var totalBytes: Int64 = 0
         
-        // If we have scanned source files, use that
-        if !sourceFileTypes.isEmpty {
-            // Sum up all file sizes from the scan
+        // Use actual size from manifest if available
+        if sourceTotalBytes > 0 {
+            totalBytes = sourceTotalBytes
+        } else if !sourceFileTypes.isEmpty {
+            // Fall back to estimates from file types
             for (fileType, count) in sourceFileTypes {
-                // Estimate average file size based on type
                 let avgSize = fileType.averageFileSize
                 totalBytes += Int64(avgSize * count)
             }

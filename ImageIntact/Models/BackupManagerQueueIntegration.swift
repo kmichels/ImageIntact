@@ -72,6 +72,30 @@ extension BackupManager {
         // Set totalFiles so UI shows progress bars
         totalFiles = manifest.count
         
+        // Calculate total bytes from manifest for ETA calculation
+        let totalBytesPerDestination = manifest.reduce(0) { $0 + $1.size }
+        sourceTotalBytes = totalBytesPerDestination  // Store for display
+        totalBytesToCopy = totalBytesPerDestination * Int64(destinations.count)
+        totalBytesCopied = 0
+        print("📊 Total bytes to copy: \(totalBytesToCopy) bytes (\(totalBytesPerDestination) per destination × \(destinations.count) destinations)")
+        
+        // Use estimated speeds from drive analysis as initial speed for ETA
+        var slowestSpeed: Double = Double.greatestFiniteMagnitude
+        for (index, _) in destinations.enumerated() {
+            if index < destinationItems.count {
+                let itemID = destinationItems[index].id
+                if let driveInfo = destinationDriveInfo[itemID], driveInfo.estimatedWriteSpeed > 0 {
+                    slowestSpeed = min(slowestSpeed, driveInfo.estimatedWriteSpeed)
+                }
+            }
+        }
+        
+        // If we have valid speed estimates, use them for initial ETA
+        if slowestSpeed < Double.greatestFiniteMagnitude && slowestSpeed > 0 {
+            copySpeed = slowestSpeed
+            print("📊 Using estimated speed of \(slowestSpeed) MB/s for initial ETA")
+        }
+        
         // Initialize destination progress and states for all destinations
         await initializeDestinations(destinations)
         
@@ -186,6 +210,7 @@ extension BackupManager {
         
         // Start the smart backup
         currentPhase = .copyingFiles
+        copyStartTime = Date()  // Set copy start time for ETA calculation
         await coordinator.startBackup(source: source, destinations: destinations, manifest: manifest)
         
         // Wait for monitoring to finish

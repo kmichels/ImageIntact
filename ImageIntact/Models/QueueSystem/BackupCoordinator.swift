@@ -270,6 +270,9 @@ class BackupCoordinator: ObservableObject {
                 self.totalBytesToCopy = totalBytesAllDestinations
                 self.totalBytesCopied = totalTransferred
                 self.currentSpeed = combinedSpeed
+                
+                // Debug logging for ETA
+                print("📊 ETA Debug - totalBytes: \(totalBytesAllDestinations), transferred: \(totalTransferred), speed: \(combinedSpeed) MB/s")
             }
             
             // Calculate overall progress (include both copying and verification)
