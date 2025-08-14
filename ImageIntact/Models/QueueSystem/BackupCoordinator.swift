@@ -55,6 +55,9 @@ class BackupCoordinator: ObservableObject {
                         status.verifiedCount = verifiedCount
                         self.destinationStatuses[destination.lastPathComponent] = status
                         print("📝 Verification update: \(destination.lastPathComponent) - isVerifying=\(isVerifying), verified=\(verifiedCount)")
+                        
+                        // Recalculate overall progress when verification updates come in
+                        self.updateOverallProgress(totalFiles: manifest.count)
                     }
                 }
             }
@@ -268,17 +271,32 @@ class BackupCoordinator: ObservableObject {
         print("📊 BackupCoordinator: monitorProgress() finished")
     }
     
+    @MainActor
+    private func updateOverallProgress(totalFiles: Int) {
+        // Calculate overall progress based on current status
+        let totalOperations = destinationStatuses.count * totalFiles * 2 // *2 for copy + verify
+        var completedOperations = 0
+        
+        for status in destinationStatuses.values {
+            completedOperations += status.completed // Files copied
+            completedOperations += status.verifiedCount // Files verified
+        }
+        
+        let calculatedProgress = totalOperations > 0 ? Double(completedOperations) / Double(totalOperations) : 0
+        overallProgress = max(0.0, min(1.0, calculatedProgress))
+        
+        print("📊 Overall progress update: \(completedOperations)/\(totalOperations) = \(String(format: "%.1f%%", overallProgress * 100))")
+    }
+    
     private func updateDestinationProgress(destination: URL, completed: Int, total: Int) {
         // Update the status immediately when a file completes
-        // NOTE: Only update this specific destination's count, not overall progress
-        // The overall progress is calculated in monitorProgress() with fresh data from all queues
         if var status = destinationStatuses[destination.lastPathComponent] {
             status.completed = completed
             destinationStatuses[destination.lastPathComponent] = status
             print("📊 Progress update: \(destination.lastPathComponent) - \(completed)/\(total)")
             
-            // Don't update overall progress here - it causes jumps due to stale data
-            // The monitor loop will update it with fresh data from all queues
+            // Also update overall progress immediately for responsive UI
+            updateOverallProgress(totalFiles: total)
         } else {
             print("⚠️ No status found for \(destination.lastPathComponent)")
         }
