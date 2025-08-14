@@ -294,8 +294,25 @@ extension BackupManager {
         for (name, status) in coordinator.destinationStatuses {
             // Update the destinationProgress dictionary for UI display
             // This is safe because we're already on @MainActor
-            if status.isVerifying {
+            if status.isComplete {
+                // Destination is fully complete
+                destinationProgress[name] = status.total
+                destinationStates[name] = "complete"
+                
+                Task {
+                    await progressState.setDestinationProgress(status.total, for: name)
+                    await progressState.setDestinationState("complete", for: name)
+                }
+            } else if status.isVerifying || (status.completed >= status.total && status.verifiedCount < status.total) {
                 // Show verification progress
+                // Either explicitly verifying OR all files copied but not all verified
+                
+                // Debug log when entering verification
+                let wasVerifying = destinationStates[name] == "verifying"
+                if !wasVerifying {
+                    print("📝 \(name) entering verification phase (copied=\(status.completed), verified=\(status.verifiedCount), total=\(status.total), isVerifying=\(status.isVerifying))")
+                }
+                
                 destinationProgress[name] = status.verifiedCount
                 destinationStates[name] = "verifying"
                 verifyingDestinations.append(name)
@@ -305,15 +322,8 @@ extension BackupManager {
                     await progressState.setDestinationProgress(status.verifiedCount, for: name)
                     await progressState.setDestinationState("verifying", for: name)
                 }
-            } else if status.isComplete {
-                destinationProgress[name] = status.total
-                destinationStates[name] = "complete"
-                
-                Task {
-                    await progressState.setDestinationProgress(status.total, for: name)
-                    await progressState.setDestinationState("complete", for: name)
-                }
             } else {
+                // Still copying
                 destinationProgress[name] = status.completed
                 destinationStates[name] = "copying"
                 print("🔄 UI Update: \(name) - \(status.completed)/\(status.total)")
