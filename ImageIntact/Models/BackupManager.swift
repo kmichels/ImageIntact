@@ -717,8 +717,9 @@ class BackupManager {
         
         // Add total size if we have it from the manifest
         if sourceTotalBytes > 0 {
-            let gb = Double(sourceTotalBytes) / (1024 * 1024 * 1024)
-            result += String(format: " • %.1f GB", gb)
+            // Use 1000^3 to match macOS Finder display
+            let gb = Double(sourceTotalBytes) / (1000 * 1000 * 1000)
+            result += String(format: " • %.2f GB", gb)
         }
         
         return result
