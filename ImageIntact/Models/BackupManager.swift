@@ -772,8 +772,9 @@ class BackupManager {
         }
         
         let estimate = driveInfo.formattedEstimate(totalBytes: adjustedTotalBytes)
-        let totalGB = Double(totalBytes) / (1024 * 1024 * 1024)
-        let sizeStr = String(format: "%.1f GB", totalGB)
+        // Use decimal GB to match Finder
+        let totalGB = Double(totalBytes) / (1000 * 1000 * 1000)
+        let sizeStr = String(format: "%.2f GB", totalGB)
         
         // Show drive type properly - Network vs SSD vs HDD
         let driveType = driveInfo.connectionType == .network ? "Network" : (driveInfo.isSSD ? "SSD" : "HDD")

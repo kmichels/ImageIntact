@@ -43,17 +43,17 @@ class DriveAnalyzer {
         // - Multiple simultaneous destinations
         var estimatedWriteSpeedMBps: Double {
             switch self {
-            case .usb2: return 15      // ~15 MB/s real world
-            case .usb30: return 80     // ~80 MB/s (way less than 5 Gbps theoretical)
-            case .usb31Gen1: return 100  // ~100 MB/s
-            case .usb31Gen2: return 200  // ~200 MB/s
-            case .usb32Gen2x2: return 300  // ~300 MB/s
-            case .thunderbolt3: return 500  // ~500 MB/s (way less than 40 Gbps)
-            case .thunderbolt4: return 600  // ~600 MB/s
-            case .thunderbolt5: return 800  // ~800 MB/s (way less than 80 Gbps)
-            case .internalDrive: return 400  // ~400 MB/s (varies widely)
-            case .network: return 50  // ~50 MB/s (network is unpredictable)
-            case .unknown: return 50
+            case .usb2: return 30      // ~30 MB/s real world
+            case .usb30: return 350    // ~350 MB/s (modern USB 3.0 SSDs achieve this)
+            case .usb31Gen1: return 400  // ~400 MB/s
+            case .usb31Gen2: return 800  // ~800 MB/s
+            case .usb32Gen2x2: return 1200  // ~1200 MB/s
+            case .thunderbolt3: return 2000  // ~2000 MB/s (modern TB3 SSDs)
+            case .thunderbolt4: return 2500  // ~2500 MB/s
+            case .thunderbolt5: return 3000  // ~3000 MB/s
+            case .internalDrive: return 1500  // ~1500 MB/s (modern internal SSDs)
+            case .network: return 100  // ~100 MB/s (gigabit ethernet)
+            case .unknown: return 400  // Assume decent modern drive
             }
         }
         
@@ -74,14 +74,21 @@ class DriveAnalyzer {
         let checksumSpeed: Double = 100 // SHA-256 speed (conservative for mixed file sizes)
         
         func estimateBackupTime(totalBytes: Int64) -> TimeInterval {
-            let totalMB = Double(totalBytes) / (1024 * 1024)
+            // Use decimal MB to match user expectations
+            let totalMB = Double(totalBytes) / (1000 * 1000)
             
-            // Copy time (limited by write speed)
-            let copyTime = totalMB / estimatedWriteSpeed
+            // Use realistic speeds based on actual performance:
+            // Modern SSDs and USB 3.0 drives achieve close to their rated speeds for large files
+            // Only apply modest overhead for file system operations
+            let realWorldFactor = 0.85  // 85% of theoretical (15% overhead for file operations)
             
-            // Verify time (limited by read speed or checksum speed, whichever is slower)
-            let effectiveVerifySpeed = min(estimatedReadSpeed, checksumSpeed)
-            let verifyTime = totalMB / effectiveVerifySpeed
+            // Copy time with realistic speed
+            let effectiveCopySpeed = estimatedWriteSpeed * realWorldFactor
+            let copyTime = totalMB / effectiveCopySpeed
+            
+            // Verify time is much faster due to caching and sequential reads
+            // Typically 30-40% of copy time on fast drives
+            let verifyTime = copyTime * 0.35
             
             return copyTime + verifyTime
         }
@@ -89,21 +96,34 @@ class DriveAnalyzer {
         func formattedEstimate(totalBytes: Int64) -> String {
             let totalSeconds = estimateBackupTime(totalBytes: totalBytes)
             
-            if totalSeconds < 60 {
+            // Provide a range (±20%) for more honest estimates
+            let minSeconds = totalSeconds * 0.8
+            let maxSeconds = totalSeconds * 1.2
+            
+            if maxSeconds < 60 {
                 return "< 1 minute"
-            } else if totalSeconds < 300 {
-                let minutes = Int(totalSeconds / 60)
-                return "~\(minutes) minute\(minutes == 1 ? "" : "s")"
-            } else if totalSeconds < 3600 {
-                let minutes = Int(totalSeconds / 60)
-                return "~\(minutes) minutes"
-            } else {
-                let hours = Int(totalSeconds / 3600)
-                let minutes = Int((totalSeconds.truncatingRemainder(dividingBy: 3600)) / 60)
-                if minutes > 0 {
-                    return "~\(hours)h \(minutes)m"
+            } else if maxSeconds < 3600 {
+                let minMinutes = Int(minSeconds / 60)
+                let maxMinutes = Int(ceil(maxSeconds / 60))
+                if minMinutes == maxMinutes {
+                    return "~\(minMinutes) minute\(minMinutes == 1 ? "" : "s")"
                 } else {
-                    return "~\(hours) hour\(hours == 1 ? "" : "s")"
+                    return "\(minMinutes)-\(maxMinutes) minutes"
+                }
+            } else {
+                let minHours = minSeconds / 3600
+                let maxHours = maxSeconds / 3600
+                if maxHours < 1.5 {
+                    // For times under 1.5 hours, show in minutes
+                    let minMinutes = Int(minSeconds / 60)
+                    let maxMinutes = Int(ceil(maxSeconds / 60))
+                    return "\(minMinutes)-\(maxMinutes) minutes"
+                } else if maxHours < 10 {
+                    // For reasonable times, show hours with one decimal
+                    return String(format: "%.1f-%.1f hours", minHours, maxHours)
+                } else {
+                    // For very long times, just show hours
+                    return String(format: "%.0f-%.0f hours", minHours, maxHours)
                 }
             }
         }
