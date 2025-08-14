@@ -275,7 +275,11 @@ actor DestinationQueue {
     func isComplete() -> Bool {
         // Consider complete if all files are processed (copied + verified)
         // Don't require isRunning since queue stops after verification
-        return verifiedFiles >= totalFiles && !isVerifying
+        let complete = verifiedFiles >= totalFiles && !isVerifying
+        if complete || verifiedFiles > 0 {
+            print("📊 Queue.isComplete(\(destination.lastPathComponent)): verified=\(verifiedFiles)/\(totalFiles), isVerifying=\(isVerifying) -> \(complete)")
+        }
+        return complete
     }
     
     private func formatTime(_ seconds: TimeInterval) -> String {
@@ -323,10 +327,12 @@ actor DestinationQueue {
         guard !shouldCancel else { return }
         
         print("✅ Copying complete for \(destination.lastPathComponent), starting verification...")
-        isVerifying = true
         
-        // Small delay to ensure UI catches the state change for fast operations
-        try? await Task.sleep(nanoseconds: 100_000_000) // 0.1 seconds
+        // Small delay before setting isVerifying to ensure UI sees copying complete first
+        try? await Task.sleep(nanoseconds: 200_000_000) // 0.2 seconds
+        
+        // NOW set isVerifying to true, right before we actually start verifying
+        isVerifying = true
         
         // Verify each file
         for task in allTasks {
@@ -350,7 +356,7 @@ actor DestinationQueue {
                 
                 if actualChecksum == task.checksum {
                     verifiedFiles += 1
-                    print("✅ Verified: \(task.relativePath) at \(destination.lastPathComponent)")
+                    print("✅ Verified: \(task.relativePath) at \(destination.lastPathComponent) (total verified: \(verifiedFiles))")
                 } else {
                     print("❌ Checksum mismatch: \(task.relativePath) at \(destination.lastPathComponent)")
                     failedFiles.append((file: task.relativePath, error: "Checksum mismatch"))
@@ -360,14 +366,9 @@ actor DestinationQueue {
                 failedFiles.append((file: task.relativePath, error: error.localizedDescription))
             }
             
-            // Update progress
-            if let progressCallback = onProgress {
-                let currentVerified = verifiedFiles
-                let currentTotal = totalFiles
-                Task { @MainActor in
-                    progressCallback(currentVerified, currentTotal)
-                }
-            }
+            // Don't update progress during verification - it confuses the UI
+            // The progress callback is for copying progress only
+            // Verification happens after copying is complete (at 100%)
         }
         
         isVerifying = false

@@ -303,34 +303,50 @@ extension BackupManager {
                     await progressState.setDestinationProgress(status.total, for: name)
                     await progressState.setDestinationState("complete", for: name)
                 }
-            } else if status.isVerifying || (status.completed >= status.total && status.verifiedCount < status.total) {
-                // Show verification progress
-                // Either explicitly verifying OR all files copied but not all verified
+            } else if status.isVerifying {
+                // Only show verification if the queue explicitly says it's verifying
+                // Don't guess based on counts as that can be wrong during skipping
                 
                 // Debug log when entering verification
                 let wasVerifying = destinationStates[name] == "verifying"
                 if !wasVerifying {
-                    print("📝 \(name) entering verification phase (copied=\(status.completed), verified=\(status.verifiedCount), total=\(status.total), isVerifying=\(status.isVerifying))")
+                    print("📝 \(name) entering verification phase (copied=\(status.completed), verified=\(status.verifiedCount), total=\(status.total), isVerifying=true)")
                 }
                 
-                destinationProgress[name] = status.verifiedCount
+                // For verification, keep showing full progress (files are already copied)
+                // This prevents the progress bar from resetting to 0 when verification starts
+                destinationProgress[name] = status.total
                 destinationStates[name] = "verifying"
                 verifyingDestinations.append(name)
                 
                 // Also update actor state for consistency
                 Task {
-                    await progressState.setDestinationProgress(status.verifiedCount, for: name)
+                    await progressState.setDestinationProgress(status.total, for: name)
                     await progressState.setDestinationState("verifying", for: name)
                 }
             } else {
-                // Still copying
-                destinationProgress[name] = status.completed
-                destinationStates[name] = "copying"
-                print("🔄 UI Update: \(name) - \(status.completed)/\(status.total)")
+                // Check if we're actually done (all files copied and verified)
+                // Debug: Let's see what values we have
+                if status.completed >= status.total && status.verifiedCount >= status.total {
+                    // Destination is actually complete, just waiting for isComplete flag
+                    destinationProgress[name] = status.total
+                    destinationStates[name] = "complete"
+                    print("✅ UI Update: \(name) - Completed (copied=\(status.completed), verified=\(status.verifiedCount), total=\(status.total))")
+                } else {
+                    // Still copying (or something else)
+                    destinationProgress[name] = status.completed
+                    destinationStates[name] = "copying"
+                    print("🔄 UI Update: \(name) - \(status.completed)/\(status.total) files, verified=\(status.verifiedCount)")
+                }
                 
                 Task {
-                    await progressState.setDestinationProgress(status.completed, for: name)
-                    await progressState.setDestinationState("copying", for: name)
+                    if status.completed >= status.total && status.verifiedCount >= status.total {
+                        await progressState.setDestinationProgress(status.total, for: name)
+                        await progressState.setDestinationState("complete", for: name)
+                    } else {
+                        await progressState.setDestinationProgress(status.completed, for: name)
+                        await progressState.setDestinationState("copying", for: name)
+                    }
                 }
             }
             
@@ -380,6 +396,14 @@ extension BackupManager {
         
         // Update overall progress (sanitize to 0-1 range)
         overallProgress = max(0.0, min(1.0, coordinator.overallProgress))
+        
+        // Update processedFiles with the total number of verified files across all destinations
+        // This fixes the bug where verifiedCount stays at 0
+        var totalVerified = 0
+        for status in coordinator.destinationStatuses.values {
+            totalVerified += status.verifiedCount
+        }
+        processedFiles = totalVerified
         
         // For overall status text, show counts instead of phase
         if completeCount > 0 || copyingCount > 0 || verifyingCount > 0 {

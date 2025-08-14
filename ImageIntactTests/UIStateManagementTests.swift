@@ -69,9 +69,7 @@ class UIStateManagementTests: XCTestCase {
             URL(fileURLWithPath: "/dest3")
         ]
         
-        await MainActor.run {
-            backupManager.initializeDestinations(destinations)
-        }
+        await backupManager.initializeDestinations(destinations)
         
         XCTAssertEqual(backupManager.destinationProgress["dest1"], 0)
         XCTAssertEqual(backupManager.destinationProgress["dest2"], 0)
@@ -81,14 +79,14 @@ class UIStateManagementTests: XCTestCase {
     func testDestinationProgressIncrement() async {
         let destinations = [URL(fileURLWithPath: "/dest1")]
         
-        await MainActor.run {
-            backupManager.initializeDestinations(destinations)
-        }
+        await backupManager.initializeDestinations(destinations)
         
         // Increment progress
         await MainActor.run {
             backupManager.incrementDestinationProgress("dest1")
         }
+        // Wait for async update
+        try? await Task.sleep(nanoseconds: 100_000_000) // 0.1 second
         XCTAssertEqual(backupManager.destinationProgress["dest1"], 1)
         
         // Increment again
@@ -97,6 +95,8 @@ class UIStateManagementTests: XCTestCase {
                 backupManager.incrementDestinationProgress("dest1")
             }
         }
+        // Wait for async updates
+        try? await Task.sleep(nanoseconds: 100_000_000) // 0.1 second
         XCTAssertEqual(backupManager.destinationProgress["dest1"], 6)
     }
     

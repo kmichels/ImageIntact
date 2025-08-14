@@ -200,6 +200,11 @@ class BackupCoordinator: ObservableObject {
                     allQueuesComplete = false
                 }
                 
+                // Debug log to check if verifiedFiles is being read correctly
+                if verifiedFiles > 0 || isVerifying {
+                    print("📊 Coordinator: \(destination.lastPathComponent) - verified=\(verifiedFiles), isVerifying=\(isVerifying), isComplete=\(queueComplete)")
+                }
+                
                 await MainActor.run {
                     destinationStatuses[destination.lastPathComponent] = DestinationStatus(
                         name: destination.lastPathComponent,
