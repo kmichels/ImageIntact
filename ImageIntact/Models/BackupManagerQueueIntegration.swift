@@ -402,6 +402,14 @@ extension BackupManager {
         // Update overall progress (sanitize to 0-1 range)
         overallProgress = max(0.0, min(1.0, coordinator.overallProgress))
         
+        // Update byte counters for ETA calculation
+        totalBytesToCopy = coordinator.totalBytesToCopy
+        totalBytesCopied = coordinator.totalBytesCopied
+        copySpeed = coordinator.currentSpeed
+        
+        // Update ETA based on new byte counters
+        updateETA()
+        
         // Update processedFiles with the total number of verified files across all destinations
         // This fixes the bug where verifiedCount stays at 0
         var totalVerified = 0

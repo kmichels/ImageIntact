@@ -285,6 +285,10 @@ actor DestinationQueue {
         return isVerifying
     }
     
+    func getBytesInfo() -> (transferred: Int64, total: Int64) {
+        return (bytesTransferred, totalBytes)
+    }
+    
     func isComplete() -> Bool {
         // Consider complete if all files are processed (copied + verified)
         // Don't require isRunning since queue stops after verification

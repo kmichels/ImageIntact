@@ -7,6 +7,9 @@ class BackupCoordinator: ObservableObject {
     @Published var overallProgress: Double = 0.0
     @Published var statusMessage = ""
     @Published var destinationStatuses: [String: DestinationStatus] = [:]
+    @Published var totalBytesToCopy: Int64 = 0
+    @Published var totalBytesCopied: Int64 = 0
+    @Published var currentSpeed: Double = 0.0  // MB/s
     
     private var destinationQueues: [DestinationQueue] = []
     private var manifest: [FileManifestEntry] = []
@@ -54,7 +57,6 @@ class BackupCoordinator: ObservableObject {
                         status.isVerifying = isVerifying
                         status.verifiedCount = verifiedCount
                         self.destinationStatuses[destination.lastPathComponent] = status
-                        print("📝 Verification update: \(destination.lastPathComponent) - isVerifying=\(isVerifying), verified=\(verifiedCount)")
                         
                         // Recalculate overall progress when verification updates come in
                         self.updateOverallProgress(totalFiles: manifest.count)
@@ -202,21 +204,45 @@ class BackupCoordinator: ObservableObject {
     
     // MARK: - Progress Monitoring
     
+    private func parseSpeed(_ speedString: String) -> Double? {
+        // Parse strings like "45.2 MB/s" to return 45.2
+        let components = speedString.components(separatedBy: " ")
+        guard components.count >= 2,
+              let value = Double(components[0]) else {
+            return nil
+        }
+        return value
+    }
+    
     private func monitorProgress() async {
         // Keep monitoring until all queues are truly complete (including verification)
         var allQueuesActuallyComplete = false
         while !allQueuesActuallyComplete && !shouldCancel {
             // Update status for each destination
             var allQueuesComplete = true
+            var totalTransferred: Int64 = 0
+            var totalBytesAllDestinations: Int64 = 0
+            var combinedSpeed: Double = 0.0
+            
             for queue in destinationQueues {
                 let status = await queue.getStatus()
                 let destination = queue.destination
                 let verifiedFiles = await queue.getVerifiedCount()
                 let isVerifying = await queue.getIsVerifying()
                 let queueComplete = await queue.isComplete()
+                let bytesInfo = await queue.getBytesInfo()
                 
                 if !queueComplete {
                     allQueuesComplete = false
+                }
+                
+                // Accumulate bytes for all destinations
+                totalTransferred += bytesInfo.transferred
+                totalBytesAllDestinations += bytesInfo.total
+                
+                // Parse speed and accumulate
+                if let speedValue = parseSpeed(status.speed) {
+                    combinedSpeed += speedValue
                 }
                 
                 // Debug log to check if verifiedFiles is being read correctly
@@ -237,6 +263,13 @@ class BackupCoordinator: ObservableObject {
                         verifiedCount: verifiedFiles
                     )
                 }
+            }
+            
+            // Update the byte tracking for ETA calculations
+            await MainActor.run {
+                self.totalBytesToCopy = totalBytesAllDestinations
+                self.totalBytesCopied = totalTransferred
+                self.currentSpeed = combinedSpeed
             }
             
             // Calculate overall progress (include both copying and verification)

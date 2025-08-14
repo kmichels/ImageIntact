@@ -212,6 +212,31 @@ class BackupManager {
         guard index < destinationItems.count else { return }
         guard index < destinationURLs.count else { return }
         
+        // Check if this is the same as the source
+        if let source = sourceURL, source == url {
+            let alert = NSAlert()
+            alert.messageText = "Invalid Destination"
+            alert.informativeText = "The destination folder cannot be the same as the source folder."
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: "OK")
+            alert.runModal()
+            return
+        }
+        
+        // Check if this destination is already selected
+        for (i, existingURL) in destinationURLs.enumerated() {
+            if i != index && existingURL == url {
+                // Show alert that this destination is already selected
+                let alert = NSAlert()
+                alert.messageText = "Duplicate Destination"
+                alert.informativeText = "This folder is already selected as destination #\(i + 1). Please choose a different folder."
+                alert.alertStyle = .warning
+                alert.addButton(withTitle: "OK")
+                alert.runModal()
+                return
+            }
+        }
+        
         // Check if this is a source folder
         if checkForSourceTag(at: url) {
             // Show choice dialog
@@ -507,7 +532,7 @@ class BackupManager {
     }
     
     @MainActor
-    private func updateETA() {
+    func updateETA() {
         // Only update ETA every second to avoid too frequent updates
         guard Date().timeIntervalSince(lastETAUpdate) >= 1.0 else { return }
         lastETAUpdate = Date()
