@@ -96,14 +96,23 @@ extension BackupManager {
                 self.updateUIFromCoordinator(coordinator)
                 
                 // Check if all destinations are complete
-                let allDone = coordinator.destinationStatuses.values.allSatisfy { 
-                    $0.isComplete && !$0.isVerifying 
+                // Also check if copied + verified equals total (backup actually done)
+                let allDone = coordinator.destinationStatuses.values.allSatisfy { status in
+                    (status.isComplete && !status.isVerifying) ||
+                    (status.completed >= status.total && status.verifiedCount >= status.total)
                 }
                 if allDone {
                     // Final update and exit
                     self.updateUIFromCoordinator(coordinator)
                     print("📊 All destinations complete, exiting monitor task")
                     break
+                }
+                
+                // Debug: Check actual completion status
+                for (dest, status) in coordinator.destinationStatuses {
+                    if status.completed == status.total && status.verifiedCount == status.total && !status.isComplete {
+                        print("⚠️ Destination \(dest) appears complete but isComplete=false (copied=\(status.completed), verified=\(status.verifiedCount), total=\(status.total))")
+                    }
                 }
                 
                 // Stall detection - check if any destination is making progress
@@ -116,15 +125,19 @@ extension BackupManager {
                             let currentProgress = status.completed + status.verifiedCount
                             let previousCount = previousProgress[dest] ?? 0
                             
-                            if currentProgress == previousCount && currentProgress > 0 {
-                                // No progress made
+                            // Only check for stalls if destination is actively processing
+                            // Don't count as stalled if we're at 100% (verification might be finishing)
+                            let progressPercent = status.total > 0 ? Double(currentProgress) / Double(status.total * 2) : 0
+                            
+                            if currentProgress == previousCount && currentProgress > 0 && progressPercent < 0.99 {
+                                // No progress made and not near completion
                                 stallCounts[dest] = (stallCounts[dest] ?? 0) + 1
                                 
                                 if Double(stallCounts[dest] ?? 0) * 5.0 >= maxStallDuration {
                                     stalledDestinations.append(dest)
                                 }
                             } else {
-                                // Progress made, reset stall count
+                                // Progress made or near completion, reset stall count
                                 stallCounts[dest] = 0
                             }
                             
