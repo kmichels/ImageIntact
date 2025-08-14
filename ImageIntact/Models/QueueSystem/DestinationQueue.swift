@@ -104,6 +104,7 @@ actor DestinationQueue {
         // Clear callbacks to prevent retain cycles
         onProgress = nil
         onStatusUpdate = nil
+        onVerificationStateChange = nil
     }
     
     // MARK: - Worker Management
