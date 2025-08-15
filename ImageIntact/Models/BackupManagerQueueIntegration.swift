@@ -66,11 +66,28 @@ extension BackupManager {
             }
         }
         
-        // PHASE 1: Build manifest (same as before)
+        // PHASE 1: Build manifest using ManifestBuilder
         statusMessage = "Building file manifest..."
         currentPhase = .buildingManifest
         
-        guard let manifest = await buildManifest(source: source) else {
+        // Create manifest builder and set up callbacks
+        let manifestBuilder = ManifestBuilder()
+        
+        // Set up status updates
+        await manifestBuilder.setStatusCallback { [weak self] status in
+            self?.statusMessage = status
+        }
+        
+        // Set up error handling
+        await manifestBuilder.setErrorCallback { [weak self] file, destination, error in
+            self?.failedFiles.append((file: file, destination: destination, error: error))
+        }
+        
+        // Build the manifest
+        guard let manifest = await manifestBuilder.build(
+            source: source,
+            shouldCancel: { [weak self] in self?.shouldCancel ?? false }
+        ) else {
             statusMessage = "Failed to build manifest"
             return
         }
@@ -238,87 +255,6 @@ extension BackupManager {
         
         currentPhase = .complete
         print("📊 Phase set to complete, defer block will run next")
-    }
-    
-    /// Build manifest of files to copy
-    private func buildManifest(source: URL) async -> [FileManifestEntry]? {
-        var manifest: [FileManifestEntry] = []
-        
-        let fileManager = FileManager.default
-        guard let enumerator = fileManager.enumerator(
-            at: source,
-            includingPropertiesForKeys: [.isRegularFileKey, .fileSizeKey],
-            options: [.skipsHiddenFiles]
-        ) else {
-            return nil
-        }
-        
-        var fileCount = 0
-        
-        while let url = enumerator.nextObject() as? URL {
-            guard !shouldCancel else { return nil }
-            
-            do {
-                let resourceValues = try url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
-                
-                guard resourceValues.isRegularFile == true else { continue }
-                guard ImageFileType.isSupportedFile(url) else { 
-                    // Debug: log skipped files
-                    if url.pathExtension.lowercased() == "mp4" || url.pathExtension.lowercased() == "mov" {
-                        print("⚠️ Video file skipped (not supported?): \(url.lastPathComponent)")
-                    }
-                    continue 
-                }
-                
-                fileCount += 1
-                statusMessage = "Analyzing file \(fileCount)..."
-                
-                // Debug logging for video files in manifest
-                if url.pathExtension.lowercased() == "mp4" || url.pathExtension.lowercased() == "mov" {
-                    print("🎬 Adding video to manifest: \(url.lastPathComponent)")
-                }
-                
-                // Calculate checksum with better error handling
-                let checksum: String
-                do {
-                    checksum = try await Task.detached(priority: .userInitiated) {
-                        try BackupManager.sha256ChecksumStatic(for: url, shouldCancel: self.shouldCancel)
-                    }.value
-                } catch {
-                    // Log specific error and continue with next file
-                    print("⚠️ Checksum failed for \(url.lastPathComponent): \(error.localizedDescription)")
-                    failedFiles.append((
-                        file: url.lastPathComponent,
-                        destination: "manifest",
-                        error: error.localizedDescription
-                    ))
-                    continue
-                }
-                
-                // Check cancellation after potentially long checksum operation
-                guard !shouldCancel else { 
-                    print("🛑 Manifest building cancelled by user")
-                    return nil 
-                }
-                
-                let relativePath = url.path.replacingOccurrences(of: source.path + "/", with: "")
-                let size = resourceValues.fileSize ?? 0
-                
-                let entry = FileManifestEntry(
-                    relativePath: relativePath,
-                    sourceURL: url,
-                    checksum: checksum,
-                    size: Int64(size)
-                )
-                
-                manifest.append(entry)
-                
-            } catch {
-                print("Error processing \(url.lastPathComponent): \(error)")
-            }
-        }
-        
-        return manifest
     }
     
     /// Update our UI based on coordinator's status
