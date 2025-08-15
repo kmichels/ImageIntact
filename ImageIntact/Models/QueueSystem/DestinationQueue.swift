@@ -22,19 +22,19 @@ actor DestinationQueue {
     private(set) var isVerifying = false
     
     // Callbacks for UI updates (needs to be set from async context)
-    private var onProgress: ((Int, Int) -> Void)?
-    private var onStatusUpdate: ((String) -> Void)?
-    private var onVerificationStateChange: ((Bool, Int) -> Void)?
+    private var onProgress: ((Int, Int) async -> Void)?
+    private var onStatusUpdate: ((String) async -> Void)?
+    private var onVerificationStateChange: ((Bool, Int) async -> Void)?
     
-    func setProgressCallback(_ callback: @escaping (Int, Int) -> Void) {
+    func setProgressCallback(_ callback: @escaping (Int, Int) async -> Void) {
         self.onProgress = callback
     }
     
-    func setStatusCallback(_ callback: @escaping (String) -> Void) {
+    func setStatusCallback(_ callback: @escaping (String) async -> Void) {
         self.onStatusUpdate = callback
     }
     
-    func setVerificationCallback(_ callback: @escaping (Bool, Int) -> Void) {
+    func setVerificationCallback(_ callback: @escaping (Bool, Int) async -> Void) {
         self.onVerificationStateChange = callback
     }
     
@@ -165,8 +165,8 @@ actor DestinationQueue {
             let currentCompleted = completedFiles
             let currentTotal = totalFiles
             if let progressCallback = onProgress {
-                // Call callback directly - it will handle its own dispatch if needed
-                progressCallback(currentCompleted, currentTotal)
+                // Call callback asynchronously to respect actor boundaries
+                await progressCallback(currentCompleted, currentTotal)
             }
         }
         
@@ -375,7 +375,7 @@ actor DestinationQueue {
         
         // Notify coordinator that verification has started
         if let callback = onVerificationStateChange {
-            callback(true, 0)
+            await callback(true, 0)
         }
         
         // Verify each file
@@ -405,7 +405,7 @@ actor DestinationQueue {
                     // Notify coordinator of verification progress
                     if let callback = onVerificationStateChange {
                         let currentVerified = verifiedFiles
-                        callback(true, currentVerified)
+                        await callback(true, currentVerified)
                     }
                 } else {
                     print("❌ Checksum mismatch: \(task.relativePath) at \(destination.lastPathComponent)")
@@ -426,7 +426,7 @@ actor DestinationQueue {
         // Notify coordinator that verification has completed
         if let callback = onVerificationStateChange {
             let finalVerified = verifiedFiles
-            callback(false, finalVerified)
+            await callback(false, finalVerified)
         }
         print("🎉 Verification complete for \(destination.lastPathComponent): \(verifiedFiles)/\(totalFiles) verified")
     }
