@@ -1,5 +1,13 @@
 import Foundation
 
+// MARK: - File Manifest Entry
+public struct FileManifestEntry {
+    public let relativePath: String
+    public let sourceURL: URL
+    public let checksum: String
+    public let size: Int64
+}
+
 // MARK: - Queue-Based Backup Integration
 extension BackupManager {
     

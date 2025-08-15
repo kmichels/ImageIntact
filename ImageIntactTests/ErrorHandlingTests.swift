@@ -81,7 +81,7 @@ final class ErrorHandlingTests: XCTestCase {
         try "Normal content".data(using: .utf8)!.write(to: normalFile)
         
         // Run backup
-        await backupManager.performPhaseBasedBackup(source: sourceDir, destinations: [destDir])
+        await backupManager.performQueueBasedBackup(source: sourceDir, destinations: [destDir])
         
         // Normal file should be copied
         XCTAssertTrue(FileManager.default.fileExists(atPath: destDir.appendingPathComponent("normal.jpeg").path))
@@ -105,7 +105,7 @@ final class ErrorHandlingTests: XCTestCase {
         try "Photo content".data(using: .utf8)!.write(to: testFile)
         
         // Run backup to non-existent destination
-        await backupManager.performPhaseBasedBackup(source: sourceDir, destinations: [destDir])
+        await backupManager.performQueueBasedBackup(source: sourceDir, destinations: [destDir])
         
         // Should have failed files
         XCTAssertFalse(backupManager.failedFiles.isEmpty, "Should have failures for non-existent destination")
@@ -131,7 +131,7 @@ final class ErrorHandlingTests: XCTestCase {
         try "Corrupted content".data(using: .utf8)!.write(to: destFile)
         
         // Run backup
-        await backupManager.performPhaseBasedBackup(source: sourceDir, destinations: [destDir])
+        await backupManager.performQueueBasedBackup(source: sourceDir, destinations: [destDir])
         
         // The corrupted file should be quarantined and replaced
         XCTAssertTrue(FileManager.default.fileExists(atPath: destFile.path), "Destination file should exist")
@@ -158,7 +158,7 @@ final class ErrorHandlingTests: XCTestCase {
         
         // Try backup to non-existent network location
         let networkURL = URL(fileURLWithPath: networkPath)
-        await backupManager.performPhaseBasedBackup(source: sourceDir, destinations: [networkURL])
+        await backupManager.performQueueBasedBackup(source: sourceDir, destinations: [networkURL])
         
         // Should complete with errors
         XCTAssertFalse(backupManager.failedFiles.isEmpty, "Should have failures for network issues")
@@ -188,7 +188,7 @@ final class ErrorHandlingTests: XCTestCase {
         }
         
         // Run backup again
-        await backupManager.performPhaseBasedBackup(source: sourceDir, destinations: [destDir])
+        await backupManager.performQueueBasedBackup(source: sourceDir, destinations: [destDir])
         
         // All files should now exist
         for i in 0..<10 {
@@ -209,7 +209,7 @@ final class ErrorHandlingTests: XCTestCase {
         try FileManager.default.createDirectory(at: destDir, withIntermediateDirectories: true)
         
         // Run backup on empty source
-        await backupManager.performPhaseBasedBackup(source: sourceDir, destinations: [destDir])
+        await backupManager.performQueueBasedBackup(source: sourceDir, destinations: [destDir])
         
         // Should complete without errors
         XCTAssertTrue(backupManager.failedFiles.isEmpty)
@@ -243,7 +243,7 @@ final class ErrorHandlingTests: XCTestCase {
         try "Content".data(using: .utf8)!.write(to: file)
         
         // Run backup
-        await backupManager.performPhaseBasedBackup(source: sourceDir, destinations: [destDir])
+        await backupManager.performQueueBasedBackup(source: sourceDir, destinations: [destDir])
         
         // Verify file was copied
         let destFile = destDir.appendingPathComponent("photo (1) [edited] @2024.nef")

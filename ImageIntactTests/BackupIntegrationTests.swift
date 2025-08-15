@@ -43,7 +43,7 @@ final class BackupIntegrationTests: XCTestCase {
         try createTestFile(at: sourceDir.appendingPathComponent("metadata.xmp"), content: "XMP sidecar")
         
         // Run backup
-        await backupManager.performPhaseBasedBackup(source: sourceDir, destinations: [destDir1, destDir2])
+        await backupManager.performQueueBasedBackup(source: sourceDir, destinations: [destDir1, destDir2])
         
         // Verify all files were copied
         XCTAssertTrue(FileManager.default.fileExists(atPath: destDir1.appendingPathComponent("photo1.nef").path))
@@ -78,7 +78,7 @@ final class BackupIntegrationTests: XCTestCase {
         try createTestFile(at: sourceDir.appendingPathComponent("image.jpeg"), content: "JPEG image")
         
         // Run backup
-        await backupManager.performPhaseBasedBackup(source: sourceDir, destinations: [destDir1])
+        await backupManager.performQueueBasedBackup(source: sourceDir, destinations: [destDir1])
         
         // Verify only image files were copied
         XCTAssertTrue(FileManager.default.fileExists(atPath: destDir1.appendingPathComponent("photo.nef").path))
@@ -100,7 +100,7 @@ final class BackupIntegrationTests: XCTestCase {
         backupManager.excludeCacheFiles = true
         
         // Run backup
-        await backupManager.performPhaseBasedBackup(source: sourceDir, destinations: [destDir1])
+        await backupManager.performQueueBasedBackup(source: sourceDir, destinations: [destDir1])
         
         // Verify photo was copied but cache was not
         XCTAssertTrue(FileManager.default.fileExists(atPath: destDir1.appendingPathComponent("photo.nef").path))
@@ -118,7 +118,7 @@ final class BackupIntegrationTests: XCTestCase {
         try createTestFile(at: destDir1.appendingPathComponent(filename), content: content)
         
         // Run backup
-        await backupManager.performPhaseBasedBackup(source: sourceDir, destinations: [destDir1])
+        await backupManager.performQueueBasedBackup(source: sourceDir, destinations: [destDir1])
         
         // Verify file still exists and wasn't quarantined
         XCTAssertTrue(FileManager.default.fileExists(atPath: destDir1.appendingPathComponent(filename).path))
@@ -139,7 +139,7 @@ final class BackupIntegrationTests: XCTestCase {
         try createTestFile(at: destDir1.appendingPathComponent(filename), content: "Old content")
         
         // Run backup
-        await backupManager.performPhaseBasedBackup(source: sourceDir, destinations: [destDir1])
+        await backupManager.performQueueBasedBackup(source: sourceDir, destinations: [destDir1])
         
         // Verify new file exists at destination
         XCTAssertTrue(FileManager.default.fileExists(atPath: destDir1.appendingPathComponent(filename).path))
@@ -165,7 +165,7 @@ final class BackupIntegrationTests: XCTestCase {
             backupManager.cancelOperation()
         }
         
-        await backupManager.performPhaseBasedBackup(source: sourceDir, destinations: [destDir1])
+        await backupManager.performQueueBasedBackup(source: sourceDir, destinations: [destDir1])
         
         // Verify cancellation worked
         XCTAssertTrue(backupManager.shouldCancel, "Should be cancelled")
@@ -200,7 +200,7 @@ final class BackupIntegrationTests: XCTestCase {
             }
         }
         
-        await backupManager.performPhaseBasedBackup(source: sourceDir, destinations: [destDir1])
+        await backupManager.performQueueBasedBackup(source: sourceDir, destinations: [destDir1])
         
         await fulfillment(of: [expectation], timeout: 10.0)
         
@@ -222,7 +222,7 @@ final class BackupIntegrationTests: XCTestCase {
         try createTestFile(at: subDir2.appendingPathComponent("month.nef"), content: "Month photo")
         
         // Run backup
-        await backupManager.performPhaseBasedBackup(source: sourceDir, destinations: [destDir1])
+        await backupManager.performQueueBasedBackup(source: sourceDir, destinations: [destDir1])
         
         // Verify structure was preserved
         XCTAssertTrue(FileManager.default.fileExists(atPath: destDir1.appendingPathComponent("root.nef").path))

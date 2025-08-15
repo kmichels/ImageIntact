@@ -1,14 +1,14 @@
 //
-//  PhaseBasedBackupTests.swift
+//  QueueBasedBackupTests.swift
 //  ImageIntactTests
 //
-//  Tests for the phase-based backup system
+//  Tests for the queue-based backup system
 //
 
 import XCTest
 @testable import ImageIntact
 
-class PhaseBasedBackupTests: XCTestCase {
+class QueueBasedBackupTests: XCTestCase {
     
     var backupManager: BackupManager!
     var testSourceDir: URL!
@@ -73,7 +73,7 @@ class PhaseBasedBackupTests: XCTestCase {
             }
             
             // Start backup
-            await manager.performPhaseBasedBackup(
+            await manager.performQueueBasedBackup(
                 source: testSourceDir,
                 destinations: [testDestDir1]
             )
@@ -205,7 +205,7 @@ class PhaseBasedBackupTests: XCTestCase {
                 expectation.fulfill()
             }
             
-            await manager.performPhaseBasedBackup(
+            await manager.performQueueBasedBackup(
                 source: testSourceDir,
                 destinations: [testDestDir1]
             )

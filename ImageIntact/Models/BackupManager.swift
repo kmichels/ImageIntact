@@ -885,4 +885,26 @@ extension BackupManager {
         let hashString = hash.compactMap { String(format: "%02x", $0) }.joined()
         return hashString
     }
+    
+    // MARK: - Formatting Helpers
+    
+    public func formatTime(_ seconds: TimeInterval) -> String {
+        if seconds < 60 {
+            return "\(Int(seconds))s"
+        } else if seconds < 3600 {
+            let minutes = Int(seconds / 60)
+            let secs = Int(seconds.truncatingRemainder(dividingBy: 60))
+            return "\(minutes)m \(secs)s"
+        } else {
+            let hours = Int(seconds / 3600)
+            let minutes = Int((seconds.truncatingRemainder(dividingBy: 3600)) / 60)
+            return "\(hours)h \(minutes)m"
+        }
+    }
+    
+    public func formatDataSize(_ bytes: Int64) -> String {
+        let formatter = ByteCountFormatter()
+        formatter.countStyle = .binary
+        return formatter.string(fromByteCount: bytes)
+    }
 }

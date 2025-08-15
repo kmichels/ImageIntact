@@ -86,6 +86,7 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = 71592B8C2E3CE71700571AB3 /* Build configuration list for PBXNativeTarget "ImageIntact" */;
 			buildPhases = (
+				71D62B4D2E4F37A1006FBC07 /* Auto-increment Build Number */,
 				71592B7C2E3CE71600571AB3 /* Sources */,
 				71592B7D2E3CE71600571AB3 /* Frameworks */,
 				71592B7E2E3CE71600571AB3 /* Resources */,
@@ -186,6 +187,27 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		71D62B4D2E4F37A1006FBC07 /* Auto-increment Build Number */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 8;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Auto-increment Build Number";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 1;
+			shellPath = /bin/sh;
+			shellScript = "# Only increment for Archive builds (both GitHub and App Store releases)\n  if [ \"$ACTION\" == \"archive\" ]; then\n      echo \"Auto-incrementing build number for archive...\"\n\n      # Get the current build number\n      CURRENT_BUILD=$(/usr/libexec/PlistBuddy -c \"Print :CURRENT_PROJECT_VERSION\" \"${PROJECT_FILE_PATH}/project.pbxproj\" 2>/dev/null)\n\n      if [ -z \"$CURRENT_BUILD\" ]; then\n          CURRENT_BUILD=1\n      fi\n\n      # Increment build number\n      NEW_BUILD=$((CURRENT_BUILD + 1))\n\n      echo \"Build number: $CURRENT_BUILD -> $NEW_BUILD\"\n\n      # Update project.pbxproj with new build number\n      sed -i '' \"s/CURRENT_PROJECT_VERSION = $CURRENT_BUILD;/CURRENT_PROJECT_VERSION = $NEW_BUILD;/g\" \"${PROJECT_FILE_PATH}/project.pbxproj\"\n\n      # Also update in Info.plist if it exists (for backwards compatibility)\n      if [ -f \"${BUILT_PRODUCTS_DIR}/${INFOPLIST_PATH}\" ]; then\n          /usr/libexec/PlistBuddy -c \"Set :CFBundleVersion $NEW_BUILD\" \"${BUILT_PRODUCTS_DIR}/${INFOPLIST_PATH}\"\n      fi\n  else\n      echo \"Skipping build number increment (not an archive build)\"\n  fi#\n";
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		71592B7C2E3CE71600571AB3 /* Sources */ = {
@@ -343,7 +365,7 @@
 				CODE_SIGN_ENTITLEMENTS = ImageIntact/ImageIntact.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 4;
 				DEAD_CODE_STRIPPING = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
@@ -355,7 +377,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.2.4;
+				MARKETING_VERSION = 1.2.5;
 				PRODUCT_BUNDLE_IDENTIFIER = com.tonalphoto.tech.ImageIntact;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
@@ -372,7 +394,7 @@
 				CODE_SIGN_ENTITLEMENTS = ImageIntact/ImageIntact.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 4;
 				DEAD_CODE_STRIPPING = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
@@ -384,7 +406,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.2.4;
+				MARKETING_VERSION = 1.2.5;
 				PRODUCT_BUNDLE_IDENTIFIER = com.tonalphoto.tech.ImageIntact;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
