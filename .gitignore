@@ -11,9 +11,10 @@ xcuserdata/
 *.xcuserstate
 *.md
 
-# Documentation - ignore all .md except README
+# Documentation - ignore all .md except README and ENTITLEMENTS
 *.md
 !README.md
+!ENTITLEMENTS.md
 
 # macOS
 .DS_Store
