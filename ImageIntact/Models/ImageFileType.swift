@@ -446,55 +446,6 @@ class ImageFileScanner {
         currentDetailedTask?.cancel()
     }
     
-    func scanWithSize(directory: URL, 
-                      progress: @escaping (ScanProgress) -> Void) async throws -> DetailedScanResult {
-        // Cancel any existing scan
-        currentDetailedTask?.cancel()
-        
-        let task = Task<DetailedScanResult, Error> {
-            var fileTypes = ScanResult()
-            var totalBytes: Int64 = 0
-            var scannedCount = 0
-            
-            let resourceKeys: [URLResourceKey] = [.isRegularFileKey, .isDirectoryKey, .fileSizeKey]
-            
-            guard let enumerator = FileManager.default.enumerator(
-                at: directory,
-                includingPropertiesForKeys: resourceKeys,
-                options: [.skipsHiddenFiles, .skipsPackageDescendants]
-            ) else {
-                throw NSError(domain: "ImageFileScanner", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to create file enumerator"])
-            }
-            
-            for case let url as URL in enumerator {
-                try Task.checkCancellation()
-                
-                let resourceValues = try url.resourceValues(forKeys: Set(resourceKeys))
-                
-                guard resourceValues.isRegularFile == true else { continue }
-                
-                if let fileType = ImageFileType.from(fileExtension: url.pathExtension) {
-                    fileTypes[fileType, default: 0] += 1
-                    
-                    // Add file size to total
-                    if let fileSize = resourceValues.fileSize {
-                        totalBytes += Int64(fileSize)
-                    }
-                }
-                
-                scannedCount += 1
-                if scannedCount % 100 == 0 {
-                    progress((scanned: scannedCount, total: nil, currentPath: url.lastPathComponent))
-                }
-            }
-            
-            return (fileTypes: fileTypes, totalBytes: totalBytes)
-        }
-        
-        currentDetailedTask = task
-        return try await task.value
-    }
-    
     // Helper to get a nice summary string
     static func formatScanResults(_ results: ScanResult, groupRaw: Bool = false) -> String {
         if results.isEmpty {
