@@ -90,7 +90,7 @@ class BackupOrchestrator {
         
         await manifestBuilder.setErrorCallback { [weak self] file, destination, error in
             self?.onFailedFile?(file, destination, error)
-            failedFiles.append((file: file, destination: destination, error: error))
+            // Don't capture failedFiles directly - could cause retain cycle
         }
         
         // Build the manifest
