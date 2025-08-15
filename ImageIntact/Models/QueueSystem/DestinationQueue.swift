@@ -216,6 +216,14 @@ actor DestinationQueue {
         let destPath = destination.appendingPathComponent(task.relativePath)
         let destDir = destPath.deletingLastPathComponent()
         
+        // Debug logging for video files
+        if task.relativePath.lowercased().hasSuffix(".mp4") || task.relativePath.lowercased().hasSuffix(".mov") {
+            print("🎬 Processing video: \(task.relativePath)")
+            print("   Source: \(task.sourceURL.path)")
+            print("   Dest: \(destPath.path)")
+            print("   Size: \(task.size) bytes")
+        }
+        
         do {
             // Create directory if needed
             if !FileManager.default.fileExists(atPath: destDir.path) {
@@ -243,10 +251,29 @@ actor DestinationQueue {
             
             // Copy the file with proper error handling
             do {
+                // Extra debug for videos
+                if task.relativePath.lowercased().hasSuffix(".mp4") || task.relativePath.lowercased().hasSuffix(".mov") {
+                    print("🎬 About to copy video from \(task.sourceURL.path)")
+                    print("   Source exists: \(FileManager.default.fileExists(atPath: task.sourceURL.path))")
+                }
+                
                 try FileManager.default.copyItem(at: task.sourceURL, to: destPath)
-                print("✅ Copied \(task.relativePath) to \(destination.lastPathComponent)")
+                
+                // Extra confirmation for videos
+                if task.relativePath.lowercased().hasSuffix(".mp4") || task.relativePath.lowercased().hasSuffix(".mov") {
+                    print("✅ Video copied successfully: \(task.relativePath)")
+                    print("   Dest exists: \(FileManager.default.fileExists(atPath: destPath.path))")
+                } else {
+                    print("✅ Copied \(task.relativePath) to \(destination.lastPathComponent)")
+                }
                 return .success
             } catch {
+                // Log video-specific errors
+                if task.relativePath.lowercased().hasSuffix(".mp4") || task.relativePath.lowercased().hasSuffix(".mov") {
+                    print("❌ Video copy failed: \(task.relativePath)")
+                    print("   Error: \(error)")
+                }
+                
                 // Clean up partial file if copy failed
                 if FileManager.default.fileExists(atPath: destPath.path) {
                     try? FileManager.default.removeItem(at: destPath)

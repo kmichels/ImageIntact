@@ -262,10 +262,21 @@ extension BackupManager {
                 let resourceValues = try url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
                 
                 guard resourceValues.isRegularFile == true else { continue }
-                guard ImageFileType.isSupportedFile(url) else { continue }
+                guard ImageFileType.isSupportedFile(url) else { 
+                    // Debug: log skipped files
+                    if url.pathExtension.lowercased() == "mp4" || url.pathExtension.lowercased() == "mov" {
+                        print("⚠️ Video file skipped (not supported?): \(url.lastPathComponent)")
+                    }
+                    continue 
+                }
                 
                 fileCount += 1
                 statusMessage = "Analyzing file \(fileCount)..."
+                
+                // Debug logging for video files in manifest
+                if url.pathExtension.lowercased() == "mp4" || url.pathExtension.lowercased() == "mov" {
+                    print("🎬 Adding video to manifest: \(url.lastPathComponent)")
+                }
                 
                 // Calculate checksum with better error handling
                 let checksum: String
