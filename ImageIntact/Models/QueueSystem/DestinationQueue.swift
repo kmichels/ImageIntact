@@ -310,11 +310,15 @@ actor DestinationQueue {
     }
     
     func isComplete() -> Bool {
-        // Consider complete if all files are processed (copied + verified)
-        // Don't require isRunning since queue stops after verification
-        let complete = verifiedFiles >= totalFiles && !isVerifying
+        // Consider complete if:
+        // 1. All files are verified successfully, OR
+        // 2. Verification is done (not running) and we've attempted to verify all files
+        // This accounts for files that failed verification
+        let allFilesProcessed = (verifiedFiles + failedFiles.count) >= totalFiles
+        let complete = allFilesProcessed && !isVerifying
+        
         if complete || verifiedFiles > 0 {
-            print("📊 Queue.isComplete(\(destination.lastPathComponent)): verified=\(verifiedFiles)/\(totalFiles), isVerifying=\(isVerifying) -> \(complete)")
+            print("📊 Queue.isComplete(\(destination.lastPathComponent)): verified=\(verifiedFiles)/\(totalFiles), failed=\(failedFiles.count), isVerifying=\(isVerifying) -> \(complete)")
         }
         return complete
     }

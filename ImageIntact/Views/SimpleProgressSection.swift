@@ -32,7 +32,10 @@ struct SimpleProgressSection: View {
                         VStack(alignment: .leading, spacing: 8) {
                             // Overall progress
                             HStack {
-                                Text("Files: \(backupManager.currentFileIndex)/\(backupManager.totalFiles)")
+                                // During verification, show processedFiles (verified count), otherwise show currentFileIndex
+                                let fileCount = backupManager.currentPhase == .verifyingDestinations || backupManager.currentPhase == .verifyingChecksums ? 
+                                    backupManager.processedFiles : backupManager.currentFileIndex
+                                Text("Files: \(fileCount)/\(backupManager.totalFiles)")
                                     .font(.subheadline)
                                 
                                 Spacer()
