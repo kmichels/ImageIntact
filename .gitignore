@@ -11,10 +11,10 @@ xcuserdata/
 *.xcuserstate
 *.md
 
-# Documentation - ignore all .md except README and ENTITLEMENTS
+# Documentation - ignore all .md except README
 *.md
 !README.md
-!ENTITLEMENTS.md
+# ENTITLEMENTS.md should NEVER be committed (security sensitive)
 
 # macOS
 .DS_Store
