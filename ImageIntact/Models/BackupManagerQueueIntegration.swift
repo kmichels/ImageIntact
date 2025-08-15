@@ -11,13 +11,11 @@ public struct FileManifestEntry {
 // MARK: - Queue-Based Backup Integration
 extension BackupManager {
     
-    /// Performs backup using the new smart queue system
+    /// Performs backup using the new smart queue system with BackupOrchestrator
     /// Each destination runs independently at its own speed
     @MainActor
     func performQueueBasedBackup(source: URL, destinations: [URL]) async {
-        print("🚀 Starting QUEUE-BASED backup (destinations run independently!)")
-        
-        let backupStartTime = Date()
+        print("🚀 Starting QUEUE-BASED backup with orchestrator")
         
         // Reset state
         isProcessing = true
@@ -31,230 +29,48 @@ extension BackupManager {
         defer {
             isProcessing = false
             shouldCancel = false
-            
-            // Clean up references to prevent memory leaks
-            currentCoordinator = nil
-            currentMonitorTask?.cancel()
-            currentMonitorTask = nil
-            
-            // Clean up all resources
-            Task {
-                await resourceManager.cleanup()
-            }
-            
-            // Calculate final stats
-            let totalTime = Date().timeIntervalSince(backupStartTime)
-            let timeString = formatTimeForQueue(totalTime)
-            
-            if failedFiles.isEmpty {
-                statusMessage = "✅ Smart backup complete in \(timeString)"
-            } else {
-                statusMessage = "⚠️ Backup complete in \(timeString) with \(failedFiles.count) errors"
-            }
+            currentOrchestrator = nil
         }
         
-        // Access security-scoped resources through resource manager
-        _ = await resourceManager.startAccessingSecurityScopedResource(source)
-        for destination in destinations {
-            _ = await resourceManager.startAccessingSecurityScopedResource(destination)
-        }
+        // Create orchestrator with our components
+        let orchestrator = BackupOrchestrator(
+            progressTracker: progressTracker,
+            resourceManager: resourceManager
+        )
         
-        defer {
-            // Resource manager will handle cleanup
-            Task {
-                await resourceManager.stopAccessingAllSecurityScopedResources()
-            }
-        }
-        
-        // PHASE 1: Build manifest using ManifestBuilder
-        statusMessage = "Building file manifest..."
-        currentPhase = .buildingManifest
-        
-        // Create manifest builder and set up callbacks
-        let manifestBuilder = ManifestBuilder()
-        
-        // Set up status updates
-        await manifestBuilder.setStatusCallback { [weak self] status in
+        // Set up callbacks
+        orchestrator.onStatusUpdate = { [weak self] status in
             self?.statusMessage = status
         }
         
-        // Set up error handling
-        await manifestBuilder.setErrorCallback { [weak self] file, destination, error in
+        orchestrator.onFailedFile = { [weak self] file, destination, error in
             self?.failedFiles.append((file: file, destination: destination, error: error))
         }
         
-        // Build the manifest
-        guard let manifest = await manifestBuilder.build(
+        orchestrator.onPhaseChange = { [weak self] phase in
+            self?.currentPhase = phase
+        }
+        
+        // Store reference for cancellation
+        currentOrchestrator = orchestrator
+        
+        // Build destination item IDs array for drive info lookup
+        let destinationItemIDs = destinationItems.prefix(destinations.count).map { $0.id }
+        
+        // Perform the backup
+        let failures = await orchestrator.performBackup(
             source: source,
-            shouldCancel: { [weak self] in self?.shouldCancel ?? false }
-        ) else {
-            statusMessage = "Failed to build manifest"
-            return
-        }
+            destinations: destinations,
+            driveInfo: destinationDriveInfo,
+            destinationItemIDs: destinationItemIDs
+        )
         
-        print("📋 Manifest contains \(manifest.count) files")
-        
-        // Set totalFiles so UI shows progress bars
-        progressTracker.totalFiles = manifest.count
-        
-        // Calculate total bytes from manifest for ETA calculation
-        let totalBytesPerDestination = manifest.reduce(0) { $0 + $1.size }
-        progressTracker.sourceTotalBytes = totalBytesPerDestination  // Store for display
-        progressTracker.totalBytesToCopy = totalBytesPerDestination * Int64(destinations.count)
-        progressTracker.totalBytesCopied = 0
-        print("📊 Total bytes to copy: \(totalBytesToCopy) bytes (\(totalBytesPerDestination) per destination × \(destinations.count) destinations)")
-        
-        // Use estimated speeds from drive analysis as initial speed for ETA
-        var slowestSpeed: Double = Double.greatestFiniteMagnitude
-        for (index, _) in destinations.enumerated() {
-            if index < destinationItems.count {
-                let itemID = destinationItems[index].id
-                if let driveInfo = destinationDriveInfo[itemID], driveInfo.estimatedWriteSpeed > 0 {
-                    slowestSpeed = min(slowestSpeed, driveInfo.estimatedWriteSpeed)
-                }
-            }
-        }
-        
-        // If we have valid speed estimates, use them for initial ETA
-        if slowestSpeed < Double.greatestFiniteMagnitude && slowestSpeed > 0 {
-            progressTracker.copySpeed = slowestSpeed
-            print("📊 Using estimated speed of \(slowestSpeed) MB/s for initial ETA")
-        }
-        
-        // Initialize destination progress and states for all destinations
-        await initializeDestinations(destinations)
-        
-        // PHASE 2: Create and start the queue coordinator
-        let coordinator = BackupCoordinator()
-        currentCoordinator = coordinator  // Store reference for cancellation
-        
-        // Monitor coordinator status with polling for more frequent updates
-        let monitorTask = Task { @MainActor [weak self, weak coordinator] in
-            guard let self = self, let coordinator = coordinator else { return }
-            
-            // Wait a moment for the coordinator to start
-            try? await Task.sleep(nanoseconds: 100_000_000) // 0.1s
-            
-            // Track stall detection
-            var lastProgressCheck = Date()
-            var previousProgress: [String: Int] = [:]
-            var stallCounts: [String: Int] = [:]
-            let maxStallDuration: TimeInterval = 60.0 // 60 seconds without progress = stalled
-            
-            while !Task.isCancelled && !self.shouldCancel {
-                self.updateUIFromCoordinator(coordinator)
-                
-                // Check if all destinations are complete
-                // Also check if copied + verified equals total (backup actually done)
-                let allDone = coordinator.destinationStatuses.values.allSatisfy { status in
-                    (status.isComplete && !status.isVerifying) ||
-                    (status.completed >= status.total && status.verifiedCount >= status.total)
-                }
-                if allDone {
-                    // Final update and exit
-                    self.updateUIFromCoordinator(coordinator)
-                    print("📊 All destinations complete, exiting monitor task")
-                    break
-                }
-                
-                // Debug: Check actual completion status
-                for (dest, status) in coordinator.destinationStatuses {
-                    if status.completed == status.total && status.verifiedCount == status.total && !status.isComplete {
-                        print("⚠️ Destination \(dest) appears complete but isComplete=false (copied=\(status.completed), verified=\(status.verifiedCount), total=\(status.total))")
-                    }
-                }
-                
-                // Stall detection - check if any destination is making progress
-                let now = Date()
-                if now.timeIntervalSince(lastProgressCheck) >= 5.0 { // Check every 5 seconds
-                    var stalledDestinations: [String] = []
-                    
-                    for (dest, status) in coordinator.destinationStatuses {
-                        if !status.isComplete {
-                            let currentProgress = status.completed + status.verifiedCount
-                            let previousCount = previousProgress[dest] ?? 0
-                            
-                            // Only check for stalls if destination is actively processing
-                            // Don't count as stalled if we're at 100% (verification might be finishing)
-                            let progressPercent = status.total > 0 ? Double(currentProgress) / Double(status.total * 2) : 0
-                            
-                            if currentProgress == previousCount && currentProgress > 0 && progressPercent < 0.99 {
-                                // No progress made and not near completion
-                                stallCounts[dest] = (stallCounts[dest] ?? 0) + 1
-                                
-                                if Double(stallCounts[dest] ?? 0) * 5.0 >= maxStallDuration {
-                                    stalledDestinations.append(dest)
-                                }
-                            } else {
-                                // Progress made or near completion, reset stall count
-                                stallCounts[dest] = 0
-                            }
-                            
-                            previousProgress[dest] = currentProgress
-                        }
-                    }
-                    
-                    if !stalledDestinations.isEmpty {
-                        print("⚠️ Detected stalled destinations after \(maxStallDuration)s: \(stalledDestinations.joined(separator: ", "))")
-                        self.debugLog.append("⚠️ Backup stalled for: \(stalledDestinations.joined(separator: ", "))")
-                        
-                        // Add failed file entries for stalled destinations
-                        for dest in stalledDestinations {
-                            self.failedFiles.append((
-                                file: "Network timeout",
-                                destination: dest,
-                                error: "Destination stopped responding after \(Int(maxStallDuration)) seconds"
-                            ))
-                        }
-                        
-                        // Force complete the monitor to prevent infinite loop
-                        print("📊 Exiting monitor due to stalled destinations")
-                        break
-                    }
-                    
-                    lastProgressCheck = now
-                }
-                
-                // Check if user cancelled
-                if self.shouldCancel {
-                    print("📊 User cancelled, exiting monitor task")
-                    break
-                }
-                
-                // Update frequently for smooth progress
-                try? await Task.sleep(nanoseconds: 100_000_000) // 10Hz for smooth updates
-            }
-            // One final update after loop exits
-            self.updateUIFromCoordinator(coordinator)
-            print("📊 Monitor task completed")
-        }
-        
-        // Store monitor task reference for potential cancellation
-        currentMonitorTask = monitorTask
-        await resourceManager.track(task: monitorTask as Task<Void, Never>)
-        
-        // Start the smart backup
-        currentPhase = .copyingFiles
-        progressTracker.startCopyTracking()  // Set copy start time for ETA calculation
-        await coordinator.startBackup(source: source, destinations: destinations, manifest: manifest)
-        
-        // Wait for monitoring to finish
-        print("📊 Waiting for monitor task to complete...")
-        await monitorTask.value
-        print("📊 Monitor task done, setting phase to complete")
-        
-        // Copy coordinator's failed files to our list
-        let failures = coordinator.getFailures()
+        // Add any failures to our list (avoiding duplicates)
         for failure in failures {
-            failedFiles.append((
-                file: failure.file,
-                destination: failure.destination,
-                error: failure.error
-            ))
+            if !failedFiles.contains(where: { $0.file == failure.file && $0.destination == failure.destination }) {
+                failedFiles.append(failure)
+            }
         }
-        
-        currentPhase = .complete
-        print("📊 Phase set to complete, defer block will run next")
     }
     
     /// Update our UI based on coordinator's status

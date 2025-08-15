@@ -125,8 +125,9 @@ class BackupManager {
     
     var logEntries: [LogEntry] = []
     private var currentOperation: DispatchWorkItem?
-    var currentCoordinator: BackupCoordinator?  // Made internal so extension can access it
-    var currentMonitorTask: Task<Void, Never>?  // Made internal so extension can access it
+    var currentCoordinator: BackupCoordinator?  // Legacy - kept for compatibility
+    var currentMonitorTask: Task<Void, Never>?  // Legacy - kept for compatibility
+    var currentOrchestrator: BackupOrchestrator?  // New orchestrator for refactored backup
     
     // MARK: - Initialization
     init() {
@@ -449,6 +450,13 @@ class BackupManager {
         guard !shouldCancel else { return }  // Prevent multiple cancellations
         shouldCancel = true
         statusMessage = "Cancelling backup..."
+        
+        // Cancel orchestrator if using new system
+        Task { @MainActor in
+            currentOrchestrator?.cancel()
+        }
+        
+        // Cancel legacy coordinator if still in use
         currentOperation?.cancel()
         
         // Cancel the monitor task
