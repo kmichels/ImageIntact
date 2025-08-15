@@ -117,7 +117,7 @@ class BackupOrchestrator {
         
         // Use estimated speeds for initial ETA
         var slowestSpeed = Double.greatestFiniteMagnitude
-        for (index, destination) in destinations.enumerated() {
+        for (index, _) in destinations.enumerated() {
             if index < destinationItemIDs.count {
                 let itemID = destinationItemIDs[index]
                 if let info = driveInfo[itemID], info.estimatedWriteSpeed > 0 {
