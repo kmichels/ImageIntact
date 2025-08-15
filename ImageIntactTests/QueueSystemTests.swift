@@ -144,13 +144,12 @@ class QueueSystemTests: XCTestCase {
             }
             
             while backupManager.isProcessing {
-                if let verifiedCount = backupManager.verifiedCount {
-                    if verifiedCount > 0 && !verificationStarted {
-                        verificationStarted = true
-                    }
-                    if !verificationProgress.contains(verifiedCount) {
-                        verificationProgress.append(verifiedCount)
-                    }
+                let verifiedCount = backupManager.processedFiles
+                if verifiedCount > 0 && !verificationStarted {
+                    verificationStarted = true
+                }
+                if !verificationProgress.contains(verifiedCount) {
+                    verificationProgress.append(verifiedCount)
                 }
                 try? await Task.sleep(nanoseconds: 50_000_000)
             }
@@ -161,7 +160,7 @@ class QueueSystemTests: XCTestCase {
         
         // Verify tracking
         XCTAssertTrue(verificationStarted, "Verification should have started")
-        XCTAssertEqual(backupManager.verifiedCount, 3, "All files should be verified")
+        XCTAssertEqual(backupManager.processedFiles, 3, "All files should be verified")
         XCTAssertTrue(verificationProgress.count > 0, "Should have verification progress updates")
     }
     
@@ -184,7 +183,7 @@ class QueueSystemTests: XCTestCase {
         // Start backup and cancel after a short delay
         Task { @MainActor in
             try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
-            backupManager.cancelBackup()
+            backupManager.cancelOperation()
         }
         
         await backupManager.performQueueBasedBackup(
@@ -354,7 +353,7 @@ class QueueSystemTests: XCTestCase {
                      "Status should indicate completion")
         XCTAssertEqual(backupManager.destinationProgress[destDir.lastPathComponent], 3,
                       "All files should be copied")
-        XCTAssertEqual(backupManager.verifiedCount, 3,
+        XCTAssertEqual(backupManager.processedFiles, 3,
                       "All files should be verified")
     }
 }
