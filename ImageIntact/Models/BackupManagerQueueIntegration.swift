@@ -95,13 +95,13 @@ extension BackupManager {
         print("📋 Manifest contains \(manifest.count) files")
         
         // Set totalFiles so UI shows progress bars
-        totalFiles = manifest.count
+        progressTracker.totalFiles = manifest.count
         
         // Calculate total bytes from manifest for ETA calculation
         let totalBytesPerDestination = manifest.reduce(0) { $0 + $1.size }
-        sourceTotalBytes = totalBytesPerDestination  // Store for display
-        totalBytesToCopy = totalBytesPerDestination * Int64(destinations.count)
-        totalBytesCopied = 0
+        progressTracker.sourceTotalBytes = totalBytesPerDestination  // Store for display
+        progressTracker.totalBytesToCopy = totalBytesPerDestination * Int64(destinations.count)
+        progressTracker.totalBytesCopied = 0
         print("📊 Total bytes to copy: \(totalBytesToCopy) bytes (\(totalBytesPerDestination) per destination × \(destinations.count) destinations)")
         
         // Use estimated speeds from drive analysis as initial speed for ETA
@@ -117,7 +117,7 @@ extension BackupManager {
         
         // If we have valid speed estimates, use them for initial ETA
         if slowestSpeed < Double.greatestFiniteMagnitude && slowestSpeed > 0 {
-            copySpeed = slowestSpeed
+            progressTracker.copySpeed = slowestSpeed
             print("📊 Using estimated speed of \(slowestSpeed) MB/s for initial ETA")
         }
         
@@ -235,7 +235,7 @@ extension BackupManager {
         
         // Start the smart backup
         currentPhase = .copyingFiles
-        copyStartTime = Date()  // Set copy start time for ETA calculation
+        progressTracker.startCopyTracking()  // Set copy start time for ETA calculation
         await coordinator.startBackup(source: source, destinations: destinations, manifest: manifest)
         
         // Wait for monitoring to finish
@@ -275,12 +275,14 @@ extension BackupManager {
         var verifyingDestinations: [String] = []
         
         for (name, status) in coordinator.destinationStatuses {
-            // Update the destinationProgress dictionary for UI display
+            // Update the destination progress for UI display
             // This is safe because we're already on @MainActor
             if status.isComplete {
                 // Destination is fully complete
-                destinationProgress[name] = status.total
-                destinationStates[name] = "complete"
+                Task {
+                    await progressTracker.setDestinationProgress(status.total, for: name)
+                    await progressTracker.setDestinationState("complete", for: name)
+                }
                 
                 Task {
                     await progressState.setDestinationProgress(status.total, for: name)
@@ -300,8 +302,10 @@ extension BackupManager {
                 
                 // For verification, keep showing full progress (files are already copied)
                 // This prevents the progress bar from resetting to 0 when verification starts
-                destinationProgress[name] = status.total
-                destinationStates[name] = "verifying"
+                Task {
+                    await progressTracker.setDestinationProgress(status.total, for: name)
+                    await progressTracker.setDestinationState("verifying", for: name)
+                }
                 verifyingDestinations.append(name)
                 
                 // Also update actor state for consistency
@@ -314,13 +318,17 @@ extension BackupManager {
                 // Debug: Let's see what values we have
                 if status.completed >= status.total && status.verifiedCount >= status.total {
                     // Destination is actually complete, just waiting for isComplete flag
-                    destinationProgress[name] = status.total
-                    destinationStates[name] = "complete"
+                    Task {
+                        await progressTracker.setDestinationProgress(status.total, for: name)
+                        await progressTracker.setDestinationState("complete", for: name)
+                    }
                     print("✅ UI Update: \(name) - Completed (copied=\(status.completed), verified=\(status.verifiedCount), total=\(status.total))")
                 } else {
                     // Still copying (or something else)
-                    destinationProgress[name] = status.completed
-                    destinationStates[name] = "copying"
+                    Task {
+                        await progressTracker.setDestinationProgress(status.completed, for: name)
+                        await progressTracker.setDestinationState("copying", for: name)
+                    }
                     print("🔄 UI Update: \(name) - \(status.completed)/\(status.total) files, verified=\(status.verifiedCount)")
                 }
                 
@@ -379,13 +387,13 @@ extension BackupManager {
             statusMessage = "Processing..."
         }
         
-        // Update overall progress (sanitize to 0-1 range)
-        overallProgress = max(0.0, min(1.0, coordinator.overallProgress))
-        
-        // Update byte counters for ETA calculation
-        totalBytesToCopy = coordinator.totalBytesToCopy
-        totalBytesCopied = coordinator.totalBytesCopied
-        copySpeed = coordinator.currentSpeed
+        // Update progress tracker with coordinator data
+        progressTracker.updateFromCoordinator(
+            overallProgress: coordinator.overallProgress,
+            totalBytes: coordinator.totalBytesToCopy,
+            copiedBytes: coordinator.totalBytesCopied,
+            speed: coordinator.currentSpeed
+        )
         
         // Update ETA based on new byte counters
         updateETA()
@@ -396,7 +404,7 @@ extension BackupManager {
         for status in coordinator.destinationStatuses.values {
             totalVerified += status.verifiedCount
         }
-        processedFiles = totalVerified
+        progressTracker.processedFiles = totalVerified
         
         // For overall status text, show counts instead of phase
         if completeCount > 0 || copyingCount > 0 || verifyingCount > 0 {

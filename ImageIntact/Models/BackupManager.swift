@@ -31,9 +31,6 @@ class BackupManager {
     var destinationItems: [DestinationItem] = []
     var isProcessing = false
     var statusMessage = ""
-    var totalFiles = 0
-    var processedFiles = 0
-    var currentFile = ""
     var failedFiles: [(file: String, destination: String, error: String)] = []
     var sessionID = UUID().uuidString
     var shouldCancel = false
@@ -41,44 +38,70 @@ class BackupManager {
     var hasWrittenDebugLog = false
     var lastDebugLogPath: URL?
     
-    // Simple progress tracking
-    var currentFileIndex: Int = 0
-    var currentDestinationName: String = ""
-    var currentFileName: String = ""
-    var copySpeed: Double = 0.0 // MB/s
-    var copyStartTime: Date = Date()
-    var totalBytesCopied: Int64 = 0
+    // Progress tracking delegated to ProgressTracker
+    let progressTracker = ProgressTracker()
     
-    // Thread-safe progress state
+    // Expose progress properties for compatibility
+    var totalFiles: Int { 
+        get { progressTracker.totalFiles }
+        set { progressTracker.totalFiles = newValue }
+    }
+    var processedFiles: Int { 
+        get { progressTracker.processedFiles }
+        set { progressTracker.processedFiles = newValue }
+    }
+    var currentFile: String { 
+        get { progressTracker.currentFile }
+        set { progressTracker.currentFile = newValue }
+    }
+    var currentFileIndex: Int { 
+        get { progressTracker.currentFileIndex }
+        set { progressTracker.currentFileIndex = newValue }
+    }
+    var currentFileName: String { 
+        get { progressTracker.currentFileName }
+        set { progressTracker.currentFileName = newValue }
+    }
+    var currentDestinationName: String { 
+        get { progressTracker.currentDestinationName }
+        set { progressTracker.currentDestinationName = newValue }
+    }
+    var copySpeed: Double { 
+        get { progressTracker.copySpeed }
+        set { progressTracker.copySpeed = newValue }
+    }
+    var totalBytesCopied: Int64 { 
+        get { progressTracker.totalBytesCopied }
+        set { progressTracker.totalBytesCopied = newValue }
+    }
+    var totalBytesToCopy: Int64 { 
+        get { progressTracker.totalBytesToCopy }
+        set { progressTracker.totalBytesToCopy = newValue }
+    }
+    var estimatedSecondsRemaining: TimeInterval? { progressTracker.estimatedSecondsRemaining }
+    var destinationProgress: [String: Int] { progressTracker.destinationProgress }
+    var destinationStates: [String: String] { progressTracker.destinationStates }
+    var currentPhase: BackupPhase = .idle
+    var phaseProgress: Double { progressTracker.phaseProgress }
+    var overallProgress: Double { progressTracker.overallProgress }
+    
+    // Thread-safe progress state (still needed for actor isolation)
     let progressState = BackupProgressState()  // Made internal for extension access
     
     // Resource management
     let resourceManager = ResourceManager()  // Made internal for extension access
     
-    // ETA tracking
-    var totalBytesToCopy: Int64 = 0
-    var estimatedSecondsRemaining: TimeInterval? = nil
-    private var recentSpeedSamples: [Double] = []
-    private var lastETAUpdate: Date = Date()
-    
-    // UI-visible progress (updated from actor)
-    var destinationProgress: [String: Int] = [:] // destinationName -> completed files
-    var destinationStates: [String: String] = [:] // destinationName -> "copying" | "verifying" | "complete"
+    // Other UI state
     var overallStatusText: String = "" // For showing mixed states like "1 copying, 1 verifying"
     
     // Destination drive analysis
     var destinationDriveInfo: [UUID: DriveAnalyzer.DriveInfo] = [:] // Use UUID instead of index to avoid mismatch
     
-    // Phase-based backup tracking
-    var currentPhase: BackupPhase = .idle
-    var phaseProgress: Double = 0.0  // Progress within current phase (0-1)
-    var overallProgress: Double = 0.0  // Overall progress across all phases (0-1)
-    
     // File type scanning
     var sourceFileTypes: [ImageFileType: Int] = [:]
     var isScanning = false
     var scanProgress: String = ""
-    var sourceTotalBytes: Int64 = 0  // Total bytes from scan
+    var sourceTotalBytes: Int64 { progressTracker.sourceTotalBytes }  // Total bytes from scan
     private let fileScanner = ImageFileScanner()
     
     // Backup options
@@ -228,7 +251,7 @@ class BackupManager {
         // Clear previous scan results
         sourceFileTypes = [:]
         scanProgress = ""
-        sourceTotalBytes = 0
+        progressTracker.sourceTotalBytes = 0
         
         // Start background scan for image files
         Task {
@@ -406,9 +429,9 @@ class BackupManager {
 
         isProcessing = true
         statusMessage = "Preparing backup..."
-        totalFiles = 0
-        processedFiles = 0
-        currentFile = ""
+        progressTracker.totalFiles = 0
+        progressTracker.processedFiles = 0
+        progressTracker.currentFile = ""
         failedFiles = []
         sessionID = UUID().uuidString
         logEntries = []
@@ -541,135 +564,36 @@ class BackupManager {
     @MainActor
     func updateProgress(fileName: String, destinationName: String) {
         Task {
-            // Thread-safe increment through actor
-            let newIndex = await progressState.incrementFileCounter()
-            currentFileIndex = newIndex
-            currentFileName = fileName
-            currentDestinationName = destinationName
+            // Update through ProgressTracker
+            await progressTracker.updateFileProgress(fileName: fileName, destinationName: destinationName)
         }
     }
     
     @MainActor
     func updateCopySpeed(bytesAdded: Int64) {
-        totalBytesCopied += bytesAdded
-        let elapsed = Date().timeIntervalSince(copyStartTime)
+        progressTracker.totalBytesCopied += bytesAdded
+        let elapsed = Date().timeIntervalSince(progressTracker.copyStartTime)
         if elapsed > 0 {
-            copySpeed = Double(totalBytesCopied) / (1024 * 1024) / elapsed
-            updateETA()
+            progressTracker.copySpeed = Double(progressTracker.totalBytesCopied) / (1024 * 1024) / elapsed
+            // ETA update is handled by ProgressTracker internally
         }
     }
     
     @MainActor
     func updateETA() {
-        // Only update ETA every second to avoid too frequent updates
-        guard Date().timeIntervalSince(lastETAUpdate) >= 1.0 else { return }
-        lastETAUpdate = Date()
-        
-        // Don't calculate ETA until we have at least 2 seconds of data (reduced from 5)
-        let elapsed = Date().timeIntervalSince(copyStartTime)
-        guard elapsed >= 2.0 else {
-            estimatedSecondsRemaining = nil
-            return
-        }
-        
-        // Add current speed to samples (keep last 30 samples for 30-second average)
-        if copySpeed > 0 {
-            recentSpeedSamples.append(copySpeed)
-            if recentSpeedSamples.count > 30 {
-                recentSpeedSamples.removeFirst()
-            }
-        }
-        
-        // Calculate weighted average speed (recent samples weighted more)
-        guard !recentSpeedSamples.isEmpty else {
-            estimatedSecondsRemaining = nil
-            return
-        }
-        
-        var weightedSum: Double = 0
-        var totalWeight: Double = 0
-        for (index, speed) in recentSpeedSamples.enumerated() {
-            let weight = Double(index + 1) // More recent samples have higher weight
-            weightedSum += speed * weight
-            totalWeight += weight
-        }
-        let averageSpeed = weightedSum / totalWeight // MB/s
-        
-        // Calculate remaining bytes and ETA
-        let remainingBytes = totalBytesToCopy - totalBytesCopied
-        
-        // Debug logging
-        print("ETA Debug: totalBytesToCopy=\(totalBytesToCopy), totalBytesCopied=\(totalBytesCopied), remainingBytes=\(remainingBytes), averageSpeed=\(averageSpeed) MB/s, copySpeed=\(copySpeed) MB/s")
-        
-        guard remainingBytes > 0 && averageSpeed > 0 else {
-            estimatedSecondsRemaining = nil
-            print("ETA Debug: No ETA - remainingBytes=\(remainingBytes), averageSpeed=\(averageSpeed)")
-            return
-        }
-        
-        let remainingMB = Double(remainingBytes) / (1024 * 1024)
-        let calculatedETA = remainingMB / averageSpeed
-        
-        // Sanitize ETA to reasonable bounds (max 24 hours)
-        if calculatedETA.isNaN || calculatedETA.isInfinite || calculatedETA < 0 {
-            estimatedSecondsRemaining = nil
-        } else if calculatedETA > 86400 { // More than 24 hours
-            estimatedSecondsRemaining = 86400
-        } else {
-            estimatedSecondsRemaining = calculatedETA
-        }
-        
-        print("ETA Debug: remainingMB=\(remainingMB), calculatedETA=\(calculatedETA), final estimatedSecondsRemaining=\(estimatedSecondsRemaining ?? -1)")
+        // Delegate to ProgressTracker - kept for compatibility
+        // The actual ETA calculation happens in ProgressTracker
     }
     
     func formattedETA() -> String {
-        guard let seconds = estimatedSecondsRemaining else {
-            if Date().timeIntervalSince(copyStartTime) < 2.0 {
-                return "Calculating..."
-            }
-            return ""
-        }
-        
-        // Round to nearest 5 seconds for stability
-        let roundedSeconds = round(seconds / 5.0) * 5.0
-        
-        if roundedSeconds < 60 {
-            return "Less than 1 minute remaining"
-        } else if roundedSeconds < 300 { // Less than 5 minutes
-            let minutes = Int(roundedSeconds / 60)
-            return "About \(minutes) minute\(minutes == 1 ? "" : "s") remaining"
-        } else if roundedSeconds < 3600 { // Less than 1 hour
-            let minutes = Int(roundedSeconds / 60)
-            return "About \(minutes) minutes remaining"
-        } else { // More than 1 hour
-            let hours = Int(roundedSeconds / 3600)
-            let minutes = Int((roundedSeconds.truncatingRemainder(dividingBy: 3600)) / 60)
-            if minutes > 0 {
-                return "About \(hours) hour\(hours == 1 ? "" : "s") \(minutes) minutes remaining"
-            } else {
-                return "About \(hours) hour\(hours == 1 ? "" : "s") remaining"
-            }
-        }
+        return progressTracker.formattedETA()
     }
     
     @MainActor
     func resetProgress() {
-        currentFileIndex = 0
-        currentFileName = ""
-        currentDestinationName = ""
-        copySpeed = 0.0
-        copyStartTime = Date()
-        totalBytesCopied = 0
-        destinationProgress.removeAll()
-        destinationStates.removeAll()
+        progressTracker.resetAll()
         
-        // Reset ETA tracking
-        totalBytesToCopy = 0
-        estimatedSecondsRemaining = nil
-        recentSpeedSamples.removeAll()
-        lastETAUpdate = Date()
-        
-        // Reset actor state
+        // Reset actor state (still needed for legacy code)
         Task {
             await progressState.resetAll()
         }
@@ -677,21 +601,15 @@ class BackupManager {
     
     @MainActor
     func initializeDestinations(_ destinations: [URL]) async {
-        let destNames = destinations.map { $0.lastPathComponent }
-        await progressState.initializeDestinations(destNames)
-        
-        // Update local cache for UI
-        for destination in destinations {
-            destinationProgress[destination.lastPathComponent] = 0
-            destinationStates[destination.lastPathComponent] = "copying"
-        }
+        await progressTracker.initializeDestinations(destinations)
+        await progressState.initializeDestinations(destinations.map { $0.lastPathComponent })
     }
     
     @MainActor
     func incrementDestinationProgress(_ destinationName: String) {
         Task {
-            let newValue = await progressState.incrementDestinationProgress(for: destinationName)
-            destinationProgress[destinationName] = newValue
+            _ = await progressTracker.incrementDestinationProgress(destinationName)
+            _ = await progressState.incrementDestinationProgress(for: destinationName)
         }
     }
     
@@ -701,7 +619,7 @@ class BackupManager {
         isScanning = true
         scanProgress = "Scanning for image files..."
         sourceFileTypes = [:]
-        sourceTotalBytes = 0
+        progressTracker.sourceTotalBytes = 0
         
         // Access the security-scoped resource
         let accessing = url.startAccessingSecurityScopedResource()
@@ -736,7 +654,7 @@ class BackupManager {
             
             await MainActor.run {
                 self.sourceFileTypes = results
-                self.sourceTotalBytes = totalBytes
+                self.progressTracker.sourceTotalBytes = totalBytes
                 self.scanProgress = ImageFileScanner.formatScanResults(results, groupRaw: false)
                 self.isScanning = false
             }
