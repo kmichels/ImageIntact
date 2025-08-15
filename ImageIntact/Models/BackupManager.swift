@@ -114,16 +114,26 @@ class BackupManager {
         
         // Load source URL and trigger scan if it exists
         if let savedSourceURL = BackupManager.loadBookmark(forKey: sourceKey) {
-            self.sourceURL = savedSourceURL
-            print("Loaded source: \(savedSourceURL.lastPathComponent)")
-            // Trigger scan for the loaded source
-            Task {
-                await scanSourceFolder(savedSourceURL)
+            // Test if we can actually access this bookmark
+            let canAccess = savedSourceURL.startAccessingSecurityScopedResource()
+            if canAccess {
+                savedSourceURL.stopAccessingSecurityScopedResource()
+                self.sourceURL = savedSourceURL
+                print("Loaded source: \(savedSourceURL.lastPathComponent)")
+                // Trigger scan for the loaded source
+                Task {
+                    await scanSourceFolder(savedSourceURL)
+                }
+            } else {
+                // Bookmark is invalid - clear it
+                print("⚠️ Saved source bookmark is invalid, clearing...")
+                UserDefaults.standard.removeObject(forKey: sourceKey)
+                // Don't set sourceURL, leaving it nil will show folder picker
             }
         }
         
         // Analyze drives for loaded destinations and check accessibility
-        for item in destinationItems {
+        for (index, item) in destinationItems.enumerated() {
             if let url = item.url {
                 let itemID = item.id
                 Task {
@@ -133,6 +143,22 @@ class BackupManager {
                         if accessing {
                             url.stopAccessingSecurityScopedResource()
                         }
+                    }
+                    
+                    // If we can't access the bookmark, clear it
+                    if !accessing {
+                        await MainActor.run {
+                            print("⚠️ Destination bookmark at index \(index) is invalid, clearing...")
+                            if index < destinationURLs.count {
+                                destinationURLs[index] = nil
+                            }
+                            if index < destinationKeys.count {
+                                UserDefaults.standard.removeObject(forKey: destinationKeys[index])
+                            }
+                            // Update the item to have no URL
+                            destinationItems[index] = DestinationItem(url: nil)
+                        }
+                        return
                     }
                     
                     // Check if the path exists and is accessible
@@ -683,6 +709,20 @@ class BackupManager {
             if accessing {
                 url.stopAccessingSecurityScopedResource()
             }
+        }
+        
+        // Check if we actually got access
+        if !accessing {
+            scanProgress = "⚠️ Cannot access folder - permission denied"
+            isScanning = false
+            print("⚠️ Failed to access security-scoped resource for: \(url.lastPathComponent)")
+            
+            // Clear the invalid bookmark
+            if sourceURL == url {
+                sourceURL = nil
+                UserDefaults.standard.removeObject(forKey: sourceKey)
+            }
+            return
         }
         
         do {
