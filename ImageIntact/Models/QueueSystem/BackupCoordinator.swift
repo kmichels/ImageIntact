@@ -51,7 +51,8 @@ class BackupCoordinator: ObservableObject {
             
             // Set up verification state callback
             await queue.setVerificationCallback { [weak self] isVerifying, verifiedCount in
-                Task { @MainActor in
+                // Dispatch to main actor queue serially to prevent concurrent updates
+                DispatchQueue.main.async {
                     guard let self = self else { return }
                     if var status = self.destinationStatuses[destination.lastPathComponent] {
                         status.isVerifying = isVerifying
@@ -85,7 +86,8 @@ class BackupCoordinator: ObservableObject {
             // Set up progress callback (from async context) with weak capture
             let weakDestination = destination
             await queue.setProgressCallback { [weak self] completed, total in
-                Task { @MainActor in
+                // Dispatch to main actor queue serially to prevent concurrent updates
+                DispatchQueue.main.async {
                     self?.updateDestinationProgress(destination: weakDestination, completed: completed, total: total)
                 }
             }
