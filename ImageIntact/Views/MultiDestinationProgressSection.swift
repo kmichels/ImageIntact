@@ -118,7 +118,7 @@ struct SimpleBackupProgress: View {
                 
                 HStack {
                     // During verification, show processedFiles (verified count), otherwise show currentFileIndex
-                    let fileCount = backupManager.currentPhase == .verifyingDestinations || backupManager.currentPhase == .verifyingChecksums ? 
+                    let fileCount = backupManager.currentPhase == .verifyingDestinations ? 
                         backupManager.processedFiles : backupManager.currentFileIndex
                     Text("Files: \(fileCount)/\(backupManager.totalFiles)")
                         .font(.subheadline)
