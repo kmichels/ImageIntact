@@ -165,10 +165,8 @@ actor DestinationQueue {
             let currentCompleted = completedFiles
             let currentTotal = totalFiles
             if let progressCallback = onProgress {
-                // We need to escape the actor context to call the callback
-                Task { @MainActor in
-                    progressCallback(currentCompleted, currentTotal)
-                }
+                // Call callback directly - it will handle its own dispatch if needed
+                progressCallback(currentCompleted, currentTotal)
             }
         }
         
@@ -377,9 +375,7 @@ actor DestinationQueue {
         
         // Notify coordinator that verification has started
         if let callback = onVerificationStateChange {
-            Task { @MainActor in
-                callback(true, 0)
-            }
+            callback(true, 0)
         }
         
         // Verify each file
@@ -409,9 +405,7 @@ actor DestinationQueue {
                     // Notify coordinator of verification progress
                     if let callback = onVerificationStateChange {
                         let currentVerified = verifiedFiles
-                        Task { @MainActor in
-                            callback(true, currentVerified)
-                        }
+                        callback(true, currentVerified)
                     }
                 } else {
                     print("❌ Checksum mismatch: \(task.relativePath) at \(destination.lastPathComponent)")
@@ -432,9 +426,7 @@ actor DestinationQueue {
         // Notify coordinator that verification has completed
         if let callback = onVerificationStateChange {
             let finalVerified = verifiedFiles
-            Task { @MainActor in
-                callback(false, finalVerified)
-            }
+            callback(false, finalVerified)
         }
         print("🎉 Verification complete for \(destination.lastPathComponent): \(verifiedFiles)/\(totalFiles) verified")
     }
