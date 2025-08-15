@@ -33,7 +33,9 @@ The following entitlements are configured in ImageIntact.entitlements:
 """
 
 // Document each entitlement
-let sensitiveEntitlements = [
+// Note: These entitlements were removed after App Store feedback that
+// com.apple.security.files.user-selected.read-write is sufficient
+let removedEntitlements = [
     "com.apple.security.files.downloads.read-write",
     "com.apple.security.assets.pictures.read-write",
 ]
@@ -91,8 +93,8 @@ for (key, value) in plist.sorted(by: { $0.key < $1.key }) {
             markdown += "**Justification**: [TODO: Add justification]\n\n"
             markdown += "**User Impact**: [TODO: Add user impact]\n"
             
-            if sensitiveEntitlements.contains(key) {
-                markdown += "\n**⚠️ App Store Review Note**: This entitlement may require explanation.\n"
+            if removedEntitlements.contains(key) {
+                markdown += "\n**⚠️ Note**: This entitlement was removed after App Store feedback.\n"
             }
         }
         
@@ -108,27 +110,27 @@ markdown += """
 ## Summary
 
 - **Total Entitlements**: \(activeEntitlements.count)
-- **Sensitive Entitlements**: \(activeEntitlements.keys.filter { sensitiveEntitlements.contains($0) }.count)
 
 ## App Store Submission Notes
 
-When submitting to the App Store, the following entitlements require explanation in the "App Sandbox Information" section:
+Based on App Store feedback, the app now uses only `com.apple.security.files.user-selected.read-write` for file access, which is sufficient for all user-selected folder operations through NSOpenPanel.
 
-1. `com.apple.security.files.downloads.read-write`
-2. `com.apple.security.assets.pictures.read-write`
+Previously removed entitlements (per App Store guidance):
+- `com.apple.security.files.downloads.read-write` - Not needed with user-selected.read-write
+- `com.apple.security.assets.pictures.read-write` - Not needed with user-selected.read-write
 
-### Suggested App Sandbox Information Text:
+### Current App Sandbox Configuration:
 
 ```
-ImageIntact requires the following sandbox entitlements to function as a photo backup application:
+ImageIntact uses minimal sandbox entitlements:
 
-• com.apple.security.files.downloads.read-write
-Required to write backup files to user-selected external drives and network volumes, which are commonly mounted outside the standard sandbox. Users explicitly select these destinations through NSOpenPanel.
+• com.apple.security.files.user-selected.read-write
+Allows users to select any folder as source or destination through the standard macOS file picker (NSOpenPanel). This single entitlement covers all file access needs since all operations are initiated by explicit user selection.
 
-• com.apple.security.assets.pictures.read-write
-Required to read photo and video files from the user's Pictures folder and Photos library for backup. Users explicitly select source folders through NSOpenPanel.
+• com.apple.security.network.client
+Required for checking updates from GitHub and accessing network-attached storage devices.
 
-All file access is initiated by explicit user selection through the standard macOS file picker. The app never accesses files without user permission.
+The app never accesses files without explicit user permission through the file picker.
 ```
 
 ## Updating This Documentation
@@ -154,13 +156,10 @@ do {
     print("✅ Successfully generated ENTITLEMENTS.md at \(outputPath)")
     print("📋 Found \(activeEntitlements.count) entitlements")
     
-    // Also print sensitive entitlements that need App Store explanation
-    let activeSensitive = activeEntitlements.keys.filter { sensitiveEntitlements.contains($0) }
-    if !activeSensitive.isEmpty {
-        print("⚠️ The following entitlements require App Store explanation:")
-        for entitlement in activeSensitive {
-            print("   - \(entitlement)")
-        }
+    // Print summary
+    print("📊 Active entitlements:")
+    for key in activeEntitlements.keys.sorted() {
+        print("   ✓ \(key)")
     }
 } catch {
     print("❌ Failed to write ENTITLEMENTS.md: \(error)")
