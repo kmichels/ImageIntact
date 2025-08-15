@@ -216,14 +216,6 @@ actor DestinationQueue {
         let destPath = destination.appendingPathComponent(task.relativePath)
         let destDir = destPath.deletingLastPathComponent()
         
-        // Debug logging for video files
-        if task.relativePath.lowercased().hasSuffix(".mp4") || task.relativePath.lowercased().hasSuffix(".mov") {
-            print("🎬 Processing video: \(task.relativePath)")
-            print("   Source: \(task.sourceURL.path)")
-            print("   Dest: \(destPath.path)")
-            print("   Size: \(task.size) bytes")
-        }
-        
         do {
             // Create directory if needed
             if !FileManager.default.fileExists(atPath: destDir.path) {
