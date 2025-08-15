@@ -78,7 +78,7 @@ class BackupManager {
     var sourceFileTypes: [ImageFileType: Int] = [:]
     var isScanning = false
     var scanProgress: String = ""
-    var sourceTotalBytes: Int64 = 0  // Total bytes from manifest
+    var sourceTotalBytes: Int64 = 0  // Total bytes from scan
     private let fileScanner = ImageFileScanner()
     
     // Backup options
@@ -755,11 +755,11 @@ class BackupManager {
         
         var result = ImageFileScanner.formatScanResults(sourceFileTypes, groupRaw: groupRaw)
         
-        // Add total size if we have it from the manifest
+        // Add total size if we have it from the scan
         if sourceTotalBytes > 0 {
-            // Use 1000^3 to match macOS Finder display
+            // Use 1000^3 to match macOS Finder display (metric GB)
             let gb = Double(sourceTotalBytes) / (1000 * 1000 * 1000)
-            result += String(format: " • %.2f GB", gb)
+            result += String(format: " • %.1f GB", gb)
         }
         
         return result
