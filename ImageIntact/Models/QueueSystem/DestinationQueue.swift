@@ -26,6 +26,10 @@ actor DestinationQueue {
     private var onStatusUpdate: ((String) async -> Void)?
     private var onVerificationStateChange: ((Bool, Int) async -> Void)?
     
+    // Throttling for progress updates
+    private var lastProgressUpdate = Date()
+    private let progressUpdateInterval: TimeInterval = 0.1 // Update at most 10 times per second
+    
     func setProgressCallback(_ callback: @escaping (Int, Int) async -> Void) {
         self.onProgress = callback
     }
@@ -161,12 +165,19 @@ actor DestinationQueue {
                 break
             }
             
-            // Update progress (capture values first to avoid actor isolation)
+            // Update progress with throttling to prevent overwhelming the UI
             let currentCompleted = completedFiles
             let currentTotal = totalFiles
-            if let progressCallback = onProgress {
-                // Call callback asynchronously to respect actor boundaries
-                await progressCallback(currentCompleted, currentTotal)
+            let now = Date()
+            
+            // Only update if enough time has passed or if we're done
+            if now.timeIntervalSince(lastProgressUpdate) >= progressUpdateInterval || 
+               currentCompleted >= currentTotal {
+                lastProgressUpdate = now
+                if let progressCallback = onProgress {
+                    // Call callback asynchronously to respect actor boundaries
+                    await progressCallback(currentCompleted, currentTotal)
+                }
             }
         }
         
