@@ -9,6 +9,7 @@ import XCTest
 import SwiftUI
 @testable import ImageIntact
 
+@MainActor
 class UIStateManagementTests: XCTestCase {
     
     var backupManager: BackupManager!

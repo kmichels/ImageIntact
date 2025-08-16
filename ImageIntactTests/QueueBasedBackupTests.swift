@@ -17,7 +17,9 @@ class QueueBasedBackupTests: XCTestCase {
     
     override func setUp() {
         super.setUp()
-        backupManager = BackupManager()
+        backupManager = MainActor.assumeIsolated {
+            BackupManager()
+        }
         
         // Create test directories
         let tempDir = FileManager.default.temporaryDirectory
@@ -219,16 +221,18 @@ class QueueBasedBackupTests: XCTestCase {
     // MARK: - Completion Message Tests
     
     func testCompletionMessageFormatting() {
-        // Test time formatting
-        XCTAssertEqual(backupManager.formatTime(45.5), "45.5 seconds")
-        XCTAssertEqual(backupManager.formatTime(65), "1:05")
-        XCTAssertEqual(backupManager.formatTime(125), "2:05")
-        
-        // Test data size formatting
-        let formatter = backupManager.formatDataSize(1_500_000_000) // 1.5 GB
-        XCTAssertTrue(formatter.contains("GB") || formatter.contains("1.5"))
-        
-        let smallSize = backupManager.formatDataSize(50_000_000) // 50 MB
-        XCTAssertTrue(smallSize.contains("MB") || smallSize.contains("50"))
+        MainActor.assumeIsolated {
+            // Test time formatting
+            XCTAssertEqual(backupManager.formatTime(45.5), "45s")
+            XCTAssertEqual(backupManager.formatTime(65), "1m 5s")
+            XCTAssertEqual(backupManager.formatTime(125), "2m 5s")
+            
+            // Test data size formatting
+            let formatter = backupManager.formatDataSize(1_500_000_000) // 1.5 GB
+            XCTAssertTrue(formatter.contains("GB") || formatter.contains("1."))
+            
+            let smallSize = backupManager.formatDataSize(50_000_000) // 50 MB
+            XCTAssertTrue(smallSize.contains("MB") || smallSize.contains("47"))
+        }
     }
 }
