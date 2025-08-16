@@ -62,7 +62,7 @@ struct BackupCompletionView: View {
             }
             .padding()
         }
-        .frame(width: 600, height: 700)
+        .frame(width: 450, height: 500)
         .alert("Report Copied", isPresented: $showingCopyAlert) {
             Button("OK") { }
         } message: {

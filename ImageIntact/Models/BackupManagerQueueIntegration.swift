@@ -92,6 +92,42 @@ extension BackupManager {
                 failedFiles.append(failure)
             }
         }
+        
+        // Populate statistics based on results from progress tracker and orchestrator
+        // Get actual data from what was tracked
+        let totalFiles = progressTracker.totalFiles
+        let processedFiles = progressTracker.processedFiles
+        let failedCount = failures.count
+        
+        // Update overall stats from progress tracker
+        statistics.totalFilesProcessed = processedFiles
+        statistics.totalFilesFailed = failedCount
+        statistics.totalFilesInSource = totalFiles
+        statistics.totalBytesProcessed = progressTracker.totalBytesCopied
+        
+        // Estimate file type breakdown from source scan
+        for (fileType, count) in sourceFileTypes {
+            if fileTypeFilter.shouldInclude(fileType: fileType) {
+                var typeStats = FileTypeStatistics(fileType: fileType)
+                typeStats.filesProcessed = count
+                typeStats.totalBytes = Int64(count) * Int64(fileType.averageFileSize)
+                statistics.fileTypeStats[fileType] = typeStats
+            }
+        }
+        
+        // Update destination stats from progress tracker
+        for (destName, progress) in progressTracker.destinationProgress {
+            let destFailures = failures.filter { $0.destination.contains(destName) }.count
+            statistics.destinationStats[destName] = DestinationStatistics(
+                destinationName: destName,
+                filesCopied: progress - destFailures,
+                filesSkipped: 0,
+                filesFailed: destFailures,
+                bytesWritten: progressTracker.sourceTotalBytes,
+                timeElapsed: statistics.duration ?? 0,
+                averageSpeed: progressTracker.copySpeed
+            )
+        }
     }
     
     /// Update our UI based on coordinator's status
