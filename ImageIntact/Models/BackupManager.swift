@@ -107,6 +107,7 @@ class BackupManager {
     
     // Backup options
     var excludeCacheFiles = true  // Default to excluding cache files
+    var fileTypeFilter = FileTypeFilter()  // Default to no filtering (all files)
     
     // MARK: - Constants
     let sourceKey = "sourceBookmark"
@@ -476,6 +477,13 @@ class BackupManager {
         Task {
             await resourceManager.cleanup()
         }
+    }
+    
+    // MARK: - Debug Logging
+    @MainActor
+    private func writeDebugLog() {
+        // Implementation for debug logging - placeholder for now
+        print("Debug log: \(failedFiles.count) failed files")
     }
     
     // MARK: - Private Methods

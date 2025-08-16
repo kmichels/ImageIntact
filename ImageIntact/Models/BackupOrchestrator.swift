@@ -46,7 +46,8 @@ class BackupOrchestrator {
         source: URL,
         destinations: [URL],
         driveInfo: [UUID: DriveAnalyzer.DriveInfo],
-        destinationItemIDs: [UUID]
+        destinationItemIDs: [UUID],
+        filter: FileTypeFilter = FileTypeFilter()
     ) async -> [(file: String, destination: String, error: String)] {
         
         print("🚀 BackupOrchestrator: Starting backup operation")
@@ -93,10 +94,11 @@ class BackupOrchestrator {
             // Don't capture failedFiles directly - could cause retain cycle
         }
         
-        // Build the manifest
+        // Build the manifest with filtering
         guard let manifest = await manifestBuilder.build(
             source: source,
-            shouldCancel: { [weak self] in self?.shouldCancel ?? false }
+            shouldCancel: { [weak self] in self?.shouldCancel ?? false },
+            filter: filter
         ) else {
             onStatusUpdate?("Backup cancelled or failed")
             return failedFiles

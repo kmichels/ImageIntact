@@ -32,10 +32,12 @@ actor ManifestBuilder {
     /// - Parameters:
     ///   - source: Source directory URL
     ///   - shouldCancel: Closure to check if operation should be cancelled
+    ///   - filter: Optional file type filter to apply
     /// - Returns: Array of manifest entries or nil if cancelled/failed
     func build(
         source: URL,
-        shouldCancel: @escaping () -> Bool
+        shouldCancel: @escaping () -> Bool,
+        filter: FileTypeFilter = FileTypeFilter()
     ) async -> [FileManifestEntry]? {
         var manifest: [FileManifestEntry] = []
         
@@ -63,6 +65,12 @@ actor ManifestBuilder {
                         print("⚠️ Video file skipped (not supported?): \(url.lastPathComponent)")
                     }
                     continue 
+                }
+                
+                // Apply file type filter
+                guard filter.shouldInclude(fileURL: url) else {
+                    // File is filtered out
+                    continue
                 }
                 
                 fileCount += 1

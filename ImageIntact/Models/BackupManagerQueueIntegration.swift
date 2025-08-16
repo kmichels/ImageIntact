@@ -57,12 +57,13 @@ extension BackupManager {
         // Build destination item IDs array for drive info lookup
         let destinationItemIDs = destinationItems.prefix(destinations.count).map { $0.id }
         
-        // Perform the backup
+        // Perform the backup with file type filter
         let failures = await orchestrator.performBackup(
             source: source,
             destinations: destinations,
             driveInfo: destinationDriveInfo,
-            destinationItemIDs: destinationItemIDs
+            destinationItemIDs: destinationItemIDs,
+            filter: fileTypeFilter
         )
         
         // Add any failures to our list (avoiding duplicates)
