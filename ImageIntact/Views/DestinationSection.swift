@@ -3,6 +3,7 @@ import SwiftUI
 struct DestinationSection: View {
     @Bindable var backupManager: BackupManager
     @FocusState.Binding var focusedField: ContentView.FocusField?
+    @State private var showingAddPicker = false
     
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -15,7 +16,7 @@ struct DestinationSection: View {
                 
                 if backupManager.destinationItems.count < 4 {
                     Button(action: {
-                        backupManager.addDestination()
+                        showingAddPicker = true
                     }) {
                         Label("Add", systemImage: "plus.circle.fill")
                             .font(.footnote)
@@ -66,5 +67,23 @@ struct DestinationSection: View {
             }
         }
         .padding(.horizontal, 20)
+        .fileImporter(
+            isPresented: $showingAddPicker,
+            allowedContentTypes: [.folder],
+            allowsMultipleSelection: false
+        ) { result in
+            switch result {
+            case .success(let urls):
+                if let url = urls.first {
+                    // Add new destination
+                    backupManager.addDestination()
+                    // Set the URL for the newly added destination
+                    let newIndex = backupManager.destinationItems.count - 1
+                    backupManager.setDestination(url, at: newIndex)
+                }
+            case .failure(let error):
+                print("Failed to select destination: \(error)")
+            }
+        }
     }
 }
