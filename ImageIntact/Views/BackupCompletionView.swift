@@ -54,7 +54,7 @@ struct BackupCompletionView: View {
                 
                 Spacer()
                 
-                Button("Done") {
+                Button("Close") {
                     dismiss()
                 }
                 .buttonStyle(.borderedProminent)
