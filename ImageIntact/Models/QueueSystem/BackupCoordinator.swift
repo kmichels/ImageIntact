@@ -16,6 +16,9 @@ class BackupCoordinator: ObservableObject {
     private var shouldCancel = false
     private var collectedFailures: [(file: String, destination: String, error: String)] = []
     
+    // Serial queue to protect dictionary access and prevent heap corruption
+    private let statusUpdateQueue = DispatchQueue(label: "com.imageintact.statusUpdates", qos: .userInitiated)
+    
     struct DestinationStatus {
         let name: String
         var completed: Int
@@ -48,29 +51,32 @@ class BackupCoordinator: ObservableObject {
         // Create a queue for each destination
         for destination in destinations {
             let queue = DestinationQueue(destination: destination)
+            let destName = destination.lastPathComponent  // Capture once
             
-            // Set up verification state callback
+            // Set up callbacks before adding to array to avoid retain issues
+            // Use destName consistently to avoid capturing destination in closures
+            
+            // Verification callback - use serial queue for dictionary access
             await queue.setVerificationCallback { [weak self] isVerifying, verifiedCount async in
                 guard let self = self else { return }
-                // Use MainActor.run for proper actor transition with weak capture
-                await MainActor.run { [weak self] in
-                    guard let self = self else { return }
-                    if var status = self.destinationStatuses[destination.lastPathComponent] {
-                        status.isVerifying = isVerifying
-                        status.verifiedCount = verifiedCount
-                        self.destinationStatuses[destination.lastPathComponent] = status
-                        
-                        // Recalculate overall progress when verification updates come in
-                        self.updateOverallProgress(totalFiles: manifest.count)
-                    }
-                }
+                // Use serial queue to prevent concurrent dictionary access
+                await self.updateStatusSafely(destName: destName, isVerifying: isVerifying, verifiedCount: verifiedCount, totalFiles: manifest.count)
             }
             
+            // Progress callback - use serial queue for dictionary access  
+            await queue.setProgressCallback { [weak self] completed, total async in
+                guard let self = self else { return }
+                // Use serial queue to prevent concurrent dictionary access
+                await self.updateProgressSafely(destName: destName, completed: completed, total: total)
+            }
+            
+            // Now add queue to array
             destinationQueues.append(queue)
             
-            // Initialize status
-            destinationStatuses[destination.lastPathComponent] = DestinationStatus(
-                name: destination.lastPathComponent,
+            // Initialize status - no need for serial queue here as we're still in setup phase
+            // and not yet running concurrent operations
+            destinationStatuses[destName] = DestinationStatus(
+                name: destName,
                 completed: 0,
                 total: tasks.count,
                 speed: "0 MB/s",
@@ -83,16 +89,6 @@ class BackupCoordinator: ObservableObject {
             
             // Add tasks to queue
             await queue.addTasks(tasks)
-            
-            // Set up progress callback (from async context) with weak capture
-            let weakDestination = destination
-            await queue.setProgressCallback { [weak self] completed, total async in
-                guard let self = self else { return }
-                // Use MainActor.run for proper actor transition with weak capture
-                await MainActor.run { [weak self] in
-                    self?.updateDestinationProgress(destination: weakDestination, completed: completed, total: total)
-                }
-            }
         }
         
         // Start all queues
@@ -217,6 +213,50 @@ class BackupCoordinator: ObservableObject {
         }
     }
     
+    // MARK: - Thread-Safe Status Updates
+    
+    private func updateStatusSafely(destName: String, isVerifying: Bool, verifiedCount: Int, totalFiles: Int) async {
+        await withCheckedContinuation { continuation in
+            statusUpdateQueue.async { [weak self] in
+                guard let self = self else {
+                    continuation.resume()
+                    return
+                }
+                
+                Task { @MainActor in
+                    if var status = self.destinationStatuses[destName] {
+                        status.isVerifying = isVerifying
+                        status.verifiedCount = verifiedCount
+                        self.destinationStatuses[destName] = status
+                        self.updateOverallProgress(totalFiles: totalFiles)
+                    }
+                    continuation.resume()
+                }
+            }
+        }
+    }
+    
+    private func updateProgressSafely(destName: String, completed: Int, total: Int) async {
+        await withCheckedContinuation { continuation in
+            statusUpdateQueue.async { [weak self] in
+                guard let self = self else {
+                    continuation.resume()
+                    return
+                }
+                
+                Task { @MainActor in
+                    if var status = self.destinationStatuses[destName] {
+                        status.completed = completed
+                        self.destinationStatuses[destName] = status
+                        print("📊 Progress update: \(destName) - \(completed)/\(total)")
+                        self.updateOverallProgress(totalFiles: total)
+                    }
+                    continuation.resume()
+                }
+            }
+        }
+    }
+    
     // MARK: - Progress Monitoring
     
     private func parseSpeed(_ speedString: String) -> Double? {
@@ -265,18 +305,29 @@ class BackupCoordinator: ObservableObject {
                     print("📊 Coordinator: \(destination.lastPathComponent) - completed=\(status.completed)/\(status.total), verified=\(verifiedFiles), isVerifying=\(isVerifying), isComplete=\(queueComplete)")
                 }
                 
-                await MainActor.run {
-                    destinationStatuses[destination.lastPathComponent] = DestinationStatus(
-                        name: destination.lastPathComponent,
-                        completed: status.completed,
-                        total: status.total,
-                        speed: status.speed,
-                        eta: status.eta,
-                        isComplete: queueComplete,
-                        hasFailed: false,
-                        isVerifying: isVerifying,
-                        verifiedCount: verifiedFiles
-                    )
+                // Use serial queue for safe dictionary update
+                let destName = destination.lastPathComponent
+                await withCheckedContinuation { continuation in
+                    statusUpdateQueue.async { [weak self] in
+                        guard let self = self else {
+                            continuation.resume()
+                            return
+                        }
+                        Task { @MainActor in
+                            self.destinationStatuses[destName] = DestinationStatus(
+                                name: destName,
+                                completed: status.completed,
+                                total: status.total,
+                                speed: status.speed,
+                                eta: status.eta,
+                                isComplete: queueComplete,
+                                hasFailed: false,
+                                isVerifying: isVerifying,
+                                verifiedCount: verifiedFiles
+                            )
+                            continuation.resume()
+                        }
+                    }
                 }
             }
             
@@ -339,19 +390,6 @@ class BackupCoordinator: ObservableObject {
         print("📊 Overall progress update: \(completedOperations)/\(totalOperations) = \(String(format: "%.1f%%", overallProgress * 100))")
     }
     
-    private func updateDestinationProgress(destination: URL, completed: Int, total: Int) {
-        // Update the status immediately when a file completes
-        if var status = destinationStatuses[destination.lastPathComponent] {
-            status.completed = completed
-            destinationStatuses[destination.lastPathComponent] = status
-            print("📊 Progress update: \(destination.lastPathComponent) - \(completed)/\(total)")
-            
-            // Also update overall progress immediately for responsive UI
-            updateOverallProgress(totalFiles: total)
-        } else {
-            print("⚠️ No status found for \(destination.lastPathComponent)")
-        }
-    }
     
     // MARK: - Finalization
     

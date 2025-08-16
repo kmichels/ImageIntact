@@ -2,6 +2,7 @@ import Foundation
 
 /// Handles all progress tracking for backup operations
 /// Extracted from BackupManager to follow Single Responsibility Principle
+@MainActor
 class ProgressTracker: ObservableObject {
     
     // MARK: - File Progress
@@ -77,10 +78,9 @@ class ProgressTracker: ObservableObject {
     // MARK: - File Progress Updates
     
     /// Update progress for a file
-    func updateFileProgress(fileName: String, destinationName: String) async {
-        // Thread-safe increment through actor
-        let newIndex = await progressState.incrementFileCounter()
-        currentFileIndex = newIndex
+    func updateFileProgress(fileName: String, destinationName: String) {
+        // Since we're @MainActor, we can update directly
+        currentFileIndex += 1
         currentFileName = fileName
         currentDestinationName = destinationName
         
@@ -90,6 +90,11 @@ class ProgressTracker: ObservableObject {
             copySpeed = Double(totalBytesCopied) / (1024 * 1024) / elapsed
             updateETA()
         }
+        
+        // Also update actor state asynchronously
+        Task {
+            _ = await progressState.incrementFileCounter()
+        }
     }
     
     @Published var currentDestinationName = ""
@@ -97,7 +102,7 @@ class ProgressTracker: ObservableObject {
     // MARK: - Destination Progress
     
     /// Initialize destination tracking
-    func initializeDestinations(_ destinations: [URL]) async {
+    func initializeDestinations(_ destinations: [URL]) {
         let destNames = destinations.map { $0.lastPathComponent }
         
         for name in destNames {
@@ -105,26 +110,44 @@ class ProgressTracker: ObservableObject {
             destinationStates[name] = "pending"
         }
         
-        await progressState.initializeDestinations(destNames)
+        // Also update actor state
+        Task {
+            await progressState.initializeDestinations(destNames)
+        }
     }
     
     /// Increment progress for a destination
-    func incrementDestinationProgress(_ destinationName: String) async -> Int {
-        let newValue = await progressState.incrementDestinationProgress(for: destinationName)
+    func incrementDestinationProgress(_ destinationName: String) -> Int {
+        let currentValue = destinationProgress[destinationName] ?? 0
+        let newValue = currentValue + 1
         destinationProgress[destinationName] = newValue
+        
+        // Also update actor state asynchronously
+        Task {
+            _ = await progressState.incrementDestinationProgress(for: destinationName)
+        }
+        
         return newValue
     }
     
     /// Set destination state
-    func setDestinationState(_ state: String, for destination: String) async {
+    func setDestinationState(_ state: String, for destination: String) {
         destinationStates[destination] = state
-        await progressState.setDestinationState(state, for: destination)
+        
+        // Also update actor state asynchronously
+        Task {
+            await progressState.setDestinationState(state, for: destination)
+        }
     }
     
     /// Set destination progress
-    func setDestinationProgress(_ progress: Int, for destination: String) async {
+    func setDestinationProgress(_ progress: Int, for destination: String) {
         destinationProgress[destination] = progress
-        await progressState.setDestinationProgress(progress, for: destination)
+        
+        // Also update actor state asynchronously
+        Task {
+            await progressState.setDestinationProgress(progress, for: destination)
+        }
     }
     
     // MARK: - Byte Progress

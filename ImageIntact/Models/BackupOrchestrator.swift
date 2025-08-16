@@ -132,7 +132,7 @@ class BackupOrchestrator {
         }
         
         // Initialize destination progress
-        await progressTracker.initializeDestinations(destinations)
+        progressTracker.initializeDestinations(destinations)
         
         // PHASE 4: Create and start the queue coordinator
         let coordinator = BackupCoordinator()
@@ -266,36 +266,31 @@ class BackupOrchestrator {
     }
     
     /// Update progress tracker from coordinator status
+    @MainActor
     private func updateProgressFromCoordinator(_ coordinator: BackupCoordinator, destinations: [URL]) {
         var verifyingDestinations: [String] = []
         var copyingCount = 0
         var completeCount = 0
         
+        // Process all status updates synchronously since we're already on MainActor
         for (name, status) in coordinator.destinationStatuses {
             if status.isComplete {
-                Task {
-                    await progressTracker.setDestinationProgress(status.total, for: name)
-                    await progressTracker.setDestinationState("complete", for: name)
-                }
+                // Direct update - no Task needed since progressTracker is @MainActor
+                progressTracker.destinationProgress[name] = status.total
+                progressTracker.destinationStates[name] = "complete"
                 completeCount += 1
             } else if status.isVerifying {
-                Task {
-                    await progressTracker.setDestinationProgress(status.total, for: name)
-                    await progressTracker.setDestinationState("verifying", for: name)
-                }
+                progressTracker.destinationProgress[name] = status.total
+                progressTracker.destinationStates[name] = "verifying"
                 verifyingDestinations.append(name)
             } else {
                 if status.completed >= status.total && status.verifiedCount >= status.total {
-                    Task {
-                        await progressTracker.setDestinationProgress(status.total, for: name)
-                        await progressTracker.setDestinationState("complete", for: name)
-                    }
+                    progressTracker.destinationProgress[name] = status.total
+                    progressTracker.destinationStates[name] = "complete"
                     completeCount += 1
                 } else {
-                    Task {
-                        await progressTracker.setDestinationProgress(status.completed, for: name)
-                        await progressTracker.setDestinationState("copying", for: name)
-                    }
+                    progressTracker.destinationProgress[name] = status.completed
+                    progressTracker.destinationStates[name] = "copying"
                     copyingCount += 1
                 }
             }

@@ -44,9 +44,9 @@ actor ThroughputMonitor {
         let recentCutoff = now.addingTimeInterval(-5)
         let recentSamples = samples.filter { $0.timestamp > recentCutoff }
         
-        if !recentSamples.isEmpty {
+        if let firstSample = recentSamples.first {
             let recentBytes = recentSamples.reduce(0) { $0 + $1.bytes }
-            let timeSpan = now.timeIntervalSince(recentSamples.first!.timestamp)
+            let timeSpan = now.timeIntervalSince(firstSample.timestamp)
             if timeSpan > 0 {
                 currentSpeedBytesPerSecond = Double(recentBytes) / timeSpan
                 peakSpeedBytesPerSecond = max(peakSpeedBytesPerSecond, currentSpeedBytesPerSecond)

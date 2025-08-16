@@ -24,6 +24,7 @@ struct DestinationItem: Identifiable {
 }
 
 @Observable
+@MainActor
 class BackupManager {
     // MARK: - Published Properties
     var sourceURL: URL? = nil
@@ -573,7 +574,7 @@ class BackupManager {
     func updateProgress(fileName: String, destinationName: String) {
         Task {
             // Update through ProgressTracker
-            await progressTracker.updateFileProgress(fileName: fileName, destinationName: destinationName)
+            progressTracker.updateFileProgress(fileName: fileName, destinationName: destinationName)
         }
     }
     
@@ -609,14 +610,14 @@ class BackupManager {
     
     @MainActor
     func initializeDestinations(_ destinations: [URL]) async {
-        await progressTracker.initializeDestinations(destinations)
+        progressTracker.initializeDestinations(destinations)
         await progressState.initializeDestinations(destinations.map { $0.lastPathComponent })
     }
     
     @MainActor
     func incrementDestinationProgress(_ destinationName: String) {
         Task {
-            _ = await progressTracker.incrementDestinationProgress(destinationName)
+            _ = progressTracker.incrementDestinationProgress(destinationName)
             _ = await progressState.incrementDestinationProgress(for: destinationName)
         }
     }
@@ -753,7 +754,7 @@ class BackupManager {
 extension BackupManager {
     // Static checksum calculation method used by all backup engines
     // Now uses native Swift SHA-256 for maximum reliability with all file types
-    static func sha256ChecksumStatic(for fileURL: URL, shouldCancel: Bool, isNetworkVolume: Bool = false) throws -> String {
+    nonisolated static func sha256ChecksumStatic(for fileURL: URL, shouldCancel: Bool, isNetworkVolume: Bool = false) throws -> String {
         // First check if file exists
         guard FileManager.default.fileExists(atPath: fileURL.path) else {
             throw NSError(domain: "ImageIntact", code: 1, userInfo: [NSLocalizedDescriptionKey: "File does not exist: \(fileURL.lastPathComponent)"])
@@ -779,7 +780,7 @@ extension BackupManager {
     }
     
     // Native Swift checksum using CryptoKit - more reliable than external commands
-    private static func calculateNativeChecksum(for fileURL: URL, shouldCancel: Bool = false) throws -> String {
+    nonisolated private static func calculateNativeChecksum(for fileURL: URL, shouldCancel: Bool = false) throws -> String {
         // Check file size first
         let attributes = try FileManager.default.attributesOfItem(atPath: fileURL.path)
         let size = attributes[.size] as? Int64 ?? 0
@@ -812,7 +813,7 @@ extension BackupManager {
     }
     
     // Streaming checksum for large files
-    private static func calculateStreamingChecksum(for fileURL: URL, size: Int64, shouldCancel: Bool = false) throws -> String {
+    nonisolated private static func calculateStreamingChecksum(for fileURL: URL, size: Int64, shouldCancel: Bool = false) throws -> String {
         guard let inputStream = InputStream(url: fileURL) else {
             throw NSError(domain: "ImageIntact", code: 8, userInfo: [NSLocalizedDescriptionKey: "Cannot open file stream"])
         }
