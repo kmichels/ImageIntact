@@ -35,26 +35,34 @@ struct SourceFolderSection: View {
                 focusedField = .source
             }
             
-            // File type summary
+            // File type summary and filter
             if backupManager.sourceURL != nil {
-                HStack(spacing: 4) {
-                    if backupManager.isScanning {
-                        ProgressView()
-                            .scaleEffect(0.7)
-                            .frame(width: 14, height: 14)
-                    } else if !backupManager.sourceFileTypes.isEmpty {
-                        Image(systemName: "photo.stack")
+                VStack(alignment: .leading, spacing: 8) {
+                    // File type summary
+                    HStack(spacing: 4) {
+                        if backupManager.isScanning {
+                            ProgressView()
+                                .scaleEffect(0.7)
+                                .frame(width: 14, height: 14)
+                        } else if !backupManager.sourceFileTypes.isEmpty {
+                            Image(systemName: "photo.stack")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        
+                        Text(backupManager.getFormattedFileTypeSummary())
                             .font(.caption)
                             .foregroundColor(.secondary)
+                            .lineLimit(1)
                     }
+                    .animation(.easeInOut(duration: 0.2), value: backupManager.isScanning)
                     
-                    Text(backupManager.getFormattedFileTypeSummary())
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .lineLimit(1)
+                    // File type filter (only show after scan completes)
+                    if !backupManager.sourceFileTypes.isEmpty && !backupManager.isScanning {
+                        FileTypeFilterView(backupManager: backupManager)
+                    }
                 }
                 .padding(.leading, 20)
-                .animation(.easeInOut(duration: 0.2), value: backupManager.isScanning)
             }
         }
         .padding(.horizontal, 20)
