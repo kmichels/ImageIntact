@@ -721,18 +721,13 @@ class BackupManager {
             return "Network Drive • Too many variables to estimate time"
         }
         
-        // Calculate total size
+        // Calculate total size - ALWAYS use actual scanned size if available
         var totalBytes: Int64 = 0
         
-        // Use actual size from manifest if available
+        // Use actual size from scan (this should be the primary source)
         if sourceTotalBytes > 0 {
             totalBytes = sourceTotalBytes
-        } else if !sourceFileTypes.isEmpty {
-            // Fall back to estimates from file types
-            for (fileType, count) in sourceFileTypes {
-                let avgSize = fileType.averageFileSize
-                totalBytes += Int64(avgSize * count)
-            }
+            print("Using scanned size for estimate: \(totalBytes) bytes")
         } else if sourceURL != nil {
             // If no scan yet, return a placeholder
             return "Calculating size..."

@@ -269,35 +269,35 @@ enum ImageFileType: String, CaseIterable {
         switch self {
         // RAW files are typically large
         case .dng, .cr2, .cr3, .nef, .arw, .orf, .rw2, .raf, .pef, .srw, .erf, .crw, .raw:
-            return 85_000_000  // ~85 MB average for modern RAW files
+            return 25_000_000  // ~25 MB average for modern RAW files
         case .nrw, .rwl, .iiq, .mos, .dcr, .mef, .mrw, .kdc, .srf, .sr2, .ptx, .fff, .x3f:
-            return 60_000_000  // ~60 MB for these RAW formats
+            return 20_000_000  // ~20 MB for these RAW formats
             
         // Standard images
         case .jpeg:
-            return 5_000_000   // ~5 MB for high-quality JPEG
+            return 2_000_000   // ~2 MB for typical JPEG
         case .heic, .heif:
-            return 3_000_000   // ~3 MB (more efficient than JPEG)
+            return 1_500_000   // ~1.5 MB (more efficient than JPEG)
         case .tiff:
-            return 50_000_000  // ~50 MB (uncompressed)
+            return 10_000_000  // ~10 MB (varies widely)
         case .png:
-            return 10_000_000  // ~10 MB
+            return 3_000_000   // ~3 MB
         case .webp:
-            return 2_000_000   // ~2 MB
-        case .bmp:
-            return 20_000_000  // ~20 MB (uncompressed)
-        case .gif:
             return 1_000_000   // ~1 MB
+        case .bmp:
+            return 5_000_000   // ~5 MB (uncompressed)
+        case .gif:
+            return 500_000     // ~500 KB
             
-        // Video files
+        // Video files (much more realistic sizes)
         case .mov, .mp4:
-            return 500_000_000 // ~500 MB for 4K video clips
+            return 50_000_000  // ~50 MB for typical video clips
         case .avi, .mpg, .mpeg:
-            return 300_000_000 // ~300 MB
+            return 30_000_000  // ~30 MB
         case .mts, .m2ts:
-            return 400_000_000 // ~400 MB (AVCHD)
+            return 40_000_000  // ~40 MB (AVCHD)
         case .m4v, .wmv, .flv, .webm, .mkv:
-            return 200_000_000 // ~200 MB
+            return 20_000_000  // ~20 MB
             
         // Sidecar files are small
         case .xmp, .aae, .dop, .cos, .pp3, .arp:
