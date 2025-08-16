@@ -43,17 +43,17 @@ class DriveAnalyzer {
         // - Multiple simultaneous destinations
         var estimatedWriteSpeedMBps: Double {
             switch self {
-            case .usb2: return 30      // ~30 MB/s real world
-            case .usb30: return 350    // ~350 MB/s (modern USB 3.0 SSDs achieve this)
-            case .usb31Gen1: return 400  // ~400 MB/s
-            case .usb31Gen2: return 800  // ~800 MB/s
-            case .usb32Gen2x2: return 1200  // ~1200 MB/s
-            case .thunderbolt3: return 2000  // ~2000 MB/s (modern TB3 SSDs)
-            case .thunderbolt4: return 2500  // ~2500 MB/s
-            case .thunderbolt5: return 3000  // ~3000 MB/s
-            case .internalDrive: return 1500  // ~1500 MB/s (modern internal SSDs)
-            case .network: return 100  // ~100 MB/s (gigabit ethernet)
-            case .unknown: return 400  // Assume decent modern drive
+            case .usb2: return 20      // ~20 MB/s real world
+            case .usb30: return 100    // ~100 MB/s (typical USB 3.0 HDD)
+            case .usb31Gen1: return 120  // ~120 MB/s
+            case .usb31Gen2: return 200  // ~200 MB/s
+            case .usb32Gen2x2: return 300  // ~300 MB/s
+            case .thunderbolt3: return 400  // ~400 MB/s (typical external SSD)
+            case .thunderbolt4: return 500  // ~500 MB/s
+            case .thunderbolt5: return 600  // ~600 MB/s
+            case .internalDrive: return 300  // ~300 MB/s (average internal SSD)
+            case .network: return 50   // ~50 MB/s (typical network)
+            case .unknown: return 80   // Conservative estimate
             }
         }
         
@@ -78,9 +78,9 @@ class DriveAnalyzer {
             let totalMB = Double(totalBytes) / (1000 * 1000)
             
             // Use realistic speeds based on actual performance:
-            // Modern SSDs and USB 3.0 drives achieve close to their rated speeds for large files
-            // Only apply modest overhead for file system operations
-            let realWorldFactor = 0.85  // 85% of theoretical (15% overhead for file operations)
+            // We've already factored in real-world speeds in the base estimates
+            // Only apply small additional overhead for file system operations
+            let realWorldFactor = 0.95  // 95% of theoretical (5% overhead for file operations)
             
             // Copy time with realistic speed
             let effectiveCopySpeed = estimatedWriteSpeed * realWorldFactor
