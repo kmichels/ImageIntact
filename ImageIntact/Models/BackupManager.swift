@@ -42,6 +42,9 @@ class BackupManager {
     // Progress tracking delegated to ProgressTracker
     let progressTracker = ProgressTracker()
     
+    // Statistics tracking for completion report
+    let statistics = BackupStatistics()
+    
     // Expose progress properties for compatibility
     var totalFiles: Int { 
         get { progressTracker.totalFiles }
@@ -108,6 +111,9 @@ class BackupManager {
     // Backup options
     var excludeCacheFiles = true  // Default to excluding cache files
     var fileTypeFilter = FileTypeFilter()  // Default to no filtering (all files)
+    
+    // UI state for completion report
+    var showCompletionReport = false
     
     // MARK: - Constants
     let sourceKey = "sourceBookmark"

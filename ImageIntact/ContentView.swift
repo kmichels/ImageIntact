@@ -118,6 +118,9 @@ struct ContentView: View {
         .sheet(isPresented: $showHelpWindow) {
             HelpView(isPresented: $showHelpWindow)
         }
+        .sheet(isPresented: $backupManager.showCompletionReport) {
+            BackupCompletionView(statistics: backupManager.statistics)
+        }
         .alert("Update Available", isPresented: $updateManager.showUpdateAlert, presenting: updateManager.availableUpdate) { update in
             Button("Download & Install") {
                 Task {

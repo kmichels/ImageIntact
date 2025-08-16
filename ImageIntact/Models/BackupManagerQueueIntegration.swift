@@ -26,10 +26,19 @@ extension BackupManager {
         logEntries = []
         debugLog = []
         
+        // Start statistics tracking
+        statistics.startBackup(sourceFiles: sourceFileTypes, filter: fileTypeFilter)
+        
         defer {
             isProcessing = false
             shouldCancel = false
             currentOrchestrator = nil
+            
+            // Complete statistics and show report
+            statistics.completeBackup()
+            if !shouldCancel {
+                showCompletionReport = true
+            }
         }
         
         // Create orchestrator with our components
@@ -45,6 +54,17 @@ extension BackupManager {
         
         orchestrator.onFailedFile = { [weak self] file, destination, error in
             self?.failedFiles.append((file: file, destination: destination, error: error))
+            
+            // Track in statistics
+            if let fileURL = URL(string: file),
+               let fileType = ImageFileType.from(fileExtension: fileURL.pathExtension) {
+                self?.statistics.recordFileProcessed(
+                    fileType: fileType,
+                    size: 0,
+                    destination: destination,
+                    success: false
+                )
+            }
         }
         
         orchestrator.onPhaseChange = { [weak self] phase in

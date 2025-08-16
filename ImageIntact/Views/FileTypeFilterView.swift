@@ -358,7 +358,7 @@ struct TypeCategorySection: View {
             // Individual type checkboxes
             VStack(alignment: .leading, spacing: 4) {
                 ForEach(types, id: \.0) { type, count in
-                    FileTypeRow(
+                    FileTypeSelectionRow(
                         type: type,
                         count: count,
                         isSelected: selectedTypes.contains(type),
@@ -391,9 +391,9 @@ struct TypeCategorySection: View {
     }
 }
 
-// MARK: - File Type Row
+// MARK: - File Type Selection Row
 
-struct FileTypeRow: View {
+struct FileTypeSelectionRow: View {
     let type: ImageFileType
     let count: Int
     let isSelected: Bool
