@@ -9,6 +9,7 @@
 import XCTest
 @testable import ImageIntact
 
+@MainActor
 class QueueSystemTests: XCTestCase {
     var testDirectory: URL!
     var backupManager: BackupManager!
@@ -22,9 +23,7 @@ class QueueSystemTests: XCTestCase {
         try FileManager.default.createDirectory(at: testDirectory, withIntermediateDirectories: true)
         
         // Initialize backup manager
-        await MainActor.run {
-            backupManager = BackupManager()
-        }
+        backupManager = BackupManager()
     }
     
     override func tearDown() async throws {

@@ -8,6 +8,7 @@
 import XCTest
 @testable import ImageIntact
 
+@MainActor
 class ImageIntactTests: XCTestCase {
     
     override class func setUp() {

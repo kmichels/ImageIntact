@@ -164,9 +164,8 @@ class ConcurrencyStressTests: XCTestCase {
             manifest.append(FileManifestEntry(
                 relativePath: fileName,
                 sourceURL: file,
-                size: 1,
                 checksum: "c_\(i)",
-                lastModified: Date()
+                size: 1
             ))
         }
         
@@ -219,9 +218,8 @@ class ConcurrencyStressTests: XCTestCase {
             manifest.append(FileManifestEntry(
                 relativePath: fileName,
                 sourceURL: file,
-                size: Int64(data.count),
                 checksum: "skip_\(i)",
-                lastModified: Date()
+                size: Int64(data.count)
             ))
         }
         
@@ -313,8 +311,8 @@ class ConcurrencyStressTests: XCTestCase {
             manifest.append(FileManifestEntry(
                 relativePath: fileName,
                 sourceURL: file,
-                size: Int64(data.count),
-                checksum: checksum
+                checksum: checksum,
+                size: Int64(data.count)
             ))
         }
         
@@ -360,9 +358,8 @@ class ConcurrencyStressTests: XCTestCase {
             manifest.append(FileManifestEntry(
                 relativePath: fileName,
                 sourceURL: file,
-                size: Int64(data.count),
                 checksum: "m_\(i)",
-                lastModified: Date()
+                size: Int64(data.count)
             ))
         }
         

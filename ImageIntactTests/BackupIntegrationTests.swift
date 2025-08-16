@@ -1,6 +1,7 @@
 import XCTest
 @testable import ImageIntact
 
+@MainActor
 final class BackupIntegrationTests: XCTestCase {
     
     var backupManager: BackupManager!
