@@ -84,20 +84,22 @@ class EventLogger {
     func startSession(sourceURL: URL, fileCount: Int, totalBytes: Int64) -> String {
         let sessionID = UUID()
         
-        backgroundContext.performAndWait {
-            let session = BackupSession(context: backgroundContext)
-            session.id = sessionID
-            session.startedAt = Date()
-            session.sourceURL = sourceURL.path
-            session.fileCount = Int32(fileCount)
-            session.totalBytes = totalBytes
-            session.status = "running"
-            session.toolVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown"
-            
-            currentSession = session
-            
+        // Create session synchronously but save asynchronously
+        let session = BackupSession(context: backgroundContext)
+        session.id = sessionID
+        session.startedAt = Date()
+        session.sourceURL = sourceURL.path
+        session.fileCount = Int32(fileCount)
+        session.totalBytes = totalBytes
+        session.status = "running"
+        session.toolVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown"
+        
+        currentSession = session
+        
+        // Save asynchronously to avoid blocking
+        backgroundContext.perform { [weak self] in
             do {
-                try backgroundContext.save()
+                try self?.backgroundContext.save()
                 print("📝 Started logging session: \(sessionID.uuidString)")
             } catch {
                 print("❌ Failed to save session start: \(error)")
@@ -118,12 +120,13 @@ class EventLogger {
     func completeSession(status: String = "completed") {
         guard let session = currentSession else { return }
         
-        backgroundContext.performAndWait {
+        // Use perform instead of performAndWait to avoid potential deadlocks
+        backgroundContext.perform { [weak self] in
             session.completedAt = Date()
             session.status = status
             
             do {
-                try backgroundContext.save()
+                try self?.backgroundContext.save()
                 print("📝 Completed logging session with status: \(status)")
             } catch {
                 print("❌ Failed to save session completion: \(error)")

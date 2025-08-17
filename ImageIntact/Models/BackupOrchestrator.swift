@@ -88,9 +88,11 @@ class BackupOrchestrator {
             
             // Complete logging session if not already done
             if currentSessionID != nil {
+                print("🔍 DEBUG: Completing event logging session...")
                 let status = shouldCancel ? "cancelled" : (failedFiles.isEmpty ? "completed" : "completed_with_errors")
                 eventLogger.completeSession(status: status)
                 currentSessionID = nil
+                print("🔍 DEBUG: Event logging session completed")
             }
         }
         
