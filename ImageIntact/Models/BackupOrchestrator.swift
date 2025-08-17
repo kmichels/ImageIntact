@@ -9,11 +9,13 @@ class BackupOrchestrator {
     private let manifestBuilder = ManifestBuilder()
     private let progressTracker: ProgressTracker
     private let resourceManager: ResourceManager
+    private let eventLogger = EventLogger.shared
     
     // MARK: - State
     private var currentCoordinator: BackupCoordinator?
     private var monitorTask: Task<Void, Never>?
     private var shouldCancel = false
+    private var currentSessionID: String?
     
     // MARK: - Callbacks
     var onStatusUpdate: ((String) -> Void)?
@@ -34,6 +36,19 @@ class BackupOrchestrator {
         shouldCancel = true
         currentCoordinator?.cancelBackup()
         monitorTask?.cancel()
+        
+        // Log cancellation event
+        if currentSessionID != nil {
+            if let coordinator = currentCoordinator {
+                // For now, just log the cancellation - we'd need to enhance BackupCoordinator to track in-flight files
+                eventLogger.logEvent(type: .cancel, severity: .warning, metadata: [
+                    "reason": "User requested cancellation",
+                    "destinationCount": coordinator.destinationStatuses.count
+                ])
+            }
+            eventLogger.completeSession(status: "cancelled")
+            currentSessionID = nil
+        }
     }
     
     /// Perform a complete backup operation
@@ -58,11 +73,25 @@ class BackupOrchestrator {
         shouldCancel = false
         progressTracker.resetAll()
         
+        // Start logging session
+        currentSessionID = eventLogger.startSession(
+            sourceURL: source,
+            fileCount: 0,  // Will update after manifest build
+            totalBytes: 0  // Will update after manifest build
+        )
+        
         // Cleanup on exit
         defer {
             currentCoordinator = nil
             monitorTask?.cancel()
             monitorTask = nil
+            
+            // Complete logging session if not already done
+            if currentSessionID != nil {
+                let status = shouldCancel ? "cancelled" : (failedFiles.isEmpty ? "completed" : "completed_with_errors")
+                eventLogger.completeSession(status: status)
+                currentSessionID = nil
+            }
         }
         
         // PHASE 1: Security-scoped resource access
@@ -101,10 +130,22 @@ class BackupOrchestrator {
             filter: filter
         ) else {
             onStatusUpdate?("Backup cancelled or failed")
+            eventLogger.logEvent(type: .error, severity: .error, metadata: [
+                "phase": "manifest_build",
+                "reason": shouldCancel ? "cancelled" : "failed"
+            ])
             return failedFiles
         }
         
         print("📋 Manifest contains \(manifest.count) files")
+        
+        // Log manifest completion
+        let totalBytes = manifest.reduce(0) { $0 + $1.size }
+        eventLogger.logEvent(type: .scan, severity: .info, metadata: [
+            "fileCount": manifest.count,
+            "totalBytes": totalBytes,
+            "destinationCount": destinations.count
+        ])
         
         // PHASE 3: Initialize progress tracking
         progressTracker.totalFiles = manifest.count

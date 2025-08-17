@@ -543,11 +543,6 @@ class BackupManager {
         return urls
     }
     
-    // No longer needed - we load directly in init
-    // static func loadDestinationItems() -> [DestinationItem] {
-    //     let urls = loadDestinationBookmarks()
-    //     return urls.map { DestinationItem(url: $0) }
-    // }
     
     private func tagSourceFolder(at url: URL) {
         let tagFile = url.appendingPathComponent(".imageintact_source")

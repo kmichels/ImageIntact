@@ -16,5 +16,8 @@ xcuserdata/
 !README.md
 # ENTITLEMENTS.md should NEVER be committed (security sensitive)
 
+# PDFs - internal consumption only
+*.pdf
+
 # macOS
 .DS_Store

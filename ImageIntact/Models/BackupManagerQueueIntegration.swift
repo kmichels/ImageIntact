@@ -152,10 +152,8 @@ extension BackupManager {
             // This is safe because we're already on @MainActor
             if status.isComplete {
                 // Destination is fully complete
-                Task {
-                    await progressTracker.setDestinationProgress(status.total, for: name)
-                    await progressTracker.setDestinationState("complete", for: name)
-                }
+                progressTracker.setDestinationProgress(status.total, for: name)
+                progressTracker.setDestinationState("complete", for: name)
                 
                 Task {
                     await progressState.setDestinationProgress(status.total, for: name)
@@ -175,10 +173,8 @@ extension BackupManager {
                 
                 // For verification, keep showing full progress (files are already copied)
                 // This prevents the progress bar from resetting to 0 when verification starts
-                Task {
-                    await progressTracker.setDestinationProgress(status.total, for: name)
-                    await progressTracker.setDestinationState("verifying", for: name)
-                }
+                progressTracker.setDestinationProgress(status.total, for: name)
+                progressTracker.setDestinationState("verifying", for: name)
                 verifyingDestinations.append(name)
                 
                 // Also update actor state for consistency
@@ -191,17 +187,13 @@ extension BackupManager {
                 // Debug: Let's see what values we have
                 if status.completed >= status.total && status.verifiedCount >= status.total {
                     // Destination is actually complete, just waiting for isComplete flag
-                    Task {
-                        await progressTracker.setDestinationProgress(status.total, for: name)
-                        await progressTracker.setDestinationState("complete", for: name)
-                    }
+                    progressTracker.setDestinationProgress(status.total, for: name)
+                    progressTracker.setDestinationState("complete", for: name)
                     print("✅ UI Update: \(name) - Completed (copied=\(status.completed), verified=\(status.verifiedCount), total=\(status.total))")
                 } else {
                     // Still copying (or something else)
-                    Task {
-                        await progressTracker.setDestinationProgress(status.completed, for: name)
-                        await progressTracker.setDestinationState("copying", for: name)
-                    }
+                    progressTracker.setDestinationProgress(status.completed, for: name)
+                    progressTracker.setDestinationState("copying", for: name)
                     print("🔄 UI Update: \(name) - \(status.completed)/\(status.total) files, verified=\(status.verifiedCount)")
                 }
                 

@@ -258,12 +258,6 @@ class ImageIntactTests: XCTestCase {
         XCTAssertFalse(hasTag, "Folder should no longer have source tag")
     }
     
-    func testQuarantineFile() throws {
-        // Skip this test - quarantineFile is now private in PhaseBasedBackupEngine
-        // The quarantine functionality is tested through integration tests
-        throw XCTSkip("Quarantine functionality is tested through BackupIntegrationTests")
-    }
-    
     func testChecksumMismatchQuarantine() throws {
         // This simulates what happens when a file exists but has different content
         let sourceDir = createTestDirectory(name: "Source")!

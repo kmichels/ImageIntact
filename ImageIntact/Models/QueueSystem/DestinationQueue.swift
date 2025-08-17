@@ -224,6 +224,7 @@ actor DestinationQueue {
     private func processFileTask(_ task: FileTask) async -> CopyResult {
         let destPath = destination.appendingPathComponent(task.relativePath)
         let destDir = destPath.deletingLastPathComponent()
+        let startTime = Date()
         
         do {
             // Create directory if needed
@@ -243,6 +244,18 @@ actor DestinationQueue {
                         shouldCancel: shouldCancel
                     )
                     if existingChecksum == task.checksum {
+                        // Log skip event
+                        await MainActor.run {
+                            EventLogger.shared.logEvent(
+                                type: .skip,
+                                severity: .debug,
+                                file: task.sourceURL,
+                                destination: destPath,
+                                fileSize: task.size,
+                                checksum: task.checksum,
+                                metadata: ["reason": "Already exists with matching checksum"]
+                            )
+                        }
                         return .skipped(reason: "Already exists with matching checksum")
                     }
                 }
@@ -260,6 +273,20 @@ actor DestinationQueue {
                 
                 try FileManager.default.copyItem(at: task.sourceURL, to: destPath)
                 
+                // Log successful copy
+                let duration = Date().timeIntervalSince(startTime)
+                await MainActor.run {
+                    EventLogger.shared.logEvent(
+                        type: .copy,
+                        severity: .info,
+                        file: task.sourceURL,
+                        destination: destPath,
+                        fileSize: task.size,
+                        checksum: task.checksum,
+                        duration: duration
+                    )
+                }
+                
                 // Extra confirmation for videos
                 if task.relativePath.lowercased().hasSuffix(".mp4") || task.relativePath.lowercased().hasSuffix(".mov") {
                     print("✅ Video copied successfully: \(task.relativePath)")
@@ -273,6 +300,19 @@ actor DestinationQueue {
                 if task.relativePath.lowercased().hasSuffix(".mp4") || task.relativePath.lowercased().hasSuffix(".mov") {
                     print("❌ Video copy failed: \(task.relativePath)")
                     print("   Error: \(error)")
+                }
+                
+                // Log copy error
+                await MainActor.run {
+                    EventLogger.shared.logEvent(
+                        type: .error,
+                        severity: .error,
+                        file: task.sourceURL,
+                        destination: destPath,
+                        fileSize: task.size,
+                        error: error,
+                        metadata: ["operation": "copy"]
+                    )
                 }
                 
                 // Clean up partial file if copy failed
@@ -404,6 +444,7 @@ actor DestinationQueue {
                 }
                 
                 // Verify checksum
+                let verifyStartTime = Date()
                 let actualChecksum = try BackupManager.sha256ChecksumStatic(
                     for: destPath,
                     shouldCancel: shouldCancel
@@ -413,6 +454,20 @@ actor DestinationQueue {
                     verifiedFiles += 1
                     print("✅ Verified: \(task.relativePath) at \(destination.lastPathComponent) (total verified: \(verifiedFiles))")
                     
+                    // Log successful verification
+                    let duration = Date().timeIntervalSince(verifyStartTime)
+                    await MainActor.run {
+                        EventLogger.shared.logEvent(
+                            type: .verify,
+                            severity: .info,
+                            file: task.sourceURL,
+                            destination: destPath,
+                            fileSize: task.size,
+                            checksum: task.checksum,
+                            duration: duration
+                        )
+                    }
+                    
                     // Notify coordinator of verification progress
                     if let callback = onVerificationStateChange {
                         let currentVerified = verifiedFiles
@@ -421,6 +476,22 @@ actor DestinationQueue {
                 } else {
                     print("❌ Checksum mismatch: \(task.relativePath) at \(destination.lastPathComponent)")
                     failedFiles.append((file: task.relativePath, error: "Checksum mismatch"))
+                    
+                    // Log verification failure
+                    await MainActor.run {
+                        EventLogger.shared.logEvent(
+                            type: .error,
+                            severity: .error,
+                            file: task.sourceURL,
+                            destination: destPath,
+                            fileSize: task.size,
+                            metadata: [
+                                "operation": "verify",
+                                "expectedChecksum": task.checksum,
+                                "actualChecksum": actualChecksum
+                            ]
+                        )
+                    }
                 }
             } catch {
                 print("❌ Verification error for \(task.relativePath): \(error)")

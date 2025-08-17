@@ -191,8 +191,10 @@ struct ContentView: View {
             object: nil,
             queue: .main
         ) { _ in
-            if !backupManager.destinationURLs.isEmpty {
-                selectDestinationFolder(at: 0)
+            Task { @MainActor in
+                if !backupManager.destinationURLs.isEmpty {
+                    selectDestinationFolder(at: 0)
+                }
             }
         }
         
@@ -201,7 +203,9 @@ struct ContentView: View {
             object: nil,
             queue: .main
         ) { _ in
-            backupManager.addDestination()
+            Task { @MainActor in
+                backupManager.addDestination()
+            }
         }
         
         NotificationCenter.default.addObserver(
@@ -209,8 +213,10 @@ struct ContentView: View {
             object: nil,
             queue: .main
         ) { _ in
-            if backupManager.canRunBackup() {
-                backupManager.runBackup()
+            Task { @MainActor in
+                if backupManager.canRunBackup() {
+                    backupManager.runBackup()
+                }
             }
         }
         
@@ -219,7 +225,9 @@ struct ContentView: View {
             object: nil,
             queue: .main
         ) { _ in
-            backupManager.clearAllSelections()
+            Task { @MainActor in
+                backupManager.clearAllSelections()
+            }
         }
         
         NotificationCenter.default.addObserver(
@@ -320,25 +328,42 @@ struct ContentView: View {
     
     // MARK: - Debug Log Methods
     func showDebugLog() {
-        if let logPath = backupManager.lastDebugLogPath {
-            NSWorkspace.shared.open(logPath)
+        // Get the current session ID from BackupManager
+        let sessionID = backupManager.sessionID
+        
+        // Try to get report from Core Data if we have a session
+        let eventLogger = EventLogger.shared
+        let logContent: String
+        
+        if !sessionID.isEmpty {
+            // Get report for current session
+            logContent = eventLogger.generateReport(for: sessionID)
         } else {
-            // Create a temporary log file with current session data
-            let tempLogContent = generateCurrentSessionDebugLog()
-            let tempDir = FileManager.default.temporaryDirectory
-            let tempLogPath = tempDir.appendingPathComponent("ImageIntact_CurrentSession.log")
-            
-            do {
-                try tempLogContent.write(to: tempLogPath, atomically: true, encoding: .utf8)
-                NSWorkspace.shared.open(tempLogPath)
-            } catch {
-                let alert = NSAlert()
-                alert.messageText = "Cannot Show Debug Log"
-                alert.informativeText = "Could not create temporary debug log: \(error.localizedDescription)"
-                alert.alertStyle = .warning
-                alert.addButton(withTitle: "OK")
-                alert.runModal()
+            // Get all recent sessions and show the latest one
+            let sessions = eventLogger.getAllSessions()
+            if let latestSession = sessions.first,
+               let sessionUUID = latestSession.id?.uuidString {
+                logContent = eventLogger.generateReport(for: sessionUUID)
+            } else {
+                // No sessions found, generate a basic report
+                logContent = generateCurrentSessionDebugLog()
             }
+        }
+        
+        // Write to temporary file and open
+        let tempDir = FileManager.default.temporaryDirectory
+        let tempLogPath = tempDir.appendingPathComponent("ImageIntact_Session_\(sessionID.isEmpty ? "Latest" : sessionID).log")
+        
+        do {
+            try logContent.write(to: tempLogPath, atomically: true, encoding: .utf8)
+            NSWorkspace.shared.open(tempLogPath)
+        } catch {
+            let alert = NSAlert()
+            alert.messageText = "Cannot Show Debug Log"
+            alert.informativeText = "Could not create temporary debug log: \(error.localizedDescription)"
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: "OK")
+            alert.runModal()
         }
     }
     
@@ -375,14 +400,27 @@ struct ContentView: View {
     }
     
     func exportDebugLog() {
-        // Always generate a log with current session data
+        // Get session data from Core Data
+        let sessionID = backupManager.sessionID
+        let eventLogger = EventLogger.shared
         let logContent: String
-        if let logPath = backupManager.lastDebugLogPath,
-           let existingContent = try? String(contentsOf: logPath, encoding: .utf8) {
-            logContent = existingContent
+        var exportData: Data?
+        
+        if !sessionID.isEmpty {
+            // Get report for current session
+            logContent = eventLogger.generateReport(for: sessionID)
+            exportData = eventLogger.exportJSON(for: sessionID)
         } else {
-            // Generate debug log with current session data
-            logContent = generateCurrentSessionDebugLog()
+            // Get all recent sessions and show the latest one
+            let sessions = eventLogger.getAllSessions()
+            if let latestSession = sessions.first,
+               let sessionUUID = latestSession.id?.uuidString {
+                logContent = eventLogger.generateReport(for: sessionUUID)
+                exportData = eventLogger.exportJSON(for: sessionUUID)
+            } else {
+                // No sessions found, generate a basic report
+                logContent = generateCurrentSessionDebugLog()
+            }
         }
         
         let savePanel = NSSavePanel()
@@ -390,12 +428,18 @@ struct ContentView: View {
         let dateFormatter = DateFormatter()
         dateFormatter.dateFormat = "yyyy-MM-dd_HH-mm-ss"
         savePanel.nameFieldStringValue = "ImageIntact_Debug_\(dateFormatter.string(from: Date())).txt"
-        savePanel.allowedContentTypes = [.plainText]
+        savePanel.allowedContentTypes = [.plainText, .json]
         savePanel.canCreateDirectories = true
         
         if savePanel.runModal() == .OK, let exportURL = savePanel.url {
             do {
-                try logContent.write(to: exportURL, atomically: true, encoding: .utf8)
+                // Export as JSON if user selected .json extension
+                if exportURL.pathExtension == "json", let jsonData = exportData {
+                    try jsonData.write(to: exportURL)
+                } else {
+                    // Export as text
+                    try logContent.write(to: exportURL, atomically: true, encoding: .utf8)
+                }
                 
                 let alert = NSAlert()
                 alert.messageText = "Debug Log Exported"
