@@ -426,6 +426,68 @@ extension EventLogger {
         }
     }
     
+    /// Get sessions grouped by version
+    func getSessionsByVersion() -> [String: [BackupSession]] {
+        let request = NSFetchRequest<BackupSession>(entityName: "BackupSession")
+        request.sortDescriptors = [NSSortDescriptor(key: "startedAt", ascending: false)]
+        
+        do {
+            let sessions = try container.viewContext.fetch(request)
+            var grouped: [String: [BackupSession]] = [:]
+            
+            for session in sessions {
+                let version = session.toolVersion ?? "unknown"
+                if grouped[version] == nil {
+                    grouped[version] = []
+                }
+                grouped[version]?.append(session)
+            }
+            
+            return grouped
+        } catch {
+            print("❌ Failed to fetch sessions by version: \(error)")
+            return [:]
+        }
+    }
+    
+    /// Get version statistics
+    func getVersionStatistics() -> String {
+        let grouped = getSessionsByVersion()
+        var report = "=== Version Statistics ===\n\n"
+        
+        for (version, sessions) in grouped.sorted(by: { $0.key > $1.key }) {
+            report += "Version \(version):\n"
+            report += "  Sessions: \(sessions.count)\n"
+            
+            // Count events for this version's sessions
+            var totalEvents = 0
+            var totalErrors = 0
+            for session in sessions {
+                if let events = session.events {
+                    totalEvents += events.count
+                    totalErrors += events.allObjects.compactMap { $0 as? BackupEvent }
+                        .filter { $0.severity == "error" }.count
+                }
+            }
+            
+            report += "  Total Events: \(totalEvents)\n"
+            report += "  Total Errors: \(totalErrors)\n"
+            
+            // Get date range
+            let dates = sessions.compactMap { $0.startedAt }
+            if let earliest = dates.min(), let latest = dates.max() {
+                let formatter = DateFormatter()
+                formatter.dateStyle = .short
+                formatter.timeStyle = .none
+                report += "  Date Range: \(formatter.string(from: earliest)) - \(formatter.string(from: latest))\n"
+            }
+            
+            report += "\n"
+        }
+        
+        return report
+    }
+    
     /// Debug method to verify Core Data is working
     func verifyDataStorage() -> String {
         var report = "=== Core Data Verification ===\n\n"
@@ -463,6 +525,17 @@ extension EventLogger {
             report += "📊 Database Contents:\n"
             report += "  - Sessions: \(sessionCount)\n"
             report += "  - Events: \(eventCount)\n"
+            
+            // Add version breakdown
+            let versionGroups = getSessionsByVersion()
+            if !versionGroups.isEmpty {
+                report += "\n📱 By Version:\n"
+                for (version, sessions) in versionGroups.sorted(by: { $0.key > $1.key }) {
+                    report += "  - v\(version): \(sessions.count) session\(sessions.count == 1 ? "" : "s")\n"
+                }
+            }
+            
+            report += "\n"
             
             // Get recent events
             let recentRequest = NSFetchRequest<BackupEvent>(entityName: "BackupEvent")
