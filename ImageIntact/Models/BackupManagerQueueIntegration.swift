@@ -75,7 +75,6 @@ extension BackupManager {
         let destinationItemIDs = destinationItems.prefix(destinations.count).map { $0.id }
         
         // Perform the backup with file type filter
-        print("🔍 DEBUG: Calling orchestrator.performBackup...")
         let failures = await orchestrator.performBackup(
             source: source,
             destinations: destinations,
@@ -84,7 +83,6 @@ extension BackupManager {
             filter: fileTypeFilter,
             sessionID: sessionID
         )
-        print("🔍 DEBUG: orchestrator.performBackup returned with \(failures.count) failures")
         
         // Add any failures to our list (avoiding duplicates)
         for failure in failures {
@@ -130,19 +128,14 @@ extension BackupManager {
         }
         
         // Complete statistics and show report
-        print("🔍 DEBUG: Completing statistics...")
         statistics.completeBackup()
         
         // Show completion report if not cancelled
         if !shouldCancel {
-            print("🔍 DEBUG: Showing completion report...")
             // Small delay to ensure UI is ready
             try? await Task.sleep(nanoseconds: 100_000_000) // 0.1 second
             showCompletionReport = true
-            print("🔍 DEBUG: showCompletionReport set to true")
         }
-        
-        print("🔍 DEBUG: performQueueBasedBackup complete")
     }
     
     /// Update our UI based on coordinator's status

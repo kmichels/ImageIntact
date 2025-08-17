@@ -91,11 +91,9 @@ class BackupOrchestrator {
             
             // Complete logging session if not already done
             if currentSessionID != nil {
-                print("🔍 DEBUG: Completing event logging session...")
                 let status = shouldCancel ? "cancelled" : (failedFiles.isEmpty ? "completed" : "completed_with_errors")
                 eventLogger.completeSession(status: status)
                 currentSessionID = nil
-                print("🔍 DEBUG: Event logging session completed")
             }
         }
         
@@ -203,12 +201,9 @@ class BackupOrchestrator {
         )
         
         // Wait for monitoring to complete
-        print("🔍 DEBUG: Waiting for monitor task to complete...")
         await monitorTask?.value
-        print("🔍 DEBUG: Monitor task completed")
         
         // Collect any failures from coordinator
-        print("🔍 DEBUG: Collecting failures from coordinator...")
         let coordinatorFailures = coordinator.getFailures()
         for failure in coordinatorFailures {
             failedFiles.append((
@@ -217,10 +212,8 @@ class BackupOrchestrator {
                 error: failure.error
             ))
         }
-        print("🔍 DEBUG: Collected \(coordinatorFailures.count) failures")
         
         // PHASE 5: Complete
-        print("🔍 DEBUG: Setting phase to complete...")
         onPhaseChange?(.complete)
         
         let totalTime = Date().timeIntervalSince(backupStartTime)
@@ -232,7 +225,6 @@ class BackupOrchestrator {
             onStatusUpdate?("⚠️ Backup complete in \(timeString) with \(failedFiles.count) errors")
         }
         
-        print("🔍 DEBUG: performBackup returning with \(failedFiles.count) failures")
         return failedFiles
     }
     
@@ -259,7 +251,6 @@ class BackupOrchestrator {
             }
             
             if allDone {
-                print("🔍 DEBUG: All destinations marked as done, performing final update...")
                 updateProgressFromCoordinator(coordinator, destinations: destinations)
                 print("📊 All destinations complete, exiting monitor")
                 break
@@ -316,10 +307,8 @@ class BackupOrchestrator {
         }
         
         // Final update
-        print("🔍 DEBUG: Monitor loop exited, performing final update...")
         updateProgressFromCoordinator(coordinator, destinations: destinations)
         print("📊 Monitor task completed")
-        print("🔍 DEBUG: Exiting monitorCoordinator function")
     }
     
     /// Update progress tracker from coordinator status
