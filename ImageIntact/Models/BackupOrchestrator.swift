@@ -56,13 +56,15 @@ class BackupOrchestrator {
     ///   - source: Source directory URL
     ///   - destinations: Array of destination URLs
     ///   - driveInfo: Dictionary of drive information for destinations
+    ///   - sessionID: Optional session ID to use for logging
     /// - Returns: Array of failed files or empty if successful
     func performBackup(
         source: URL,
         destinations: [URL],
         driveInfo: [UUID: DriveAnalyzer.DriveInfo],
         destinationItemIDs: [UUID],
-        filter: FileTypeFilter = FileTypeFilter()
+        filter: FileTypeFilter = FileTypeFilter(),
+        sessionID: String? = nil
     ) async -> [(file: String, destination: String, error: String)] {
         
         print("🚀 BackupOrchestrator: Starting backup operation")
@@ -73,11 +75,12 @@ class BackupOrchestrator {
         shouldCancel = false
         progressTracker.resetAll()
         
-        // Start logging session
+        // Start logging session (use provided ID or create new one)
         currentSessionID = eventLogger.startSession(
             sourceURL: source,
             fileCount: 0,  // Will update after manifest build
-            totalBytes: 0  // Will update after manifest build
+            totalBytes: 0,  // Will update after manifest build
+            sessionID: sessionID
         )
         
         // Cleanup on exit

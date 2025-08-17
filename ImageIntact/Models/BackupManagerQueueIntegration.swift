@@ -29,6 +29,9 @@ extension BackupManager {
         // Start statistics tracking
         statistics.startBackup(sourceFiles: sourceFileTypes, filter: fileTypeFilter)
         
+        // Store the session ID that will be used by Core Data
+        // (BackupOrchestrator will use this same ID)
+        
         defer {
             isProcessing = false
             shouldCancel = false
@@ -78,7 +81,8 @@ extension BackupManager {
             destinations: destinations,
             driveInfo: destinationDriveInfo,
             destinationItemIDs: destinationItemIDs,
-            filter: fileTypeFilter
+            filter: fileTypeFilter,
+            sessionID: sessionID
         )
         print("🔍 DEBUG: orchestrator.performBackup returned with \(failures.count) failures")
         

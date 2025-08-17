@@ -81,12 +81,18 @@ class EventLogger {
     // MARK: - Session Management
     
     /// Start a new backup session
-    func startSession(sourceURL: URL, fileCount: Int, totalBytes: Int64) -> String {
-        let sessionID = UUID()
+    func startSession(sourceURL: URL, fileCount: Int, totalBytes: Int64, sessionID: String? = nil) -> String {
+        // Use provided session ID or create new one
+        let uuid: UUID
+        if let providedID = sessionID, let parsedUUID = UUID(uuidString: providedID) {
+            uuid = parsedUUID
+        } else {
+            uuid = UUID()
+        }
         
         // Create session synchronously but save asynchronously
         let session = BackupSession(context: backgroundContext)
-        session.id = sessionID
+        session.id = uuid
         session.startedAt = Date()
         session.sourceURL = sourceURL.path
         session.fileCount = Int32(fileCount)
@@ -100,7 +106,7 @@ class EventLogger {
         backgroundContext.perform { [weak self] in
             do {
                 try self?.backgroundContext.save()
-                print("📝 Started logging session: \(sessionID.uuidString)")
+                print("📝 Started logging session: \(uuid.uuidString)")
             } catch {
                 print("❌ Failed to save session start: \(error)")
             }
@@ -113,7 +119,7 @@ class EventLogger {
             "source": sourceURL.path
         ])
         
-        return sessionID.uuidString
+        return uuid.uuidString
     }
     
     /// Complete the current session
