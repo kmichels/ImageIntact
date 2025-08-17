@@ -33,12 +33,6 @@ extension BackupManager {
             isProcessing = false
             shouldCancel = false
             currentOrchestrator = nil
-            
-            // Complete statistics and show report
-            statistics.completeBackup()
-            if !shouldCancel {
-                showCompletionReport = true
-            }
         }
         
         // Create orchestrator with our components
@@ -127,6 +121,16 @@ extension BackupManager {
                 timeElapsed: statistics.duration ?? 0,
                 averageSpeed: progressTracker.copySpeed
             )
+        }
+        
+        // Complete statistics and show report
+        statistics.completeBackup()
+        
+        // Show completion report if not cancelled
+        if !shouldCancel {
+            // Small delay to ensure UI is ready
+            try? await Task.sleep(nanoseconds: 100_000_000) // 0.1 second
+            showCompletionReport = true
         }
     }
     

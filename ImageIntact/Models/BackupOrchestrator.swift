@@ -243,8 +243,8 @@ class BackupOrchestrator {
             
             // Check if all destinations are complete
             let allDone = coordinator.destinationStatuses.values.allSatisfy { status in
-                (status.isComplete && !status.isVerifying) ||
-                (status.completed >= status.total && status.verifiedCount >= status.total)
+                status.isComplete || 
+                (status.completed >= status.total && status.verifiedCount >= status.total && !status.isVerifying)
             }
             
             if allDone {
