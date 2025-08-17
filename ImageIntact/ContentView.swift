@@ -263,6 +263,14 @@ struct ContentView: View {
                 await updateManager.performUpdateCheck(isManual: true)
             }
         }
+        
+        NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("VerifyCoreData"),
+            object: nil,
+            queue: .main
+        ) { _ in
+            verifyCoreDataStorage()
+        }
     }
     
     // MARK: - Keyboard Shortcuts
@@ -474,6 +482,22 @@ struct ContentView: View {
         let formatter = ByteCountFormatter()
         formatter.countStyle = .binary
         return formatter.string(fromByteCount: bytes)
+    }
+    
+    // MARK: - Core Data Verification
+    func verifyCoreDataStorage() {
+        let report = EventLogger.shared.verifyDataStorage()
+        
+        // Write to temp file and open
+        let tempDir = FileManager.default.temporaryDirectory
+        let tempPath = tempDir.appendingPathComponent("CoreData_Verification.txt")
+        
+        do {
+            try report.write(to: tempPath, atomically: true, encoding: .utf8)
+            NSWorkspace.shared.open(tempPath)
+        } catch {
+            print("Failed to write verification report: \(error)")
+        }
     }
 }
 

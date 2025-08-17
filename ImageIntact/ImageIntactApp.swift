@@ -92,6 +92,10 @@ struct ImageIntactApp: App {
                     NotificationCenter.default.post(name: NSNotification.Name("ExportDebugLog"), object: nil)
                 }
                 
+                Button("Verify Core Data Storage") {
+                    NotificationCenter.default.post(name: NSNotification.Name("VerifyCoreData"), object: nil)
+                }
+                
                 Divider()
                 
                 Button("Check for Updates...") {

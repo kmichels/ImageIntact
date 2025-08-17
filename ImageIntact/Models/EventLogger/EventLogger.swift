@@ -65,6 +65,7 @@ class EventLogger {
                 // In production, we'd handle this more gracefully
             } else {
                 print("✅ EventLogger Core Data store loaded: \(storeDescription.url?.lastPathComponent ?? "unknown")")
+                print("📁 Core Data location: \(storeDescription.url?.path ?? "unknown")")
             }
         }
         
@@ -414,5 +415,66 @@ extension EventLogger {
             print("❌ Failed to fetch errors: \(error)")
             return []
         }
+    }
+    
+    /// Debug method to verify Core Data is working
+    func verifyDataStorage() -> String {
+        var report = "=== Core Data Verification ===\n\n"
+        
+        // Get store location
+        if let storeURL = container.persistentStoreDescriptions.first?.url {
+            report += "📁 Store Location: \(storeURL.path)\n"
+            
+            // Check if file exists
+            if FileManager.default.fileExists(atPath: storeURL.path) {
+                do {
+                    let attributes = try FileManager.default.attributesOfItem(atPath: storeURL.path)
+                    let size = attributes[.size] as? Int64 ?? 0
+                    report += "✅ Database exists (size: \(size) bytes)\n"
+                } catch {
+                    report += "⚠️ Database exists but can't read attributes\n"
+                }
+            } else {
+                report += "❌ Database file not found!\n"
+            }
+        } else {
+            report += "❌ No store URL found!\n"
+        }
+        
+        report += "\n"
+        
+        // Count entities
+        let sessionRequest = NSFetchRequest<BackupSession>(entityName: "BackupSession")
+        let eventRequest = NSFetchRequest<BackupEvent>(entityName: "BackupEvent")
+        
+        do {
+            let sessionCount = try container.viewContext.count(for: sessionRequest)
+            let eventCount = try container.viewContext.count(for: eventRequest)
+            
+            report += "📊 Database Contents:\n"
+            report += "  - Sessions: \(sessionCount)\n"
+            report += "  - Events: \(eventCount)\n"
+            
+            // Get recent events
+            let recentRequest = NSFetchRequest<BackupEvent>(entityName: "BackupEvent")
+            recentRequest.sortDescriptors = [NSSortDescriptor(key: "timestamp", ascending: false)]
+            recentRequest.fetchLimit = 5
+            
+            let recentEvents = try container.viewContext.fetch(recentRequest)
+            if !recentEvents.isEmpty {
+                report += "\n📝 Recent Events:\n"
+                for event in recentEvents {
+                    let timestamp = event.timestamp ?? Date()
+                    let type = event.eventType ?? "unknown"
+                    let file = event.filePath?.components(separatedBy: "/").last ?? "N/A"
+                    report += "  - [\(timestamp)] \(type): \(file)\n"
+                }
+            }
+            
+        } catch {
+            report += "❌ Failed to query database: \(error)\n"
+        }
+        
+        return report
     }
 }
