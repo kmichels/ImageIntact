@@ -275,11 +275,22 @@ class EventLogger {
         dateFormatter.dateStyle = .medium
         dateFormatter.timeStyle = .medium
         
+        // Sort events once for reuse
+        let events = (session.events?.allObjects as? [BackupEvent] ?? [])
+            .sorted { ($0.timestamp ?? Date()) < ($1.timestamp ?? Date()) }
+        
+        // Calculate summary statistics first
+        let errorCount = events.filter { $0.severity == "error" }.count
+        let copyCount = events.filter { $0.eventType == "copy" }.count
+        let verifyCount = events.filter { $0.eventType == "verify" }.count
+        let skipCount = events.filter { $0.eventType == "skip" }.count
+        
         var report = """
         =====================================
         ImageIntact Backup Report
         =====================================
         Session ID: \(session.id?.uuidString ?? "unknown")
+        Version: \(session.toolVersion ?? "unknown")
         Started: \(dateFormatter.string(from: session.startedAt ?? Date()))
         """
         
@@ -300,13 +311,42 @@ class EventLogger {
         Total Size: \(formatBytes(session.totalBytes))
         
         =====================================
-        Events:
+        Summary:
         =====================================
+        Files Copied: \(copyCount)
+        Files Verified: \(verifyCount)
+        Files Skipped: \(skipCount)
+        Errors: \(errorCount)
+        
         """
         
-        // Sort and format events
-        let events = (session.events?.allObjects as? [BackupEvent] ?? [])
-            .sorted { ($0.timestamp ?? Date()) < ($1.timestamp ?? Date()) }
+        // Add error details if there are any
+        if errorCount > 0 {
+            report += "=====================================\n"
+            report += "Errors (\(errorCount)):\n"
+            report += "=====================================\n"
+            
+            let errors = events.filter { $0.severity == "error" }
+            for error in errors.prefix(10) {  // Show first 10 errors
+                if let file = error.filePath {
+                    report += "• \(URL(fileURLWithPath: file).lastPathComponent)"
+                    if let msg = error.errorMessage {
+                        report += ": \(msg)"
+                    }
+                    report += "\n"
+                }
+            }
+            if errors.count > 10 {
+                report += "... and \(errors.count - 10) more errors\n"
+            }
+            report += "\n"
+        }
+        
+        report += """
+        =====================================
+        Detailed Event Log:
+        =====================================
+        """
         
         let timeFormatter = DateFormatter()
         timeFormatter.timeStyle = .medium
@@ -334,19 +374,6 @@ class EventLogger {
                 report += " (\(event.durationMs)ms)"
             }
         }
-        
-        // Add summary statistics
-        report += "\n\n=====================================\n"
-        report += "Summary:\n"
-        report += "=====================================\n"
-        
-        let errorCount = events.filter { $0.severity == "error" }.count
-        let copyCount = events.filter { $0.eventType == "copy" }.count
-        let verifyCount = events.filter { $0.eventType == "verify" }.count
-        
-        report += "Files Copied: \(copyCount)\n"
-        report += "Files Verified: \(verifyCount)\n"
-        report += "Errors: \(errorCount)\n"
         
         return report
     }
