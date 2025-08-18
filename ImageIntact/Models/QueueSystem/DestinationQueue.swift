@@ -6,6 +6,7 @@ actor DestinationQueue {
     let destination: URL
     let queue: PriorityQueue
     let throughputMonitor: ThroughputMonitor
+    private let batchProcessor = BatchFileProcessor()
     
     private var activeWorkers: Set<UUID> = []
     private var workerTasks: [Task<Void, Never>] = []
