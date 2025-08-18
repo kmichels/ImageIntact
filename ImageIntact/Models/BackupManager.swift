@@ -26,6 +26,11 @@ struct DestinationItem: Identifiable {
 @Observable
 @MainActor
 class BackupManager {
+    // MARK: - Test Mode
+    static var isRunningTests: Bool {
+        return ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+    }
+    
     // MARK: - Published Properties
     var sourceURL: URL? = nil
     var destinationURLs: [URL?] = []
@@ -274,12 +279,14 @@ class BackupManager {
         
         // Check if this is the same as the source
         if let source = sourceURL, source == url {
-            let alert = NSAlert()
-            alert.messageText = "Invalid Destination"
-            alert.informativeText = "The destination folder cannot be the same as the source folder."
-            alert.alertStyle = .warning
-            alert.addButton(withTitle: "OK")
-            alert.runModal()
+            if !BackupManager.isRunningTests {
+                let alert = NSAlert()
+                alert.messageText = "Invalid Destination"
+                alert.informativeText = "The destination folder cannot be the same as the source folder."
+                alert.alertStyle = .warning
+                alert.addButton(withTitle: "OK")
+                alert.runModal()
+            }
             return
         }
         
@@ -287,33 +294,37 @@ class BackupManager {
         for (i, existingURL) in destinationURLs.enumerated() {
             if i != index && existingURL == url {
                 // Show alert that this destination is already selected
-                let alert = NSAlert()
-                alert.messageText = "Duplicate Destination"
-                alert.informativeText = "This folder is already selected as destination #\(i + 1). Please choose a different folder."
-                alert.alertStyle = .warning
-                alert.addButton(withTitle: "OK")
-                alert.runModal()
+                if !BackupManager.isRunningTests {
+                    let alert = NSAlert()
+                    alert.messageText = "Duplicate Destination"
+                    alert.informativeText = "This folder is already selected as destination #\(i + 1). Please choose a different folder."
+                    alert.alertStyle = .warning
+                    alert.addButton(withTitle: "OK")
+                    alert.runModal()
+                }
                 return
             }
         }
         
         // Check if this is a source folder
         if checkForSourceTag(at: url) {
-            // Show choice dialog
-            let alert = NSAlert()
-            alert.messageText = "Source Folder Selected"
-            alert.informativeText = "This folder was previously used as a source. Using it as a destination will remove the source tag. Do you want to continue?"
-            alert.alertStyle = .warning
-            alert.addButton(withTitle: "Use This Folder")
-            alert.addButton(withTitle: "Cancel")
-            
-            let response = alert.runModal()
-            if response == .alertSecondButtonReturn {
-                // User clicked "Cancel" - don't set destination
-                return
+            if !BackupManager.isRunningTests {
+                // Show choice dialog
+                let alert = NSAlert()
+                alert.messageText = "Source Folder Selected"
+                alert.informativeText = "This folder was previously used as a source. Using it as a destination will remove the source tag. Do you want to continue?"
+                alert.alertStyle = .warning
+                alert.addButton(withTitle: "Use This Folder")
+                alert.addButton(withTitle: "Cancel")
+                
+                let response = alert.runModal()
+                if response == .alertSecondButtonReturn {
+                    // User clicked "Cancel" - don't set destination
+                    return
+                }
             }
             
-            // User clicked "Use This Folder" - remove source tag and proceed
+            // Remove source tag and proceed (in tests, always proceed)
             removeSourceTag(at: url)
         }
         
