@@ -483,6 +483,58 @@ class BackupManager {
         Task {
             await resourceManager.cleanup()
         }
+        
+        // Force memory cleanup
+        cleanupMemory()
+    }
+    
+    /// Force memory cleanup after backup completion or cancellation
+    func cleanupMemory() {
+        // Clear large data structures
+        logEntries.removeAll(keepingCapacity: false)
+        debugLog.removeAll(keepingCapacity: false)
+        
+        // DON'T clear failedFiles - needed for completion report
+        // DON'T clear statistics - needed for completion report
+        // DON'T clear progress data yet - UI may still need it
+        
+        // Clear file type data
+        sourceFileTypes.removeAll(keepingCapacity: false)
+        
+        // Clear destination info
+        destinationDriveInfo.removeAll(keepingCapacity: false)
+        
+        // Clear orchestrator and coordinator references
+        currentOrchestrator = nil
+        currentCoordinator = nil
+        currentMonitorTask = nil
+        currentOperation = nil
+        
+        // Note: Core Data will manage its own memory
+        EventLogger.shared.resetContexts()
+        
+        // Force cleanup with autorelease pool
+        autoreleasepool { }
+        
+        print("✅ Initial memory cleanup completed")
+        
+        // Schedule deep cleanup after UI has shown stats
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 10_000_000_000) // 10 seconds
+            
+            // Now clear the rest
+            failedFiles.removeAll(keepingCapacity: false)
+            progressTracker.resetAll()
+            progressTracker.destinationProgress.removeAll(keepingCapacity: false)
+            progressTracker.destinationStates.removeAll(keepingCapacity: false)
+            statistics.reset()
+            statusMessage = ""
+            overallStatusText = ""
+            scanProgress = ""
+            
+            autoreleasepool { }
+            print("✅ Deep memory cleanup completed")
+        }
     }
     
     // MARK: - Debug Logging
@@ -793,76 +845,83 @@ extension BackupManager {
     
     // Native Swift checksum using CryptoKit - more reliable than external commands
     nonisolated private static func calculateNativeChecksum(for fileURL: URL, shouldCancel: Bool = false) throws -> String {
-        // Check file size first
-        let attributes = try FileManager.default.attributesOfItem(atPath: fileURL.path)
-        let size = attributes[.size] as? Int64 ?? 0
-        
-        if size == 0 {
-            return "empty-file-0-bytes"
-        }
-        
-        // For large files, use streaming to avoid memory issues
-        if size > 10_000_000 { // 10MB - stream to prevent memory pressure
-            return try calculateStreamingChecksum(for: fileURL, size: size, shouldCancel: shouldCancel)
-        }
-        
-        // Check cancellation
-        if shouldCancel {
-            throw NSError(domain: "ImageIntact", code: 6, userInfo: [NSLocalizedDescriptionKey: "Checksum cancelled by user"])
-        }
-        
-        // For smaller files, read entire file
-        do {
-            let fileData = try Data(contentsOf: fileURL, options: .mappedIfSafe)
-            let hash = SHA256.hash(data: fileData)
-            let hashString = hash.compactMap { String(format: "%02x", $0) }.joined()
-            return hashString
-        } catch {
-            // Fall back to file size-based checksum if file can't be read
-            let sizeHash = String(format: "%016x", size)
-            return "size:\(sizeHash)"
+        return try autoreleasepool {
+            // Check file size first
+            let attributes = try FileManager.default.attributesOfItem(atPath: fileURL.path)
+            let size = attributes[.size] as? Int64 ?? 0
+            
+            if size == 0 {
+                return "empty-file-0-bytes"
+            }
+            
+            // For large files, use streaming to avoid memory issues
+            if size > 10_000_000 { // 10MB - stream to prevent memory pressure
+                return try calculateStreamingChecksum(for: fileURL, size: size, shouldCancel: shouldCancel)
+            }
+            
+            // Check cancellation
+            if shouldCancel {
+                throw NSError(domain: "ImageIntact", code: 6, userInfo: [NSLocalizedDescriptionKey: "Checksum cancelled by user"])
+            }
+            
+            // For smaller files, read entire file
+            do {
+                let fileData = try Data(contentsOf: fileURL, options: .mappedIfSafe)
+                let hash = SHA256.hash(data: fileData)
+                let hashString = hash.compactMap { String(format: "%02x", $0) }.joined()
+                return hashString
+            } catch {
+                // Fall back to file size-based checksum if file can't be read
+                let sizeHash = String(format: "%016x", size)
+                return "size:\(sizeHash)"
+            }
         }
     }
     
     // Streaming checksum for large files
     nonisolated private static func calculateStreamingChecksum(for fileURL: URL, size: Int64, shouldCancel: Bool = false) throws -> String {
-        guard let inputStream = InputStream(url: fileURL) else {
-            throw NSError(domain: "ImageIntact", code: 8, userInfo: [NSLocalizedDescriptionKey: "Cannot open file stream"])
-        }
-        
-        inputStream.open()
-        defer { inputStream.close() }
-        
-        var hasher = SHA256()
-        let bufferSize = 1024 * 1024 // 1MB buffer
-        let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: bufferSize)
-        defer { buffer.deallocate() }
-        
-        var totalBytesRead: Int64 = 0
-        
-        while inputStream.hasBytesAvailable {
-            // Check for cancellation
-            if shouldCancel {
-                throw NSError(domain: "ImageIntact", code: 6, userInfo: [NSLocalizedDescriptionKey: "Checksum cancelled by user"])
+        return try autoreleasepool {
+            guard let inputStream = InputStream(url: fileURL) else {
+                throw NSError(domain: "ImageIntact", code: 8, userInfo: [NSLocalizedDescriptionKey: "Cannot open file stream"])
             }
             
-            let bytesRead = inputStream.read(buffer, maxLength: bufferSize)
-            if bytesRead < 0 {
-                // Stream error
-                throw NSError(domain: "ImageIntact", code: 9, userInfo: [NSLocalizedDescriptionKey: "Stream read error: \(inputStream.streamError?.localizedDescription ?? "unknown")"])
-            } else if bytesRead == 0 {
-                // End of stream
-                break
-            } else {
-                // Add bytes to hasher
-                hasher.update(data: Data(bytes: buffer, count: bytesRead))
-                totalBytesRead += Int64(bytesRead)
+            inputStream.open()
+            defer { inputStream.close() }
+            
+            var hasher = SHA256()
+            let bufferSize = 1024 * 1024 // 1MB buffer
+            let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: bufferSize)
+            defer { buffer.deallocate() }
+            
+            var totalBytesRead: Int64 = 0
+            
+            while inputStream.hasBytesAvailable {
+                // Wrap each iteration in its own autoreleasepool for very large files
+                try autoreleasepool {
+                    // Check for cancellation
+                    if shouldCancel {
+                        throw NSError(domain: "ImageIntact", code: 6, userInfo: [NSLocalizedDescriptionKey: "Checksum cancelled by user"])
+                    }
+                    
+                    let bytesRead = inputStream.read(buffer, maxLength: bufferSize)
+                    if bytesRead < 0 {
+                        // Stream error
+                        throw NSError(domain: "ImageIntact", code: 9, userInfo: [NSLocalizedDescriptionKey: "Stream read error: \(inputStream.streamError?.localizedDescription ?? "unknown")"])
+                    } else if bytesRead == 0 {
+                        // End of stream
+                        return
+                    } else {
+                        // Add bytes to hasher
+                        hasher.update(data: Data(bytes: buffer, count: bytesRead))
+                        totalBytesRead += Int64(bytesRead)
+                    }
+                }
             }
+            
+            let hash = hasher.finalize()
+            let hashString = hash.compactMap { String(format: "%02x", $0) }.joined()
+            return hashString
         }
-        
-        let hash = hasher.finalize()
-        let hashString = hash.compactMap { String(format: "%02x", $0) }.joined()
-        return hashString
     }
     
     // MARK: - Formatting Helpers

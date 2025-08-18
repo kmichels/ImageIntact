@@ -36,6 +36,13 @@ extension BackupManager {
             isProcessing = false
             shouldCancel = false
             currentOrchestrator = nil
+            
+            // Schedule cleanup after a delay so UI can read the stats first
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 3_000_000_000) // 3 seconds - give UI time to show stats
+                cleanupMemory()
+                print("✅ Memory cleanup completed after UI update")
+            }
         }
         
         // Create orchestrator with our components
@@ -98,10 +105,24 @@ extension BackupManager {
         let failedCount = failures.count
         
         // Update overall stats from progress tracker
-        statistics.totalFilesProcessed = processedFiles
+        // Use the actual manifest count for files processed, not the sum across destinations
+        statistics.totalFilesProcessed = min(processedFiles, totalFiles)  // Cap at total files to avoid multiplication
         statistics.totalFilesFailed = failedCount
         statistics.totalFilesInSource = totalFiles
-        statistics.totalBytesProcessed = progressTracker.totalBytesCopied
+        
+        // Debug logging to diagnose the issue
+        print("📊 Statistics Debug:")
+        print("   - progressTracker.sourceTotalBytes: \(progressTracker.sourceTotalBytes)")
+        print("   - progressTracker.totalBytesCopied: \(progressTracker.totalBytesCopied)")
+        print("   - progressTracker.totalBytesToCopy: \(progressTracker.totalBytesToCopy)")
+        print("   - progressTracker.copySpeed: \(progressTracker.copySpeed)")
+        
+        // Fix: Use the actual total bytes from source, not the copied bytes which may be 0
+        statistics.totalBytesProcessed = progressTracker.sourceTotalBytes > 0 ? progressTracker.sourceTotalBytes : progressTracker.totalBytesCopied
+        
+        print("   - statistics.totalBytesProcessed: \(statistics.totalBytesProcessed)")
+        print("   - statistics.duration: \(statistics.duration ?? 0)")
+        print("   - statistics.averageThroughput: \(statistics.averageThroughput)")
         
         // Estimate file type breakdown from source scan
         for (fileType, count) in sourceFileTypes {
@@ -116,12 +137,14 @@ extension BackupManager {
         // Update destination stats from progress tracker
         for (destName, progress) in progressTracker.destinationProgress {
             let destFailures = failures.filter { $0.destination.contains(destName) }.count
+            // Calculate actual bytes written per destination (divide by number of destinations)
+            let bytesPerDest = progressTracker.sourceTotalBytes > 0 ? progressTracker.sourceTotalBytes : (progressTracker.totalBytesCopied / Int64(max(1, destinationItems.count)))
             statistics.destinationStats[destName] = DestinationStatistics(
                 destinationName: destName,
                 filesCopied: progress - destFailures,
                 filesSkipped: 0,
                 filesFailed: destFailures,
-                bytesWritten: progressTracker.sourceTotalBytes,
+                bytesWritten: bytesPerDest,
                 timeElapsed: statistics.duration ?? 0,
                 averageSpeed: progressTracker.copySpeed
             )
@@ -271,13 +294,14 @@ extension BackupManager {
         // Update ETA based on new byte counters
         updateETA()
         
-        // Update processedFiles with the total number of verified files across all destinations
-        // This fixes the bug where verifiedCount stays at 0
-        var totalVerified = 0
+        // Update processedFiles with the number of unique files processed
+        // Use the maximum verified count from any destination (they should all be the same)
+        // Don't sum them up or we'll count each file multiple times
+        var maxVerified = 0
         for status in coordinator.destinationStatuses.values {
-            totalVerified += status.verifiedCount
+            maxVerified = max(maxVerified, status.verifiedCount)
         }
-        progressTracker.processedFiles = totalVerified
+        progressTracker.processedFiles = maxVerified
         
         // For overall status text, show counts instead of phase
         if completeCount > 0 || copyingCount > 0 || verifyingCount > 0 {

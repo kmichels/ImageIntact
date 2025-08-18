@@ -137,6 +137,13 @@ class BackupCoordinator: ObservableObject {
         }
         destinationQueues.removeAll()
         
+        // Clear manifest to free memory
+        self.manifest.removeAll(keepingCapacity: false)
+        
+        // Clear all tracking data
+        self.destinationStatuses.removeAll(keepingCapacity: false)
+        self.collectedFailures.removeAll(keepingCapacity: false)
+        
         print("🎯 BackupCoordinator: Setting isRunning to false")
         isRunning = false
         print("🎯 BackupCoordinator: startBackup() complete")
@@ -159,6 +166,11 @@ class BackupCoordinator: ObservableObject {
             }
             // Clear queues to release memory
             self.destinationQueues.removeAll()
+            // Clear manifest to free memory
+            self.manifest.removeAll(keepingCapacity: false)
+            // Clear all tracking data
+            self.destinationStatuses.removeAll(keepingCapacity: false)
+            self.collectedFailures.removeAll(keepingCapacity: false)
             // Only set isRunning to false after cleanup
             self.isRunning = false
         }

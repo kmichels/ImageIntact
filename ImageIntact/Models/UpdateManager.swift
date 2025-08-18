@@ -135,11 +135,13 @@ class UpdateManager {
         downloadProgress = 0.0
         updateCheckResult = .downloading(progress: 0.0)
         
-        downloadTask = Task {
+        downloadTask = Task { [weak self] in
+            guard let self = self else { return }
             do {
                 print("Downloading update v\(update.version)...")
-                let localURL = try await updateProvider.downloadUpdate(update) { progress in
-                    Task { @MainActor in
+                let localURL = try await self.updateProvider.downloadUpdate(update) { progress in
+                    Task { @MainActor [weak self] in
+                        guard let self = self else { return }
                         self.downloadProgress = progress
                         self.updateCheckResult = .downloading(progress: progress)
                     }
@@ -151,18 +153,24 @@ class UpdateManager {
                 NSWorkspace.shared.open(localURL)
                 
                 // Dismiss sheets
-                showUpdateAlert = false
-                showUpdateSheet = false
-                isDownloadingUpdate = false
-                
-                // Show completion message
-                showDownloadCompleteAlert(at: localURL)
+                await MainActor.run { [weak self] in
+                    guard let self = self else { return }
+                    self.showUpdateAlert = false
+                    self.showUpdateSheet = false
+                    self.isDownloadingUpdate = false
+                    
+                    // Show completion message
+                    self.showDownloadCompleteAlert(at: localURL)
+                }
                 
             } catch {
                 print("Download failed: \(error)")
-                lastError = error as? UpdateError ?? .downloadFailed(error)
-                isDownloadingUpdate = false
-                updateCheckResult = .error(error)
+                await MainActor.run { [weak self] in
+                    guard let self = self else { return }
+                    self.lastError = error as? UpdateError ?? .downloadFailed(error)
+                    self.isDownloadingUpdate = false
+                    self.updateCheckResult = .error(error)
+                }
             }
         }
     }

@@ -35,7 +35,7 @@ class EventLogger {
     static let shared = EventLogger()
     
     private let container: NSPersistentContainer
-    private var currentSession: BackupSession?
+    private var currentSessionID: UUID?
     private let backgroundContext: NSManagedObjectContext
     
     private init() {
@@ -90,22 +90,24 @@ class EventLogger {
             uuid = UUID()
         }
         
-        // Create session synchronously but save asynchronously
-        let session = BackupSession(context: backgroundContext)
-        session.id = uuid
-        session.startedAt = Date()
-        session.sourceURL = sourceURL.path
-        session.fileCount = Int32(fileCount)
-        session.totalBytes = totalBytes
-        session.status = "running"
-        session.toolVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown"
+        // Store the session ID for later use
+        currentSessionID = uuid
         
-        currentSession = session
-        
-        // Save asynchronously to avoid blocking
+        // Create session in background context
         backgroundContext.perform { [weak self] in
+            guard let self = self else { return }
+            
+            let session = BackupSession(context: self.backgroundContext)
+            session.id = uuid
+            session.startedAt = Date()
+            session.sourceURL = sourceURL.path
+            session.fileCount = Int32(fileCount)
+            session.totalBytes = totalBytes
+            session.status = "running"
+            session.toolVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown"
+            
             do {
-                try self?.backgroundContext.save()
+                try self.backgroundContext.save()
                 print("📝 Started logging session: \(uuid.uuidString)")
             } catch {
                 print("❌ Failed to save session start: \(error)")
@@ -124,22 +126,41 @@ class EventLogger {
     
     /// Complete the current session
     func completeSession(status: String = "completed") {
-        guard let session = currentSession else { return }
+        guard let sessionID = currentSessionID else { return }
         
         // Use perform instead of performAndWait to avoid potential deadlocks
         backgroundContext.perform { [weak self] in
-            session.completedAt = Date()
-            session.status = status
+            guard let self = self else { return }
+            
+            // Fetch the session in this context
+            let request = NSFetchRequest<BackupSession>(entityName: "BackupSession")
+            request.predicate = NSPredicate(format: "id == %@", sessionID as CVarArg)
+            request.fetchLimit = 1
             
             do {
-                try self?.backgroundContext.save()
-                print("📝 Completed logging session with status: \(status)")
+                if let session = try self.backgroundContext.fetch(request).first {
+                    session.completedAt = Date()
+                    session.status = status
+                    try self.backgroundContext.save()
+                    print("📝 Completed logging session with status: \(status)")
+                }
             } catch {
                 print("❌ Failed to save session completion: \(error)")
             }
         }
         
-        currentSession = nil
+        currentSessionID = nil
+    }
+    
+    /// Reset Core Data contexts to free memory (call only when no operations are active)
+    func resetContexts() {
+        guard currentSessionID == nil else { 
+            print("⚠️ Cannot reset contexts while session is active")
+            return 
+        }
+        // Don't reset contexts - it causes validation errors
+        // Just let Core Data manage its own memory
+        print("📝 Core Data memory management delegated to system")
     }
     
     // MARK: - Event Logging
@@ -156,13 +177,23 @@ class EventLogger {
         metadata: [String: Any]? = nil,
         duration: TimeInterval? = nil
     ) {
-        guard let session = currentSession else { 
+        guard let sessionID = currentSessionID else { 
             print("⚠️ No active session for event logging")
             return 
         }
         
         backgroundContext.perform { [weak self] in
             guard let self = self else { return }
+            
+            // Fetch the session in this context
+            let sessionRequest = NSFetchRequest<BackupSession>(entityName: "BackupSession")
+            sessionRequest.predicate = NSPredicate(format: "id == %@", sessionID as CVarArg)
+            sessionRequest.fetchLimit = 1
+            
+            guard let session = try? self.backgroundContext.fetch(sessionRequest).first else {
+                print("⚠️ Session not found for event logging")
+                return
+            }
             
             let event = BackupEvent(context: self.backgroundContext)
             event.id = UUID()

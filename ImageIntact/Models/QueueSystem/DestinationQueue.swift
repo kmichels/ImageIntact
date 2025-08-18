@@ -46,7 +46,7 @@ actor DestinationQueue {
     private var currentWorkerCount: Int = 2
     private let minWorkers = 1
     private let maxWorkers = 4  // Reduced from 8 to prevent resource exhaustion
-    private let maxMemoryUsageMB = 500  // Maximum memory usage before throttling
+    private let maxMemoryUsageMB = 750  // Increased from 500MB - more appropriate for modern systems
     
     init(destination: URL) {
         self.destination = destination
@@ -238,7 +238,7 @@ actor DestinationQueue {
                 if let destAttributes = try? FileManager.default.attributesOfItem(atPath: destPath.path),
                    let destSize = destAttributes[.size] as? Int64,
                    destSize == task.size {
-                    // Size matches, verify checksum
+                    // Size matches, verify checksum (autoreleasepool is inside the static method)
                     let existingChecksum = try BackupManager.sha256ChecksumStatic(
                         for: destPath,
                         shouldCancel: shouldCancel
@@ -443,7 +443,7 @@ actor DestinationQueue {
                     continue
                 }
                 
-                // Verify checksum
+                // Verify checksum (autoreleasepool is inside the static method)
                 let verifyStartTime = Date()
                 let actualChecksum = try BackupManager.sha256ChecksumStatic(
                     for: destPath,

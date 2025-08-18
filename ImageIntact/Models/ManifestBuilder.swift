@@ -91,6 +91,7 @@ actor ManifestBuilder {
                 // Calculate checksum with better error handling
                 let checksum: String
                 do {
+                    // Checksum calculation already has autoreleasepool internally
                     checksum = try await calculateChecksum(for: url, shouldCancel: shouldCancel)
                 } catch {
                     // Log specific error and continue with next file
