@@ -35,8 +35,9 @@ class EventLogger {
     static let shared = EventLogger()
     
     private let container: NSPersistentContainer
-    private var currentSessionID: UUID?
-    private let backgroundContext: NSManagedObjectContext
+    internal var currentSessionID: UUID?
+    internal let backgroundContext: NSManagedObjectContext
+    private let batchLogger = BatchEventLogger(batchSize: 100, maxBatchWaitTime: 2.0)
     
     private init() {
         // Create container
@@ -44,7 +45,7 @@ class EventLogger {
         
         // Configure for performance
         if let description = container.persistentStoreDescriptions.first {
-            // Enable persistent history tracking for future CloudKit sync
+            // Enable persistent history tracking for batch operations
             description.setOption(true as NSNumber, 
                                  forKey: NSPersistentHistoryTrackingKey)
             
@@ -54,8 +55,13 @@ class EventLogger {
             
             // Set SQLite pragmas for performance
             description.setOption(["journal_mode": "WAL",
-                                   "synchronous": "NORMAL"] as NSDictionary,
+                                   "synchronous": "NORMAL",
+                                   "cache_size": "10000"] as NSDictionary,
                                  forKey: NSSQLitePragmasOption)
+            
+            // Enable batch operations
+            description.type = NSSQLiteStoreType
+            description.shouldAddStoreAsynchronously = false
         }
         
         // Load stores
@@ -128,6 +134,11 @@ class EventLogger {
     func completeSession(status: String = "completed") {
         guard let sessionID = currentSessionID else { return }
         
+        // Flush any pending events before completing
+        Task {
+            await batchLogger.flushEvents()
+        }
+        
         // Use perform instead of performAndWait to avoid potential deadlocks
         backgroundContext.perform { [weak self] in
             guard let self = self else { return }
@@ -163,9 +174,52 @@ class EventLogger {
         print("📝 Core Data memory management delegated to system")
     }
     
+    /// Delete old sessions and events using batch delete (efficient memory usage)
+    func deleteOldSessions(olderThan days: Int = 30) {
+        backgroundContext.perform { [weak self] in
+            guard let self = self else { return }
+            
+            let cutoffDate = Calendar.current.date(byAdding: .day, value: -days, to: Date()) ?? Date()
+            
+            // First delete old events
+            let eventFetch: NSFetchRequest<NSFetchRequestResult> = BackupEvent.fetchRequest()
+            eventFetch.predicate = NSPredicate(format: "timestamp < %@", cutoffDate as NSDate)
+            
+            let eventDelete = NSBatchDeleteRequest(fetchRequest: eventFetch)
+            eventDelete.resultType = .resultTypeCount
+            
+            do {
+                let eventResult = try self.backgroundContext.execute(eventDelete)
+                if let deleteResult = eventResult as? NSBatchDeleteResult,
+                   let count = deleteResult.result as? Int {
+                    print("🗑️ Deleted \(count) old events")
+                }
+            } catch {
+                print("❌ Failed to delete old events: \(error)")
+            }
+            
+            // Then delete old sessions
+            let sessionFetch: NSFetchRequest<NSFetchRequestResult> = BackupSession.fetchRequest()
+            sessionFetch.predicate = NSPredicate(format: "startedAt < %@", cutoffDate as NSDate)
+            
+            let sessionDelete = NSBatchDeleteRequest(fetchRequest: sessionFetch)
+            sessionDelete.resultType = .resultTypeCount
+            
+            do {
+                let sessionResult = try self.backgroundContext.execute(sessionDelete)
+                if let deleteResult = sessionResult as? NSBatchDeleteResult,
+                   let count = deleteResult.result as? Int {
+                    print("🗑️ Deleted \(count) old sessions")
+                }
+            } catch {
+                print("❌ Failed to delete old sessions: \(error)")
+            }
+        }
+    }
+    
     // MARK: - Event Logging
     
-    /// Log a backup event
+    /// Log a backup event (now batched for performance)
     func logEvent(
         type: EventType,
         severity: EventSeverity = .info,
@@ -177,10 +231,58 @@ class EventLogger {
         metadata: [String: Any]? = nil,
         duration: TimeInterval? = nil
     ) {
-        guard let sessionID = currentSessionID else { 
+        guard currentSessionID != nil else { 
             print("⚠️ No active session for event logging")
             return 
         }
+        
+        // Use batch logging for file operations, immediate logging for important events
+        let shouldBatch = type == .copy || type == .verify || type == .skip
+        
+        if shouldBatch {
+            // Add to batch for later processing
+            Task {
+                await batchLogger.addEvent(
+                    type: type,
+                    severity: severity,
+                    file: file,
+                    destination: destination,
+                    fileSize: fileSize,
+                    checksum: checksum,
+                    error: error,
+                    metadata: metadata,
+                    duration: duration
+                )
+            }
+        } else {
+            // Important events (start, complete, error, cancel) log immediately
+            logEventImmediately(
+                type: type,
+                severity: severity,
+                file: file,
+                destination: destination,
+                fileSize: fileSize,
+                checksum: checksum,
+                error: error,
+                metadata: metadata,
+                duration: duration
+            )
+        }
+    }
+    
+    /// Log an event immediately (for important events)
+    private func logEventImmediately(
+        type: EventType,
+        severity: EventSeverity = .info,
+        file: URL? = nil,
+        destination: URL? = nil,
+        fileSize: Int64 = 0,
+        checksum: String? = nil,
+        error: Error? = nil,
+        metadata: [String: Any]? = nil,
+        duration: TimeInterval? = nil
+    ) {
+        guard let sessionID = currentSessionID else { return }
         
         backgroundContext.perform { [weak self] in
             guard let self = self else { return }
@@ -225,23 +327,30 @@ class EventLogger {
     
     /// Log a cancellation event with context about what was in-flight
     func logCancellation(filesInFlight: [(file: URL, destination: URL, operation: String)]) {
-        // Log the cancellation event
-        logEvent(type: .cancel, severity: .warning, metadata: [
-            "filesInFlightCount": filesInFlight.count
-        ])
-        
-        // Log each in-flight file
-        for item in filesInFlight {
-            logEvent(
-                type: .cancel,
-                severity: .info,
-                file: item.file,
-                destination: item.destination,
-                metadata: ["operation": item.operation, "wasInFlight": true]
-            )
+        // Flush pending events first
+        Task {
+            await batchLogger.flushEvents()
+            
+            // Log the cancellation event
+            await MainActor.run {
+                self.logEvent(type: .cancel, severity: .warning, metadata: [
+                    "filesInFlightCount": filesInFlight.count
+                ])
+                
+                // Log each in-flight file
+                for item in filesInFlight {
+                    self.logEvent(
+                        type: .cancel,
+                        severity: .info,
+                        file: item.file,
+                        destination: item.destination,
+                        metadata: ["operation": item.operation, "wasInFlight": true]
+                    )
+                }
+                
+                self.completeSession(status: "cancelled")
+            }
         }
-        
-        completeSession(status: "cancelled")
     }
     
     // MARK: - Report Generation
