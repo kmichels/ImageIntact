@@ -268,8 +268,8 @@ class BackupManager {
         progressTracker.sourceTotalBytes = 0
         
         // Start background scan for image files
-        Task {
-            await scanSourceFolder(url)
+        Task { [weak self] in
+            await self?.scanSourceFolder(url)
         }
     }
     
@@ -460,8 +460,8 @@ class BackupManager {
         hasWrittenDebugLog = false
         
         // Use the new queue-based backup system for parallel destination processing
-        Task {
-            await performQueueBasedBackup(source: source, destinations: destinations)
+        Task { [weak self] in
+            await self?.performQueueBasedBackup(source: source, destinations: destinations)
         }
     }
     
@@ -471,8 +471,8 @@ class BackupManager {
         statusMessage = "Cancelling backup..."
         
         // Cancel orchestrator if using new system
-        Task { @MainActor in
-            currentOrchestrator?.cancel()
+        Task { @MainActor [weak self] in
+            self?.currentOrchestrator?.cancel()
         }
         
         // Cancel legacy coordinator if still in use
@@ -484,15 +484,15 @@ class BackupManager {
         
         // Cancel the queue-based coordinator if it's running
         if let coordinator = currentCoordinator {
-            Task { @MainActor in
-                coordinator.cancelBackup()
+            Task { @MainActor [weak coordinator] in
+                coordinator?.cancelBackup()
             }
         }
         currentCoordinator = nil
         
         // Clean up resources
-        Task {
-            await resourceManager.cleanup()
+        Task { [weak self] in
+            await self?.resourceManager.cleanup()
         }
         
         // Force memory cleanup
@@ -530,18 +530,20 @@ class BackupManager {
         print("✅ Initial memory cleanup completed")
         
         // Schedule deep cleanup after UI has shown stats
-        Task { @MainActor in
+        Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: 10_000_000_000) // 10 seconds
             
+            guard let self = self else { return }
+            
             // Now clear the rest
-            failedFiles.removeAll(keepingCapacity: false)
-            progressTracker.resetAll()
-            progressTracker.destinationProgress.removeAll(keepingCapacity: false)
-            progressTracker.destinationStates.removeAll(keepingCapacity: false)
-            statistics.reset()
-            statusMessage = ""
-            overallStatusText = ""
-            scanProgress = ""
+            self.failedFiles.removeAll(keepingCapacity: false)
+            self.progressTracker.resetAll()
+            self.progressTracker.destinationProgress.removeAll(keepingCapacity: false)
+            self.progressTracker.destinationStates.removeAll(keepingCapacity: false)
+            self.statistics.reset()
+            self.statusMessage = ""
+            self.overallStatusText = ""
+            self.scanProgress = ""
             
             autoreleasepool { }
             print("✅ Deep memory cleanup completed")

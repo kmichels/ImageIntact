@@ -38,9 +38,9 @@ extension BackupManager {
             currentOrchestrator = nil
             
             // Schedule cleanup after a delay so UI can read the stats first
-            Task { @MainActor in
+            Task { @MainActor [weak self] in
                 try? await Task.sleep(nanoseconds: 3_000_000_000) // 3 seconds - give UI time to show stats
-                cleanupMemory()
+                self?.cleanupMemory()
                 print("✅ Memory cleanup completed after UI update")
             }
         }

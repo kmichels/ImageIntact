@@ -65,8 +65,8 @@ class ProgressTracker: ObservableObject {
         destinationStates.removeAll()
         
         // Reset actor state
-        Task {
-            await progressState.resetAll()
+        Task { [weak progressState] in
+            await progressState?.resetAll()
         }
     }
     
@@ -92,8 +92,8 @@ class ProgressTracker: ObservableObject {
         }
         
         // Also update actor state asynchronously
-        Task {
-            _ = await progressState.incrementFileCounter()
+        Task { [weak progressState] in
+            _ = await progressState?.incrementFileCounter()
         }
     }
     
@@ -111,8 +111,8 @@ class ProgressTracker: ObservableObject {
         }
         
         // Also update actor state
-        Task {
-            await progressState.initializeDestinations(destNames)
+        Task { [weak progressState] in
+            await progressState?.initializeDestinations(destNames)
         }
     }
     
@@ -123,8 +123,8 @@ class ProgressTracker: ObservableObject {
         destinationProgress[destinationName] = newValue
         
         // Also update actor state asynchronously
-        Task {
-            _ = await progressState.incrementDestinationProgress(for: destinationName)
+        Task { [weak progressState] in
+            _ = await progressState?.incrementDestinationProgress(for: destinationName)
         }
         
         return newValue
@@ -135,8 +135,8 @@ class ProgressTracker: ObservableObject {
         destinationStates[destination] = state
         
         // Also update actor state asynchronously
-        Task {
-            await progressState.setDestinationState(state, for: destination)
+        Task { [weak progressState] in
+            await progressState?.setDestinationState(state, for: destination)
         }
     }
     
@@ -145,8 +145,8 @@ class ProgressTracker: ObservableObject {
         destinationProgress[destination] = progress
         
         // Also update actor state asynchronously
-        Task {
-            await progressState.setDestinationProgress(progress, for: destination)
+        Task { [weak progressState] in
+            await progressState?.setDestinationProgress(progress, for: destination)
         }
     }
     

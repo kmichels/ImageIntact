@@ -106,9 +106,9 @@ class BackupOrchestrator {
         }
         
         defer {
-            Task {
-                await resourceManager.stopAccessingAllSecurityScopedResources()
-                await resourceManager.cleanup()
+            Task { [weak resourceManager] in
+                await resourceManager?.stopAccessingAllSecurityScopedResources()
+                await resourceManager?.cleanup()
             }
         }
         
