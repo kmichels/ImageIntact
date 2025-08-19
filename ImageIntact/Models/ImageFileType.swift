@@ -324,8 +324,20 @@ enum ImageFileType: String, CaseIterable {
     }
     
     static func isSupportedFile(_ url: URL) -> Bool {
+        // Use UTI detection as primary method (more reliable)
+        let utiDetector = UTIFileTypeDetector.shared
+        if utiDetector.isSupportedFile(url) {
+            return true
+        }
+        
+        // Fallback to extension checking for edge cases
         let ext = url.pathExtension.lowercased()
         return from(fileExtension: ext) != nil
+    }
+    
+    // Enhanced version with detailed info
+    static func getFileInfo(_ url: URL) -> FileTypeInfo {
+        return UTIFileTypeDetector.shared.getFileTypeInfo(url)
     }
     
     // Keep for compatibility
