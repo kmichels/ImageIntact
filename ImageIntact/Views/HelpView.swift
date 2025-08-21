@@ -3,6 +3,12 @@ import SwiftUI
 // Help view
 struct HelpView: View {
     @Binding var isPresented: Bool
+    var scrollToSection: String? = nil
+    
+    init(isPresented: Binding<Bool> = .constant(true), scrollToSection: String? = nil) {
+        self._isPresented = isPresented
+        self.scrollToSection = scrollToSection
+    }
     
     var body: some View {
         VStack(spacing: 0) {
@@ -24,8 +30,9 @@ struct HelpView: View {
             Divider()
             
             // Content
-            ScrollView {
-                VStack(alignment: .leading, spacing: 24) {
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 24) {
                     // What's New
                     HelpSection(title: "What's New in v1.2") {
                         VStack(alignment: .leading, spacing: 8) {
@@ -98,6 +105,50 @@ struct HelpView: View {
                         }
                     }
                     
+                    // Privacy and Security
+                    HelpSection(title: "Privacy & Security", id: "privacy") {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("ImageIntact protects your privacy and data:")
+                            
+                            VStack(alignment: .leading, spacing: 8) {
+                                HelpPoint(title: "Path Anonymization", 
+                                         description: "Automatically removes personal information from exported logs")
+                                
+                                HelpPoint(title: "Local Processing Only", 
+                                         description: "All operations happen on your Mac - no cloud services or internet required")
+                                
+                                HelpPoint(title: "Backup History", 
+                                         description: "Your backup records stay on your Mac and are never shared")
+                                
+                                HelpPoint(title: "Secure Verification", 
+                                         description: "Uses SHA-256 checksums to ensure data integrity")
+                            }
+                            
+                            GroupBox {
+                                VStack(alignment: .leading, spacing: 8) {
+                                    Text("About Path Anonymization")
+                                        .font(.caption)
+                                        .fontWeight(.semibold)
+                                    
+                                    Text("When you export diagnostic logs, ImageIntact can automatically replace sensitive information like usernames and drive names with generic placeholders. This protects your privacy when sharing logs for support.")
+                                        .font(.caption2)
+                                        .foregroundColor(.secondary)
+                                    
+                                    HStack(spacing: 8) {
+                                        Text("Example:")
+                                            .font(.caption2)
+                                            .foregroundColor(.secondary)
+                                        
+                                        Text("/Users/john → /Users/[USER]")
+                                            .font(.system(size: 10, design: .monospaced))
+                                            .foregroundColor(.accentColor)
+                                    }
+                                }
+                                .padding(8)
+                            }
+                        }
+                    }
+                    
                     // Performance
                     HelpSection(title: "Performance (v1.2)") {
                         VStack(alignment: .leading, spacing: 12) {
@@ -165,6 +216,16 @@ struct HelpView: View {
                 }
                 .padding(20)
             }
+            .onAppear {
+                if let section = scrollToSection {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                        withAnimation {
+                            proxy.scrollTo(section, anchor: .top)
+                        }
+                    }
+                }
+            }
+        }
         }
         .frame(width: 600, height: 700)
         .background(Color(NSColor.windowBackgroundColor))
@@ -174,10 +235,12 @@ struct HelpView: View {
 // Help section container
 struct HelpSection<Content: View>: View {
     let title: String
+    let id: String?
     let content: Content
     
-    init(title: String, @ViewBuilder content: () -> Content) {
+    init(title: String, id: String? = nil, @ViewBuilder content: () -> Content) {
         self.title = title
+        self.id = id
         self.content = content()
     }
     
@@ -187,6 +250,7 @@ struct HelpSection<Content: View>: View {
                 .font(.title2)
                 .fontWeight(.semibold)
                 .foregroundColor(.primary)
+                .id(id)
             
             content
         }

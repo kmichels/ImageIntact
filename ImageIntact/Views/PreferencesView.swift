@@ -406,6 +406,7 @@ struct PerformancePreferencesView: View {
 struct LoggingPreferencesView: View {
     @ObservedObject private var preferences = PreferencesManager.shared
     @State private var showClearConfirmation = false
+    @State private var showPrivacyExplanation = false
     
     var body: some View {
         VStack(spacing: 0) {
@@ -521,9 +522,29 @@ struct LoggingPreferencesView: View {
                             .foregroundColor(.primary)
                         
                         VStack(alignment: .leading, spacing: 10) {
-                            Toggle("Anonymize paths when exporting logs", isOn: $preferences.anonymizePathsInExport)
-                                .font(.system(size: 13))
-                                .help("Replace usernames and volume names with placeholders in exported logs")
+                            HStack(alignment: .top, spacing: 8) {
+                                Toggle("Anonymize paths when exporting logs", isOn: $preferences.anonymizePathsInExport)
+                                    .font(.system(size: 13))
+                                    .help("Replace usernames and volume names with placeholders in exported logs")
+                                
+                                Button(action: {
+                                    showPrivacyExplanation = true
+                                }) {
+                                    Image(systemName: "questionmark.circle")
+                                        .foregroundColor(.secondary)
+                                        .font(.system(size: 12))
+                                }
+                                .buttonStyle(.plain)
+                                .help("Learn about path anonymization")
+                            }
+                            
+                            // Show example when enabled
+                            if preferences.anonymizePathsInExport {
+                                Text("Example: /Users/yourname/Pictures → /Users/[USER]/Pictures")
+                                    .font(.system(size: 10))
+                                    .foregroundColor(.secondary)
+                                    .padding(.leading, 20)
+                            }
                             
                             Button("Clear Operational Logs") {
                                 showClearConfirmation = true
@@ -548,6 +569,9 @@ struct LoggingPreferencesView: View {
             Button("Cancel", role: .cancel) { }
         } message: {
             Text("This will remove all debug and error logs. Your backup history will be preserved.")
+        }
+        .sheet(isPresented: $showPrivacyExplanation) {
+            PrivacyExplanationView()
         }
     }
 }
