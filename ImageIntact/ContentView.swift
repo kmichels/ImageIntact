@@ -26,6 +26,11 @@ struct ContentView: View {
                 Text("Verify and backup your photos to multiple locations")
                     .font(.subheadline)
                     .foregroundColor(.secondary)
+                
+                // Subtle system info display
+                Text(SystemCapabilities.shared.displayName)
+                    .font(.caption2)
+                    .foregroundColor(Color.secondary.opacity(0.6))
             }
             .padding(.top, 20)
             .padding(.bottom, 10)

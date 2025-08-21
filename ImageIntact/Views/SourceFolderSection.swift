@@ -38,7 +38,7 @@ struct SourceFolderSection: View {
             // File type summary and filter
             if backupManager.sourceURL != nil {
                 VStack(alignment: .leading, spacing: 8) {
-                    // File type summary
+                    // File type summary - what was found
                     HStack(spacing: 4) {
                         if backupManager.isScanning {
                             ProgressView()
@@ -60,6 +60,33 @@ struct SourceFolderSection: View {
                     // File type filter (only show after scan completes)
                     if !backupManager.sourceFileTypes.isEmpty && !backupManager.isScanning {
                         FileTypeFilterView(backupManager: backupManager)
+                        
+                        // Show what will be copied if filter is active
+                        if let filterInfo = backupManager.getFilteredFilesSummary(),
+                           !backupManager.fileTypeFilter.includedExtensions.isEmpty {
+                            HStack(spacing: 4) {
+                                Image(systemName: "arrow.right.circle.fill")
+                                    .font(.caption)
+                                    .foregroundColor(.accentColor)
+                                
+                                Text("\(filterInfo.willCopy) of \(filterInfo.total) files will be backed up")
+                                    .font(.caption)
+                                    .foregroundColor(.accentColor)
+                                
+                                if !filterInfo.summary.isEmpty && filterInfo.willCopy > 0 {
+                                    Text("• \(filterInfo.summary)")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                        .lineLimit(1)
+                                }
+                            }
+                            .padding(.vertical, 4)
+                            .padding(.horizontal, 8)
+                            .background(
+                                RoundedRectangle(cornerRadius: 6)
+                                    .fill(Color.accentColor.opacity(0.1))
+                            )
+                        }
                     }
                 }
                 .padding(.leading, 20)

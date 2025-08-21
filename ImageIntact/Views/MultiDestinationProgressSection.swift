@@ -79,6 +79,20 @@ struct MultiDestinationProgressSection: View {
 struct SimpleBackupProgress: View {
     @Bindable var backupManager: BackupManager
     
+    private func formatDataProgress() -> String {
+        let copiedMB = Double(backupManager.totalBytesCopied) / (1024 * 1024)
+        let totalMB = Double(backupManager.totalBytesToCopy) / (1024 * 1024)
+        
+        if totalMB > 1024 {
+            // Show in GB if over 1GB
+            let copiedGB = copiedMB / 1024
+            let totalGB = totalMB / 1024
+            return String(format: "%.1f/%.1f GB", copiedGB, totalGB)
+        } else {
+            return String(format: "%.0f/%.0f MB", copiedMB, totalMB)
+        }
+    }
+    
     private func phaseDescription(for phase: BackupPhase) -> String {
         switch phase {
         case .idle: return "Idle"
@@ -125,24 +139,37 @@ struct SimpleBackupProgress: View {
                     
                     Spacer()
                     
-                    // ETA display
-                    let eta = backupManager.formattedETA()
-                    if !eta.isEmpty {
-                        Text(eta)
+                    // Data processed display
+                    if backupManager.totalBytesCopied > 0 {
+                        let processedMB = Double(backupManager.totalBytesCopied) / (1024 * 1024)
+                        Text(String(format: "%.1f MB/s", backupManager.copySpeed > 0 ? backupManager.copySpeed : processedMB / max(1, Date().timeIntervalSince(backupManager.progressTracker.copyStartTime))))
                             .font(.caption)
                             .foregroundColor(.secondary)
+                            .monospacedDigit()
                     }
                     
-                    if backupManager.copySpeed > 0 {
-                        Text("\(String(format: "%.1f", backupManager.copySpeed)) MB/s")
+                    // ETA display
+                    let eta = backupManager.formattedETA()
+                    if !eta.isEmpty && eta != "Calculating..." {
+                        Text("• \(eta)")
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
                 }
                 
                 // Overall progress across all phases
-                ProgressView(value: backupManager.overallProgress)
-                    .progressViewStyle(.linear)
+                HStack(spacing: 8) {
+                    ProgressView(value: backupManager.overallProgress)
+                        .progressViewStyle(.linear)
+                    
+                    // Data progress indicator
+                    if backupManager.totalBytesToCopy > 0 {
+                        Text(formatDataProgress())
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                            .monospacedDigit()
+                    }
+                }
                 
                 HStack {
                     if !backupManager.currentFileName.isEmpty {

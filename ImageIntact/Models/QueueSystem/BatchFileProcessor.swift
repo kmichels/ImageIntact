@@ -114,9 +114,10 @@ actor BatchFileProcessor {
                             try copyFileWithBuffer(from: source, to: destination)
                             
                             completed += 1
+                            let currentProgress = completed
                             Task {
                                 await MainActor.run {
-                                    progress(completed)
+                                    progress(currentProgress)
                                 }
                             }
                         }

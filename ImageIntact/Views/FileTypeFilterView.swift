@@ -137,15 +137,26 @@ struct FileTypeFilterView: View {
         
         // Update selected types to match preset
         if preset.includedExtensions.isEmpty {
+            // "All Files" preset - select everything
             selectedTypes = Set(backupManager.sourceFileTypes.keys)
         } else {
+            // Filter preset - only select types that exist in source AND match the preset
             var types = Set<ImageFileType>()
-            for type in ImageFileType.allCases {
+            for (type, _) in backupManager.sourceFileTypes {
+                // Check if this type's extensions overlap with the preset's included extensions
                 if !type.extensions.intersection(preset.includedExtensions).isEmpty {
                     types.insert(type)
                 }
             }
             selectedTypes = types
+            
+            // If no matching types found, it means the preset doesn't match any files in source
+            // In this case, clear the filter to avoid backing up nothing
+            if selectedTypes.isEmpty {
+                logWarning("Preset '\(preset.includedExtensions)' doesn't match any files in source")
+                backupManager.fileTypeFilter = FileTypeFilter() // Reset to all files
+                selectedTypes = Set(backupManager.sourceFileTypes.keys)
+            }
         }
     }
     
@@ -292,7 +303,15 @@ struct FileTypeSelectionSheet: View {
         } else if selectedTypes.count == backupManager.sourceFileTypes.count {
             return "All \(totalFiles) files will be backed up"
         } else {
-            return "\(selectedFiles) of \(totalFiles) files will be backed up"
+            // Build a summary of selected types
+            var selectedSummary: [ImageFileType: Int] = [:]
+            for type in selectedTypes {
+                if let count = backupManager.sourceFileTypes[type] {
+                    selectedSummary[type] = count
+                }
+            }
+            let typesSummary = ImageFileScanner.formatScanResults(selectedSummary, groupRaw: false)
+            return "\(selectedFiles) of \(totalFiles) files will be backed up • \(typesSummary)"
         }
     }
     

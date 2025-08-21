@@ -188,8 +188,8 @@ extension EventLogger {
                 return
             }
             
-            // Create a mutable copy of events for the closure
-            var eventsCopy = events
+            // Create a copy of events for the closure
+            let eventsCopy = events
             var eventIndex = 0
             
             // Create batch insert request

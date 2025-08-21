@@ -156,14 +156,14 @@ class BackupManager {
             if canAccess {
                 savedSourceURL.stopAccessingSecurityScopedResource()
                 self.sourceURL = savedSourceURL
-                print("Loaded source: \(savedSourceURL.lastPathComponent)")
+                logInfo("Loaded source: \(savedSourceURL.lastPathComponent)")
                 // Trigger scan for the loaded source
                 Task {
                     await scanSourceFolder(savedSourceURL)
                 }
             } else {
                 // Bookmark is invalid - clear it
-                print("⚠️ Saved source bookmark is invalid, clearing...")
+                logWarning("Saved source bookmark is invalid, clearing...")
                 UserDefaults.standard.removeObject(forKey: sourceKey)
                 // Don't set sourceURL, leaving it nil will show folder picker
             }
@@ -185,7 +185,7 @@ class BackupManager {
                     // If we can't access the bookmark, clear it
                     if !accessing {
                         await MainActor.run {
-                            print("⚠️ Destination bookmark at index \(index) is invalid, clearing...")
+                            logWarning("Destination bookmark at index \(index) is invalid, clearing...")
                             if index < destinationURLs.count {
                                 destinationURLs[index] = nil
                             }
@@ -206,14 +206,14 @@ class BackupManager {
                         if let driveInfo = DriveAnalyzer.analyzeDrive(at: url) {
                             await MainActor.run {
                                 destinationDriveInfo[itemID] = driveInfo
-                                print("Initial drive analysis: \(driveInfo.deviceName) - \(driveInfo.connectionType.displayName)")
+                                logInfo("Initial drive analysis: \(driveInfo.deviceName) - \(driveInfo.connectionType.displayName)", category: .performance)
                             }
                         }
                     } else {
                         // Destination is not accessible (drive disconnected, etc.)
                         await MainActor.run {
                             // Store a special marker to indicate unavailable destination
-                            print("Destination not accessible: \(url.lastPathComponent)")
+                            logInfo("Destination not accessible: \(url.lastPathComponent)")
                             // We'll create a special DriveInfo to indicate unavailable
                             let unavailableInfo = DriveAnalyzer.DriveInfo(
                                 mountPath: url,
@@ -351,7 +351,7 @@ class BackupManager {
                 if let driveInfo = DriveAnalyzer.analyzeDrive(at: url) {
                     await MainActor.run {
                         destinationDriveInfo[itemID] = driveInfo
-                        print("Drive analyzed: \(driveInfo.deviceName) - \(driveInfo.connectionType.displayName) - Write: \(driveInfo.estimatedWriteSpeed) MB/s")
+                        logInfo("Drive analyzed: \(driveInfo.deviceName) - \(driveInfo.connectionType.displayName) - Write: \(driveInfo.estimatedWriteSpeed) MB/s", category: .performance)
                     }
                 }
             } else {
@@ -367,7 +367,7 @@ class BackupManager {
                         estimatedReadSpeed: 0
                     )
                     destinationDriveInfo[itemID] = unavailableInfo
-                    print("Destination not accessible: \(url.lastPathComponent)")
+                    logInfo("Destination not accessible: \(url.lastPathComponent)")
                 }
             }
         }
@@ -432,7 +432,7 @@ class BackupManager {
         // Update the URLs array
         destinationURLs = newURLs
         
-        print("Removed destination at index \(index), new count: \(destinationItems.count)")
+        logInfo("Removed destination at index \(index), new count: \(destinationItems.count)")
     }
     
     func canRunBackup() -> Bool {
@@ -441,7 +441,7 @@ class BackupManager {
     
     func runBackup() {
         guard let source = sourceURL else {
-            print("Missing source folder.")
+            logWarning("Missing source folder.")
             return
         }
 
@@ -508,12 +508,13 @@ class BackupManager {
         // DON'T clear failedFiles - needed for completion report
         // DON'T clear statistics - needed for completion report
         // DON'T clear progress data yet - UI may still need it
+        // DON'T clear sourceFileTypes - needed for UI display
         
-        // Clear file type data
-        sourceFileTypes.removeAll(keepingCapacity: false)
+        // Note: We keep sourceFileTypes since it's needed for the UI
+        // It will be refreshed when a new source is selected
         
-        // Clear destination info
-        destinationDriveInfo.removeAll(keepingCapacity: false)
+        // Don't clear destination info - keep it for UI display
+        // destinationDriveInfo.removeAll(keepingCapacity: false)
         
         // Clear orchestrator and coordinator references
         currentOrchestrator = nil
@@ -527,7 +528,7 @@ class BackupManager {
         // Force cleanup with autorelease pool
         autoreleasepool { }
         
-        print("✅ Initial memory cleanup completed")
+        logInfo("Initial memory cleanup completed", category: .performance)
         
         // Schedule deep cleanup after UI has shown stats
         Task { @MainActor [weak self] in
@@ -543,10 +544,10 @@ class BackupManager {
             self.statistics.reset()
             self.statusMessage = ""
             self.overallStatusText = ""
-            self.scanProgress = ""
+            // Keep scanProgress - it shows the file type summary
             
             autoreleasepool { }
-            print("✅ Deep memory cleanup completed")
+            logInfo("Deep memory cleanup completed", category: .performance)
         }
     }
     
@@ -554,7 +555,7 @@ class BackupManager {
     @MainActor
     private func writeDebugLog() {
         // Implementation for debug logging - placeholder for now
-        print("Debug log: \(failedFiles.count) failed files")
+        logInfo("Debug log: \(failedFiles.count) failed files")
     }
     
     // MARK: - Private Methods
@@ -571,9 +572,9 @@ class BackupManager {
             let bookmark = try url.bookmarkData(options: .withSecurityScope, includingResourceValuesForKeys: nil, relativeTo: nil)
             UserDefaults.standard.set(bookmark, forKey: key)
             UserDefaults.standard.synchronize() // Force save immediately
-            print("Successfully saved bookmark for \(key): \(url.lastPathComponent)")
+            logInfo("Successfully saved bookmark for \(key): \(url.lastPathComponent)")
         } catch {
-            print("Failed to save bookmark for \(key): \(error)")
+            logError("Failed to save bookmark for \(key): \(error)")
         }
     }
     
@@ -590,10 +591,10 @@ class BackupManager {
         // Load bookmarks sequentially until we hit a gap
         for key in keys {
             if let url = loadBookmark(forKey: key) {
-                print("Loaded destination from \(key): \(url.lastPathComponent)")
+                logInfo("Loaded destination from \(key): \(url.lastPathComponent)")
                 urls.append(url)
             } else {
-                print("No bookmark found for \(key)")
+                logInfo("No bookmark found for \(key)")
                 // Stop at first missing bookmark to avoid gaps
                 break
             }
@@ -604,7 +605,7 @@ class BackupManager {
             urls = [nil]
         }
         
-        print("Total destinations loaded: \(urls.count)")
+        logInfo("Total destinations loaded: \(urls.count)")
         return urls
     }
     
@@ -624,7 +625,7 @@ class BackupManager {
             // Hide the tag file
             try FileManager.default.setAttributes([.extensionHidden: true], ofItemAtPath: tagFile.path)
         } catch {
-            print("Failed to tag source folder: \(error)")
+            logError("Failed to tag source folder: \(error)")
         }
     }
     
@@ -637,9 +638,9 @@ class BackupManager {
         let tagFile = url.appendingPathComponent(".imageintact_source")
         do {
             try FileManager.default.removeItem(at: tagFile)
-            print("Removed source tag from: \(url.path)")
+            logInfo("Removed source tag from: \(url.path)")
         } catch {
-            print("Failed to remove source tag: \(error)")
+            logError("Failed to remove source tag: \(error)")
         }
     }
     
@@ -716,7 +717,7 @@ class BackupManager {
         if !accessing {
             scanProgress = "⚠️ Cannot access folder - permission denied"
             isScanning = false
-            print("⚠️ Failed to access security-scoped resource for: \(url.lastPathComponent)")
+            logWarning("Failed to access security-scoped resource for: \(url.lastPathComponent)")
             
             // Clear the invalid bookmark
             if sourceURL == url {
@@ -764,6 +765,36 @@ class BackupManager {
         }
         
         return result
+    }
+    
+    /// Get a summary of what files will be copied with the current filter
+    func getFilteredFilesSummary() -> (summary: String, willCopy: Int, total: Int)? {
+        guard !sourceFileTypes.isEmpty else { return nil }
+        
+        var filteredTypes: [ImageFileType: Int] = [:]
+        var totalFiltered = 0
+        var totalFiles = 0
+        
+        // Calculate totals
+        for (type, count) in sourceFileTypes {
+            totalFiles += count
+            
+            // Check if this type will be included with current filter
+            if fileTypeFilter.shouldInclude(fileType: type) {
+                filteredTypes[type] = count
+                totalFiltered += count
+            }
+        }
+        
+        // If no filter is active, all files will be copied
+        if fileTypeFilter.includedExtensions.isEmpty {
+            return (getFormattedFileTypeSummary(), totalFiles, totalFiles)
+        }
+        
+        // Format the filtered summary
+        let filteredSummary = ImageFileScanner.formatScanResults(filteredTypes, groupRaw: false)
+        
+        return (filteredSummary, totalFiltered, totalFiles)
     }
     
     func getDestinationEstimate(at index: Int) -> String? {
@@ -842,7 +873,7 @@ extension BackupManager {
         if let status = resourceValues?.ubiquitousItemDownloadingStatus {
             // Status can be: .current, .downloaded, .notDownloaded
             if status == .notDownloaded {
-                print("⚠️ File is in iCloud but not downloaded locally: \(fileURL.lastPathComponent)")
+                logWarning("File is in iCloud but not downloaded locally: \(fileURL.lastPathComponent)")
                 throw NSError(domain: "ImageIntact", code: 7, userInfo: [NSLocalizedDescriptionKey: "File is in iCloud but not downloaded: \(fileURL.lastPathComponent)"])
             }
         }

@@ -9,6 +9,16 @@ import SwiftUI
 
 @main
 struct ImageIntactApp: App {
+    
+    init() {
+        // Initialize logging system first
+        _ = ApplicationLogger.shared
+        
+        // Initialize system capabilities detection on app launch
+        _ = SystemCapabilities.shared
+        ApplicationLogger.shared.info("🚀 ImageIntact starting on \(SystemCapabilities.shared.displayName)", category: .app)
+    }
+    
     var body: some Scene {
         WindowGroup {
             ContentView()

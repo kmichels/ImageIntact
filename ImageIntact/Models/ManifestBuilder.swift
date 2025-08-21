@@ -110,8 +110,9 @@ actor ManifestBuilder {
         print("📋 Processing \(filesToProcess.count) files for checksums...")
         
         if let callback = onStatusUpdate {
+            let fileCount = filesToProcess.count
             Task { @MainActor in
-                callback("Calculating checksums for \(filesToProcess.count) files...")
+                callback("Calculating checksums for \(fileCount) files...")
             }
         }
         

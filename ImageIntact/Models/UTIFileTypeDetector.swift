@@ -182,49 +182,90 @@ class UTIFileTypeDetector {
     // MARK: - Legacy UTI Detection (macOS 10.x)
     
     private func getLegacyUTI(for url: URL) -> String? {
-        // Use older Core Services API
-        let unmanagedUTI = UTTypeCreatePreferredIdentifierForTag(
-            kUTTagClassFilenameExtension,
-            url.pathExtension as CFString,
-            nil
-        )
-        
-        if let uti = unmanagedUTI?.takeRetainedValue() as String? {
-            return uti
+        // For macOS 12+, use modern API
+        if #available(macOS 12.0, *) {
+            if let type = UTType(filenameExtension: url.pathExtension) {
+                return type.identifier
+            }
+            return nil
+        } else {
+            // Use older Core Services API for macOS 11 and earlier
+            let unmanagedUTI = UTTypeCreatePreferredIdentifierForTag(
+                kUTTagClassFilenameExtension,
+                url.pathExtension as CFString,
+                nil
+            )
+            
+            if let uti = unmanagedUTI?.takeRetainedValue() as String? {
+                return uti
+            }
+            
+            return nil
         }
-        
-        return nil
     }
     
     private func isSupportedLegacyUTI(_ uti: String) -> Bool {
-        // Check against known UTI strings
-        let supportedUTIs = [
-            kUTTypeImage as String,
-            kUTTypeMovie as String,
-            kUTTypeVideo as String,
-            kUTTypeRawImage as String,
-            "public.jpeg",
-            "public.tiff",
-            "public.png",
-            "public.heic",
-            "public.heif",
-            "com.adobe.dng",
-            "com.canon.cr2-raw",
-            "com.canon.cr3-raw",
-            "com.nikon.nef-raw",
-            "com.sony.arw-raw",
-            "com.fuji.raf-raw",
-            "com.adobe.xmp"
-        ]
-        
-        // Check if UTI conforms to any supported type
-        for supportedUTI in supportedUTIs {
-            if UTTypeConformsTo(uti as CFString, supportedUTI as CFString) {
-                return true
+        // For macOS 12+, use modern API
+        if #available(macOS 12.0, *) {
+            guard let type = UTType(uti) else { return false }
+            
+            // Check against supported types using modern API
+            let supportedTypes = [
+                UTType.image,
+                UTType.movie,
+                UTType.video,
+                UTType.rawImage,
+                UTType("public.jpeg"),
+                UTType("public.tiff"),
+                UTType("public.png"),
+                UTType("public.heic"),
+                UTType("public.heif"),
+                UTType("com.adobe.dng"),
+                UTType("com.canon.cr2-raw"),
+                UTType("com.canon.cr3-raw"),
+                UTType("com.nikon.nef-raw"),
+                UTType("com.sony.arw-raw"),
+                UTType("com.fuji.raf-raw"),
+                UTType("com.adobe.xmp")
+            ].compactMap { $0 }
+            
+            for supportedType in supportedTypes {
+                if type.conforms(to: supportedType) {
+                    return true
+                }
             }
+            
+            return false
+        } else {
+            // Use deprecated API for older macOS versions
+            let supportedUTIs = [
+                kUTTypeImage as String,
+                kUTTypeMovie as String,
+                kUTTypeVideo as String,
+                kUTTypeRawImage as String,
+                "public.jpeg",
+                "public.tiff",
+                "public.png",
+                "public.heic",
+                "public.heif",
+                "com.adobe.dng",
+                "com.canon.cr2-raw",
+                "com.canon.cr3-raw",
+                "com.nikon.nef-raw",
+                "com.sony.arw-raw",
+                "com.fuji.raf-raw",
+                "com.adobe.xmp"
+            ]
+            
+            // Check if UTI conforms to any supported type
+            for supportedUTI in supportedUTIs {
+                if UTTypeConformsTo(uti as CFString, supportedUTI as CFString) {
+                    return true
+                }
+            }
+            
+            return false
         }
-        
-        return false
     }
 }
 
