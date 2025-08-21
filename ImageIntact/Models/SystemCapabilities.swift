@@ -302,7 +302,7 @@ class SystemCapabilities {
             } else {
                 // Same hardware, check if it's a new day (for daily logging)
                 let calendar = Calendar.current
-                let lastDate = recent.detectedAt ?? Date.distantPast
+                let lastDate = recent.detectedAt
                 if !calendar.isDateInToday(lastDate) {
                     shouldCreateNew = true
                     changeReason = "First launch of the day"
@@ -403,9 +403,9 @@ class SystemCapabilities {
             for entry in all {
                 let key = entry.processorName
                 if let existing = systems[key] {
-                    systems[key] = (existing.count + 1, max(existing.lastSeen, entry.detectedAt ?? Date.distantPast))
+                    systems[key] = (existing.count + 1, max(existing.lastSeen, entry.detectedAt))
                 } else {
-                    systems[key] = (1, entry.detectedAt ?? Date.distantPast)
+                    systems[key] = (1, entry.detectedAt)
                 }
             }
             
