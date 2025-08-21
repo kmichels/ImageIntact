@@ -212,8 +212,13 @@ class BackupStatistics: ObservableObject {
     // MARK: - Report Generation
     
     func generateSummary() -> String {
-        var summary = "Backup Complete\n"
-        summary += "═══════════════\n\n"
+        var summary = "ImageIntact Backup Report\n"
+        summary += "═══════════════════════════\n\n"
+        
+        // Source information
+        if !sourcePath.isEmpty {
+            summary += "Source: \(sourcePath)\n"
+        }
         
         // Overall stats
         summary += "Duration: \(formattedDuration)\n"

@@ -11,6 +11,7 @@ struct BackupCompletionView: View {
     let statistics: BackupStatistics
     @Environment(\.dismiss) var dismiss
     @State private var showingCopyAlert = false
+    @State private var showingAnonymizeChoice = false
     
     var body: some View {
         VStack(spacing: 0) {
@@ -48,7 +49,12 @@ struct BackupCompletionView: View {
             // Footer
             HStack {
                 Button("Copy Report") {
-                    copyReportToClipboard()
+                    // Check if user has path anonymization preference enabled
+                    if PreferencesManager.shared.anonymizePathsInExport {
+                        showingAnonymizeChoice = true
+                    } else {
+                        copyReportToClipboard(anonymize: false)
+                    }
                 }
                 .buttonStyle(.bordered)
                 
@@ -68,10 +74,29 @@ struct BackupCompletionView: View {
         } message: {
             Text("The backup report has been copied to your clipboard.")
         }
+        .confirmationDialog("Copy Report", isPresented: $showingAnonymizeChoice, titleVisibility: .visible) {
+            Button("Copy with Anonymized Paths") {
+                copyReportToClipboard(anonymize: true)
+            }
+            
+            Button("Copy with Original Paths") {
+                copyReportToClipboard(anonymize: false)
+            }
+            
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("Would you like to anonymize file paths for privacy?\n\nAnonymization replaces usernames and drive names with placeholders like [USER] and [VOLUME].")
+        }
     }
     
-    private func copyReportToClipboard() {
-        let report = statistics.generateSummary()
+    private func copyReportToClipboard(anonymize: Bool = false) {
+        var report = statistics.generateSummary()
+        
+        // Anonymize paths if requested
+        if anonymize {
+            report = PathAnonymizer.anonymizeInText(report)
+        }
+        
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(report, forType: .string)
         showingCopyAlert = true
