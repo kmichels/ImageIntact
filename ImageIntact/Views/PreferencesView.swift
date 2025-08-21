@@ -37,7 +37,8 @@ struct PreferencesView: View {
                 }
                 .tag("advanced")
         }
-        .frame(width: 650, height: 500)
+        .padding(.top, 10) // Standard macOS preferences window tab padding
+        .frame(width: 650, height: 520) // Slightly taller to accommodate padding
     }
 }
 
@@ -175,8 +176,8 @@ struct GeneralPreferencesView: View {
                     
                     Spacer(minLength: 20)
                 }
-                .padding(.horizontal, 80)
-                .padding(.top, 40)
+                .padding(.horizontal, 100)
+                .padding(.top, 20)
             }
         }
         .background(Color(NSColor.windowBackgroundColor))
@@ -360,8 +361,8 @@ struct PerformancePreferencesView: View {
                     
                     Spacer(minLength: 20)
                 }
-                .padding(.horizontal, 80)
-                .padding(.top, 40)
+                .padding(.horizontal, 100)
+                .padding(.top, 20)
             }
         }
         .background(Color(NSColor.windowBackgroundColor))
@@ -534,8 +535,8 @@ struct LoggingPreferencesView: View {
                     
                     Spacer(minLength: 20)
                 }
-                .padding(.horizontal, 80)
-                .padding(.top, 40)
+                .padding(.horizontal, 100)
+                .padding(.top, 20)
             }
         }
         .background(Color(NSColor.windowBackgroundColor))
@@ -628,8 +629,8 @@ struct AdvancedPreferencesView: View {
                         .controlSize(.regular)
                     }
                 }
-                .padding(.horizontal, 80)
-                .padding(.top, 40)
+                .padding(.horizontal, 100)
+                .padding(.top, 20)
             }
         }
         .background(Color(NSColor.windowBackgroundColor))
