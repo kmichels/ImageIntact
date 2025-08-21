@@ -9,6 +9,7 @@ import SwiftUI
 
 @main
 struct ImageIntactApp: App {
+    @State private var showPreferences = false
     
     init() {
         // Initialize logging system first
@@ -22,10 +23,30 @@ struct ImageIntactApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .sheet(isPresented: $showPreferences) {
+                    PreferencesView()
+                }
+                .onAppear {
+                    // Listen for preferences notification
+                    NotificationCenter.default.addObserver(
+                        forName: NSNotification.Name("ShowPreferences"),
+                        object: nil,
+                        queue: .main
+                    ) { _ in
+                        showPreferences = true
+                    }
+                }
         }
         .windowResizability(.contentSize)
         .defaultSize(width: 600, height: 400)
         .commands {
+            // Add Preferences to the app menu
+            CommandGroup(after: .appInfo) {
+                Button("Preferences...") {
+                    NotificationCenter.default.post(name: NSNotification.Name("ShowPreferences"), object: nil)
+                }
+                .keyboardShortcut(",", modifiers: .command)
+            }
             // Replace the standard File menu items
             CommandGroup(replacing: .newItem) {
                 Button("Select Source Folder") {
