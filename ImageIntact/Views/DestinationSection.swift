@@ -19,11 +19,13 @@ struct DestinationSection: View {
                         showingAddPicker = true
                     }) {
                         Label("Add", systemImage: "plus.circle.fill")
-                            .font(.footnote)
+                            .font(.system(size: 11))
                     }
                     .keyboardShortcut("+", modifiers: .command)
                     .buttonStyle(.plain)
                     .foregroundColor(.accentColor)
+                    .accessibilityLabel("Add destination folder")
+                    .help("Add another backup destination")
                 }
             }
             
@@ -58,7 +60,7 @@ struct DestinationSection: View {
                         // Show drive analysis and time estimate
                         if let estimate = backupManager.getDestinationEstimate(at: index) {
                             Text(estimate)
-                                .font(.caption)
+                                .font(.system(size: 11))
                                 .foregroundColor(.secondary)
                                 .padding(.leading, 12)
                         }

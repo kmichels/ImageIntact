@@ -17,26 +17,24 @@ struct ContentView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Header
-            VStack(spacing: 8) {
+            // Header - following HIG for window headers
+            VStack(spacing: 4) {
                 Text("ImageIntact")
-                    .font(.largeTitle)
-                    .fontWeight(.semibold)
+                    .font(.system(size: 20, weight: .semibold))
                 
                 Text("Verify and backup your photos to multiple locations")
-                    .font(.subheadline)
+                    .font(.system(size: 11))
                     .foregroundColor(.secondary)
                 
                 // Subtle system info display
                 Text(SystemCapabilities.shared.displayName)
-                    .font(.caption2)
-                    .foregroundColor(Color.secondary.opacity(0.6))
+                    .font(.system(size: 10))
+                    .foregroundColor(Color.secondary.opacity(0.5))
             }
-            .padding(.top, 20)
-            .padding(.bottom, 10)
+            .padding(.top, 16)
+            .padding(.bottom, 12)
             
             Divider()
-                .padding(.horizontal)
             
             // Main content - ScrollView for everything except header and bottom buttons
             ScrollViewReader { scrollProxy in
@@ -88,6 +86,9 @@ struct ContentView: View {
                 .keyboardShortcut("k", modifiers: .command)
                 .buttonStyle(.plain)
                 .foregroundColor(.red)
+                .controlSize(.regular)
+                .accessibilityLabel("Clear all selected folders")
+                .help("Remove all source and destination selections")
                 
                 Spacer()
                 
@@ -96,14 +97,17 @@ struct ContentView: View {
                 }
                 .keyboardShortcut("r", modifiers: .command)
                 .buttonStyle(.borderedProminent)
-                .controlSize(.large)
+                .controlSize(.regular)
                 .disabled(!backupManager.canRunBackup())
+                .accessibilityLabel("Start backup process")
+                .help("Begin copying files to selected destinations")
             }
-            .padding(20)
+            .padding(.horizontal, 20)
+            .padding(.vertical, 12)
             .background(Color(NSColor.windowBackgroundColor))
         }
-        .frame(minWidth: 500, idealWidth: 600, maxWidth: .infinity,
-               minHeight: 400, idealHeight: 500, maxHeight: .infinity)
+        .frame(minWidth: 600, idealWidth: 700, maxWidth: .infinity,
+               minHeight: 450, idealHeight: 550, maxHeight: .infinity)
         .background(Color(NSColor.windowBackgroundColor))
         .onAppear {
             setupKeyboardShortcuts()
@@ -526,10 +530,10 @@ struct FolderRow: View {
                     
                     Spacer()
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
                 .background(Color(NSColor.controlBackgroundColor))
-                .cornerRadius(8)
+                .cornerRadius(6)
             }
             .buttonStyle(.plain)
             
@@ -540,12 +544,12 @@ struct FolderRow: View {
                 }
                 .buttonStyle(.plain)
                 .foregroundColor(.secondary)
-                .font(.footnote)
-                .frame(width: 50)
+                .font(.system(size: 11))
+                .frame(width: 60)
             } else {
                 // Invisible spacer to maintain width
                 Color.clear
-                    .frame(width: 50)
+                    .frame(width: 60)
             }
         }
     }
