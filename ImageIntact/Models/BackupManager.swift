@@ -868,9 +868,19 @@ class BackupManager {
             return "⚠️ Destination not accessible (drive may be disconnected)"
         }
         
+        // Get free space info if available
+        var freeSpaceInfo = ""
+        if let url = destinationItems[index].url,
+           let spaceInfo = try? FileManager.default.attributesOfFileSystem(forPath: url.path),
+           let freeBytes = spaceInfo[.systemFreeSize] as? Int64 {
+            let formatter = ByteCountFormatter()
+            formatter.countStyle = .file
+            freeSpaceInfo = " • \(formatter.string(fromByteCount: freeBytes)) free"
+        }
+        
         // For network drives, don't show estimates - too many variables
         if driveInfo.connectionType == .network {
-            return "Network Drive • Too many variables to estimate time"
+            return "Network Drive\(freeSpaceInfo) • Too many variables to estimate time"
         }
         
         // Calculate total size
@@ -915,7 +925,7 @@ class BackupManager {
         // Show drive type properly - Network vs SSD vs HDD
         let driveType = driveInfo.connectionType == .network ? "Network" : (driveInfo.isSSD ? "SSD" : "HDD")
         
-        return "\(driveInfo.connectionType.displayName) • \(driveType) • \(sizeStr) • \(estimate)"
+        return "\(driveInfo.connectionType.displayName) • \(driveType) • \(sizeStr)\(freeSpaceInfo) • \(estimate)"
     }
 }
 

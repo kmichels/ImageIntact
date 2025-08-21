@@ -59,10 +59,37 @@ struct DestinationSection: View {
                         
                         // Show drive analysis and time estimate
                         if let estimate = backupManager.getDestinationEstimate(at: index) {
-                            Text(estimate)
-                                .font(.system(size: 11))
-                                .foregroundColor(.secondary)
-                                .padding(.leading, 12)
+                            HStack(spacing: 8) {
+                                Text(estimate)
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.secondary)
+                                
+                                // Show disk space status if we have backup size info
+                                if let url = item.url, backupManager.totalBytesToCopy > 0 {
+                                    let spaceCheck = DiskSpaceChecker.checkDestinationSpace(
+                                        destination: url,
+                                        requiredBytes: backupManager.totalBytesToCopy
+                                    )
+                                    
+                                    if spaceCheck.error != nil {
+                                        Image(systemName: "exclamationmark.triangle.fill")
+                                            .font(.system(size: 10))
+                                            .foregroundColor(.red)
+                                            .help("Insufficient space for backup")
+                                    } else if spaceCheck.willHaveLessThan10PercentFree {
+                                        Image(systemName: "exclamationmark.triangle.fill")
+                                            .font(.system(size: 10))
+                                            .foregroundColor(.orange)
+                                            .help("Drive will be less than 10% free after backup")
+                                    } else {
+                                        Image(systemName: "checkmark.circle.fill")
+                                            .font(.system(size: 10))
+                                            .foregroundColor(.green)
+                                            .help("\(spaceCheck.spaceInfo.formattedAvailable) available")
+                                    }
+                                }
+                            }
+                            .padding(.leading, 12)
                         }
                     }
                 }
