@@ -9,7 +9,7 @@ import SwiftUI
 
 struct PreferencesView: View {
     @StateObject private var preferences = PreferencesManager.shared
-    @State private var selectedTab = 0
+    @State private var selectedTab = "general"
     
     var body: some View {
         TabView(selection: $selectedTab) {
@@ -17,27 +17,27 @@ struct PreferencesView: View {
                 .tabItem {
                     Label("General", systemImage: "gearshape")
                 }
-                .tag(0)
+                .tag("general")
             
             PerformancePreferencesView()
                 .tabItem {
-                    Label("Performance", systemImage: "speedometer")
+                    Label("Performance", systemImage: "cpu")
                 }
-                .tag(1)
+                .tag("performance")
             
             LoggingPreferencesView()
                 .tabItem {
-                    Label("Logging & Privacy", systemImage: "doc.text.magnifyingglass")
+                    Label("Logging & Privacy", systemImage: "lock.shield")
                 }
-                .tag(2)
+                .tag("logging")
             
             AdvancedPreferencesView()
                 .tabItem {
-                    Label("Advanced", systemImage: "wrench.and.screwdriver")
+                    Label("Advanced", systemImage: "gearshape.2")
                 }
-                .tag(3)
+                .tag("advanced")
         }
-        .frame(width: 600, height: 450)
+        .frame(width: 650, height: 500)
     }
 }
 
@@ -49,104 +49,137 @@ struct GeneralPreferencesView: View {
     @State private var selectedDestinationURL: URL?
     
     var body: some View {
-        Form {
-            Section {
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Default Paths")
-                        .font(.headline)
-                    
-                    HStack {
-                        Text("Default Source:")
-                            .frame(width: 120, alignment: .trailing)
+        VStack(spacing: 0) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    // Default Paths Section
+                    VStack(alignment: .leading, spacing: 16) {
+                        Text("Default Paths")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(.primary)
                         
-                        Text(preferences.defaultSourcePath.isEmpty ? "Not set" : URL(fileURLWithPath: preferences.defaultSourcePath).lastPathComponent)
-                            .foregroundColor(preferences.defaultSourcePath.isEmpty ? .secondary : .primary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                        
-                        Button("Choose...") {
-                            selectSourceFolder()
-                        }
-                        
-                        if !preferences.defaultSourcePath.isEmpty {
-                            Button("Clear") {
-                                preferences.defaultSourcePath = ""
+                        VStack(spacing: 12) {
+                            HStack(alignment: .center, spacing: 12) {
+                                Text("Default Source:")
+                                    .font(.system(size: 13))
+                                    .frame(width: 140, alignment: .trailing)
+                                
+                                Text(preferences.defaultSourcePath.isEmpty ? "Not set" : URL(fileURLWithPath: preferences.defaultSourcePath).lastPathComponent)
+                                    .font(.system(size: 13))
+                                    .foregroundColor(preferences.defaultSourcePath.isEmpty ? .secondary : .primary)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                                
+                                Button("Choose...") {
+                                    selectSourceFolder()
+                                }
+                                .controlSize(.small)
+                                
+                                if !preferences.defaultSourcePath.isEmpty {
+                                    Button("Clear") {
+                                        preferences.defaultSourcePath = ""
+                                    }
+                                    .controlSize(.small)
+                                }
+                            }
+                            
+                            HStack(alignment: .center, spacing: 12) {
+                                Text("Default Destination:")
+                                    .font(.system(size: 13))
+                                    .frame(width: 140, alignment: .trailing)
+                                
+                                Text(preferences.defaultDestinationPath.isEmpty ? "Not set" : URL(fileURLWithPath: preferences.defaultDestinationPath).lastPathComponent)
+                                    .font(.system(size: 13))
+                                    .foregroundColor(preferences.defaultDestinationPath.isEmpty ? .secondary : .primary)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                                
+                                Button("Choose...") {
+                                    selectDestinationFolder()
+                                }
+                                .controlSize(.small)
+                                
+                                if !preferences.defaultDestinationPath.isEmpty {
+                                    Button("Clear") {
+                                        preferences.defaultDestinationPath = ""
+                                    }
+                                    .controlSize(.small)
+                                }
                             }
                         }
                     }
                     
-                    HStack {
-                        Text("Default Destination:")
-                            .frame(width: 120, alignment: .trailing)
+                    Divider()
+                        .padding(.vertical, 8)
+                    
+                    // Startup Behavior Section
+                    VStack(alignment: .leading, spacing: 16) {
+                        Text("Startup Behavior")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(.primary)
                         
-                        Text(preferences.defaultDestinationPath.isEmpty ? "Not set" : URL(fileURLWithPath: preferences.defaultDestinationPath).lastPathComponent)
-                            .foregroundColor(preferences.defaultDestinationPath.isEmpty ? .secondary : .primary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                        
-                        Button("Choose...") {
-                            selectDestinationFolder()
+                        VStack(alignment: .leading, spacing: 10) {
+                            Toggle("Check for updates automatically", isOn: .constant(true))
+                                .font(.system(size: 13))
+                                .disabled(true)
+                                .help("Updates are checked every 24 hours")
+                            
+                            Toggle("Restore last session paths on launch", isOn: $preferences.restoreLastSession)
+                                .font(.system(size: 13))
+                                .help("Automatically reload the source and destination folders from your last session")
+                            
+                            Toggle("Show welcome screen on first launch", isOn: $preferences.showWelcomeOnLaunch)
+                                .font(.system(size: 13))
+                                .help("Display the welcome guide for new users")
                         }
+                    }
+                    
+                    Divider()
+                        .padding(.vertical, 8)
+                    
+                    // File Handling Section
+                    VStack(alignment: .leading, spacing: 16) {
+                        Text("File Handling")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(.primary)
                         
-                        if !preferences.defaultDestinationPath.isEmpty {
-                            Button("Clear") {
-                                preferences.defaultDestinationPath = ""
+                        VStack(alignment: .leading, spacing: 10) {
+                            Toggle("Exclude cache files by default", isOn: $preferences.excludeCacheFiles)
+                                .font(.system(size: 13))
+                                .help("Skip Lightroom previews, Capture One cache, and similar files")
+                            
+                            Toggle("Skip hidden files", isOn: $preferences.skipHiddenFiles)
+                                .font(.system(size: 13))
+                                .help("Ignore .DS_Store, ._* files, and other system files")
+                            
+                            HStack(spacing: 12) {
+                                Text("Default file type filter:")
+                                    .font(.system(size: 13))
+                                    .frame(width: 140, alignment: .trailing)
+                                
+                                Picker("", selection: $preferences.defaultFileTypeFilter) {
+                                    Text("All Files").tag("all")
+                                    Text("Photos Only").tag("photos")
+                                    Text("RAW Only").tag("raw")
+                                    Text("Videos Only").tag("videos")
+                                }
+                                .pickerStyle(MenuPickerStyle())
+                                .frame(width: 150)
+                                
+                                Spacer()
                             }
                         }
                     }
+                    
+                    Spacer(minLength: 20)
                 }
-                .padding(.vertical, 8)
-            }
-            
-            Divider()
-            
-            Section {
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Startup Behavior")
-                        .font(.headline)
-                    
-                    Toggle("Check for updates automatically", isOn: .constant(true))
-                        .disabled(true)
-                        .help("Updates are checked every 24 hours")
-                    
-                    Toggle("Restore last session paths on launch", isOn: $preferences.restoreLastSession)
-                        .help("Automatically reload the source and destination folders from your last session")
-                    
-                    Toggle("Show welcome screen on first launch", isOn: $preferences.showWelcomeOnLaunch)
-                        .help("Display the welcome guide for new users")
-                }
-                .padding(.vertical, 8)
-            }
-            
-            Divider()
-            
-            Section {
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("File Handling")
-                        .font(.headline)
-                    
-                    Toggle("Exclude cache files by default", isOn: $preferences.excludeCacheFiles)
-                        .help("Skip Lightroom previews, Capture One cache, and similar files")
-                    
-                    Toggle("Skip hidden files", isOn: $preferences.skipHiddenFiles)
-                        .help("Ignore .DS_Store, ._* files, and other system files")
-                    
-                    HStack {
-                        Text("Default file type filter:")
-                            .frame(width: 150, alignment: .trailing)
-                        
-                        Picker("", selection: $preferences.defaultFileTypeFilter) {
-                            Text("All Files").tag("all")
-                            Text("Photos Only").tag("photos")
-                            Text("RAW Only").tag("raw")
-                            Text("Videos Only").tag("videos")
-                        }
-                        .pickerStyle(MenuPickerStyle())
-                        .frame(width: 150)
-                    }
-                }
-                .padding(.vertical, 8)
+                .padding(.horizontal, 80)
+                .padding(.top, 40)
             }
         }
-        .padding()
+        .background(Color(NSColor.windowBackgroundColor))
     }
     
     func selectSourceFolder() {
@@ -188,119 +221,150 @@ struct PerformancePreferencesView: View {
     }
     
     var body: some View {
-        Form {
-            Section {
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("System Information")
-                        .font(.headline)
+        VStack(spacing: 0) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    // System Information Section
+                    VStack(alignment: .leading, spacing: 16) {
+                        Text("System Information")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(.primary)
                     
-                    GroupBox {
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack {
-                                Text("Processor:")
-                                    .foregroundColor(.secondary)
-                                    .frame(width: 100, alignment: .trailing)
-                                Text(systemInfo?.processorName ?? "Unknown")
-                                    .fontWeight(.medium)
-                            }
-                            
-                            HStack {
-                                Text("Cores:")
-                                    .foregroundColor(.secondary)
-                                    .frame(width: 100, alignment: .trailing)
-                                if let info = systemInfo {
-                                    if info.performanceCores > 0 {
-                                        Text("\(info.cpuCores) total (\(info.performanceCores) performance, \(info.efficiencyCores) efficiency)")
+                        GroupBox {
+                            VStack(alignment: .leading, spacing: 10) {
+                                HStack(spacing: 12) {
+                                    Text("Processor:")
+                                        .font(.system(size: 13))
+                                        .foregroundColor(.secondary)
+                                        .frame(width: 100, alignment: .trailing)
+                                    Text(systemInfo?.processorName ?? "Unknown")
+                                        .font(.system(size: 13, weight: .medium))
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                }
+                                
+                                HStack(spacing: 12) {
+                                    Text("Cores:")
+                                        .font(.system(size: 13))
+                                        .foregroundColor(.secondary)
+                                        .frame(width: 100, alignment: .trailing)
+                                    if let info = systemInfo {
+                                        if info.performanceCores > 0 {
+                                            Text("\(info.cpuCores) total (\(info.performanceCores) performance, \(info.efficiencyCores) efficiency)")
+                                                .font(.system(size: 13))
+                                        } else {
+                                            Text("\(info.cpuCores)")
+                                                .font(.system(size: 13))
+                                        }
+                                    }
+                                    Spacer()
+                                }
+                                
+                                HStack(spacing: 12) {
+                                    Text("RAM:")
+                                        .font(.system(size: 13))
+                                        .foregroundColor(.secondary)
+                                        .frame(width: 100, alignment: .trailing)
+                                    if let info = systemInfo {
+                                        Text(ByteCountFormatter.string(fromByteCount: info.totalRAM, countStyle: .binary))
+                                            .font(.system(size: 13))
+                                    }
+                                    Spacer()
+                                }
+                                
+                                HStack(spacing: 12) {
+                                    Text("Neural Engine:")
+                                        .font(.system(size: 13))
+                                        .foregroundColor(.secondary)
+                                        .frame(width: 100, alignment: .trailing)
+                                    if SystemCapabilities.shared.hasNeuralEngine {
+                                        Label("Available", systemImage: "checkmark.circle.fill")
+                                            .font(.system(size: 13))
+                                            .foregroundColor(.green)
                                     } else {
-                                        Text("\(info.cpuCores)")
+                                        Text("Not Available")
+                                            .font(.system(size: 13))
+                                            .foregroundColor(.secondary)
+                                    }
+                                    Spacer()
+                                }
+                            }
+                            .padding(12)
+                        }
+                    }
+                    
+                    Divider()
+                        .padding(.vertical, 8)
+                    
+                    // Vision Framework Section
+                    VStack(alignment: .leading, spacing: 16) {
+                        Text("Vision Framework")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(.primary)
+                        
+                        Text("Future feature for intelligent photo analysis")
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                    
+                        
+                        VStack(alignment: .leading, spacing: 10) {
+                            Toggle("Enable Vision Framework features", isOn: $preferences.enableVisionFramework)
+                                .font(.system(size: 13))
+                                .disabled(true) // Not implemented yet
+                                .help("Coming in v1.3 - Intelligent photo search and organization")
+                                .onChange(of: preferences.enableVisionFramework) { oldValue, newValue in
+                                    if !SystemCapabilities.shared.isAppleSilicon && newValue {
+                                        showIntelWarning = true
+                                    } else if SystemCapabilities.shared.isAppleSilicon && !newValue {
+                                        showAppleSiliconWarning = true
                                     }
                                 }
-                            }
                             
-                            HStack {
-                                Text("RAM:")
-                                    .foregroundColor(.secondary)
-                                    .frame(width: 100, alignment: .trailing)
-                                if let info = systemInfo {
-                                    Text(ByteCountFormatter.string(fromByteCount: info.totalRAM, countStyle: .binary))
+                            HStack(spacing: 12) {
+                                Text("Processing priority:")
+                                    .font(.system(size: 13))
+                                    .frame(width: 130, alignment: .trailing)
+                                
+                                Picker("", selection: $preferences.visionProcessingPriority) {
+                                    Text("Low").tag("low")
+                                    Text("Normal").tag("normal")
+                                    Text("High").tag("high")
                                 }
-                            }
-                            
-                            HStack {
-                                Text("Neural Engine:")
-                                    .foregroundColor(.secondary)
-                                    .frame(width: 100, alignment: .trailing)
-                                if SystemCapabilities.shared.hasNeuralEngine {
-                                    Label("Available", systemImage: "checkmark.circle.fill")
-                                        .foregroundColor(.green)
-                                } else {
-                                    Text("Not Available")
-                                        .foregroundColor(.secondary)
-                                }
+                                .pickerStyle(SegmentedPickerStyle())
+                                .frame(width: 200)
+                                .disabled(true) // Not implemented yet
+                                
+                                Spacer()
                             }
                         }
-                        .padding(8)
                     }
-                }
-                .padding(.vertical, 8)
-            }
-            
-            Divider()
-            
-            Section {
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Vision Framework")
-                        .font(.headline)
                     
-                    Text("Future feature for intelligent photo analysis")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                    Divider()
+                        .padding(.vertical, 8)
                     
-                    Toggle("Enable Vision Framework features", isOn: $preferences.enableVisionFramework)
-                        .disabled(true) // Not implemented yet
-                        .help("Coming in v1.3 - Intelligent photo search and organization")
-                        .onChange(of: preferences.enableVisionFramework) { oldValue, newValue in
-                            if !SystemCapabilities.shared.isAppleSilicon && newValue {
-                                showIntelWarning = true
-                            } else if SystemCapabilities.shared.isAppleSilicon && !newValue {
-                                showAppleSiliconWarning = true
-                            }
-                        }
-                    
-                    HStack {
-                        Text("Processing priority:")
-                            .frame(width: 130, alignment: .trailing)
+                    // System Behavior Section
+                    VStack(alignment: .leading, spacing: 16) {
+                        Text("System Behavior")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(.primary)
                         
-                        Picker("", selection: $preferences.visionProcessingPriority) {
-                            Text("Low").tag("low")
-                            Text("Normal").tag("normal")
-                            Text("High").tag("high")
+                        VStack(alignment: .leading, spacing: 10) {
+                            Toggle("Prevent sleep during backup", isOn: $preferences.preventSleepDuringBackup)
+                                .font(.system(size: 13))
+                                .help("Keep your Mac awake while backup is running")
+                            
+                            Toggle("Show notification when backup completes", isOn: $preferences.showNotificationOnComplete)
+                                .font(.system(size: 13))
+                                .help("Display a system notification when backup finishes")
                         }
-                        .pickerStyle(SegmentedPickerStyle())
-                        .frame(width: 200)
-                        .disabled(true) // Not implemented yet
                     }
-                }
-                .padding(.vertical, 8)
-            }
-            
-            Divider()
-            
-            Section {
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("System Behavior")
-                        .font(.headline)
                     
-                    Toggle("Prevent sleep during backup", isOn: $preferences.preventSleepDuringBackup)
-                        .help("Keep your Mac awake while backup is running")
-                    
-                    Toggle("Show notification when backup completes", isOn: $preferences.showNotificationOnComplete)
-                        .help("Display a system notification when backup finishes")
+                    Spacer(minLength: 20)
                 }
-                .padding(.vertical, 8)
+                .padding(.horizontal, 80)
+                .padding(.top, 40)
             }
         }
-        .padding()
+        .background(Color(NSColor.windowBackgroundColor))
         .alert("Performance Warning", isPresented: $showIntelWarning) {
             Button("Enable Anyway") { }
             Button("Cancel", role: .cancel) {
@@ -343,110 +407,138 @@ struct LoggingPreferencesView: View {
     @State private var showClearConfirmation = false
     
     var body: some View {
-        Form {
-            Section {
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Operational Logs")
-                        .font(.headline)
-                    
-                    Text("Debug and error logs for troubleshooting")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    
-                    HStack {
-                        Text("Minimum log level:")
-                            .frame(width: 130, alignment: .trailing)
+        VStack(spacing: 0) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    // Operational Logs Section
+                    VStack(alignment: .leading, spacing: 16) {
+                        Text("Operational Logs")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(.primary)
                         
-                        Picker("", selection: $preferences.minimumLogLevel) {
-                            Text("Debug").tag(0)
-                            Text("Info").tag(1)
-                            Text("Warning").tag(2)
-                            Text("Error").tag(3)
-                            Text("Critical").tag(4)
-                        }
-                        .pickerStyle(MenuPickerStyle())
-                        .frame(width: 120)
-                    }
-                    
-                    Toggle("Log to Console.app", isOn: $preferences.enableConsoleLogging)
-                        .help("Send logs to macOS Console for debugging")
-                    
-                    Toggle("Enable debug menu items", isOn: $preferences.enableDebugMenu)
-                        .help("Show additional debugging options in menus")
-                    
-                    HStack {
-                        Text("Keep operational logs for:")
-                            .frame(width: 160, alignment: .trailing)
-                        
-                        Picker("", selection: $preferences.operationalLogRetention) {
-                            Text("7 days").tag(7)
-                            Text("14 days").tag(14)
-                            Text("30 days").tag(30)
-                            Text("60 days").tag(60)
-                        }
-                        .pickerStyle(MenuPickerStyle())
-                        .frame(width: 100)
-                    }
-                }
-                .padding(.vertical, 8)
-            }
-            
-            Divider()
-            
-            Section {
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Backup History")
-                        .font(.headline)
-                    
-                    Text("ImageIntact maintains a local, private record of all your backups on this Mac to help you locate files in the future. This data never leaves your computer.")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    
-                    HStack(spacing: 12) {
-                        Button("View Backup History...") {
-                            // TODO: Implement backup history viewer
-                            logInfo("View Backup History clicked - not yet implemented")
-                        }
-                        .disabled(true)
-                        
-                        Button("Export Backup Catalog...") {
-                            // TODO: Implement catalog export
-                            logInfo("Export Backup Catalog clicked - not yet implemented")
-                        }
-                        .disabled(true)
-                    }
-                    
-                    HStack {
-                        Text("Storage location:")
+                        Text("Debug and error logs for troubleshooting")
+                            .font(.system(size: 11))
                             .foregroundColor(.secondary)
-                        Text("~/Library/Application Support/ImageIntact/")
-                            .font(.system(.caption, design: .monospaced))
+                    
+                        
+                        VStack(alignment: .leading, spacing: 10) {
+                            HStack(spacing: 12) {
+                                Text("Minimum log level:")
+                                    .font(.system(size: 13))
+                                    .frame(width: 160, alignment: .trailing)
+                                
+                                Picker("", selection: $preferences.minimumLogLevel) {
+                                    Text("Debug").tag(0)
+                                    Text("Info").tag(1)
+                                    Text("Warning").tag(2)
+                                    Text("Error").tag(3)
+                                    Text("Critical").tag(4)
+                                }
+                                .pickerStyle(MenuPickerStyle())
+                                .frame(width: 120)
+                                
+                                Spacer()
+                            }
+                            
+                            Toggle("Log to Console.app", isOn: $preferences.enableConsoleLogging)
+                                .font(.system(size: 13))
+                                .help("Send logs to macOS Console for debugging")
+                            
+                            Toggle("Enable debug menu items", isOn: $preferences.enableDebugMenu)
+                                .font(.system(size: 13))
+                                .help("Show additional debugging options in menus")
+                            
+                            HStack(spacing: 12) {
+                                Text("Keep operational logs for:")
+                                    .font(.system(size: 13))
+                                    .frame(width: 160, alignment: .trailing)
+                                
+                                Picker("", selection: $preferences.operationalLogRetention) {
+                                    Text("7 days").tag(7)
+                                    Text("14 days").tag(14)
+                                    Text("30 days").tag(30)
+                                    Text("60 days").tag(60)
+                                }
+                                .pickerStyle(MenuPickerStyle())
+                                .frame(width: 100)
+                                
+                                Spacer()
+                            }
+                        }
+                    }
+                    
+                    Divider()
+                        .padding(.vertical, 8)
+                    
+                    // Backup History Section
+                    VStack(alignment: .leading, spacing: 16) {
+                        Text("Backup History")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(.primary)
+                        
+                        Text("ImageIntact maintains a local, private record of all your backups on this Mac to help you locate files in the future. This data never leaves your computer.")
+                            .font(.system(size: 11))
                             .foregroundColor(.secondary)
-                    }
-                }
-                .padding(.vertical, 8)
-            }
-            
-            Divider()
-            
-            Section {
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Privacy")
-                        .font(.headline)
+                            .fixedSize(horizontal: false, vertical: true)
                     
-                    Toggle("Anonymize paths when exporting logs", isOn: $preferences.anonymizePathsInExport)
-                        .help("Replace usernames and volume names with placeholders in exported logs")
-                    
-                    Button("Clear Operational Logs") {
-                        showClearConfirmation = true
+                        
+                        VStack(alignment: .leading, spacing: 10) {
+                            HStack(spacing: 12) {
+                                Button("View Backup History...") {
+                                    // TODO: Implement backup history viewer
+                                    logInfo("View Backup History clicked - not yet implemented")
+                                }
+                                .controlSize(.small)
+                                .disabled(true)
+                                
+                                Button("Export Backup Catalog...") {
+                                    // TODO: Implement catalog export
+                                    logInfo("Export Backup Catalog clicked - not yet implemented")
+                                }
+                                .controlSize(.small)
+                                .disabled(true)
+                            }
+                            
+                            HStack(spacing: 8) {
+                                Text("Storage location:")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.secondary)
+                                Text("~/Library/Application Support/ImageIntact/")
+                                    .font(.system(size: 11, design: .monospaced))
+                                    .foregroundColor(.secondary)
+                            }
+                        }
                     }
-                    .help("Remove debug logs while keeping backup history")
+                    
+                    Divider()
+                        .padding(.vertical, 8)
+                    
+                    // Privacy Section
+                    VStack(alignment: .leading, spacing: 16) {
+                        Text("Privacy")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(.primary)
+                        
+                        VStack(alignment: .leading, spacing: 10) {
+                            Toggle("Anonymize paths when exporting logs", isOn: $preferences.anonymizePathsInExport)
+                                .font(.system(size: 13))
+                                .help("Replace usernames and volume names with placeholders in exported logs")
+                            
+                            Button("Clear Operational Logs") {
+                                showClearConfirmation = true
+                            }
+                            .controlSize(.small)
+                            .help("Remove debug logs while keeping backup history")
+                        }
+                    }
+                    
+                    Spacer(minLength: 20)
                 }
-                .padding(.vertical, 8)
+                .padding(.horizontal, 80)
+                .padding(.top, 40)
             }
         }
-        .padding()
+        .background(Color(NSColor.windowBackgroundColor))
         .alert("Clear Operational Logs?", isPresented: $showClearConfirmation) {
             Button("Clear", role: .destructive) {
                 ApplicationLogger.shared.cleanupOldLogs(daysToKeep: 0)
@@ -465,62 +557,82 @@ struct AdvancedPreferencesView: View {
     @ObservedObject private var preferences = PreferencesManager.shared
     
     var body: some View {
-        Form {
-            Section {
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Experimental Features")
-                        .font(.headline)
+        VStack(spacing: 0) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    // Experimental Features Section
+                    VStack(alignment: .leading, spacing: 16) {
+                        Text("Experimental Features")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(.primary)
                     
-                    Toggle("Enable smart duplicate detection", isOn: $preferences.enableSmartDuplicateDetection)
-                        .disabled(true)
-                        .help("Coming soon - Detect and skip files that are already backed up")
-                    
-                    Toggle("Show technical details during backup", isOn: $preferences.showTechnicalDetails)
-                        .help("Display additional technical information in the progress view")
-                }
-                .padding(.vertical, 8)
-            }
-            
-            Divider()
-            
-            Section {
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Safety Confirmations")
-                        .font(.headline)
-                    
-                    Toggle("Require confirmation for large backups", isOn: $preferences.requireConfirmationLargeBackup)
-                        .help("Ask for confirmation before starting backups over the threshold")
-                    
-                    HStack {
-                        Text("Large backup threshold:")
-                            .frame(width: 150, alignment: .trailing)
                         
-                        TextField("", value: $preferences.largeBackupThresholdGB, format: .number)
-                            .frame(width: 60)
-                            .textFieldStyle(RoundedBorderTextFieldStyle())
-                            .disabled(!preferences.requireConfirmationLargeBackup)
-                        
-                        Text("GB")
+                        VStack(alignment: .leading, spacing: 10) {
+                            Toggle("Enable smart duplicate detection", isOn: $preferences.enableSmartDuplicateDetection)
+                                .font(.system(size: 13))
+                                .disabled(true)
+                                .help("Coming soon - Detect and skip files that are already backed up")
+                            
+                            Toggle("Show technical details during backup", isOn: $preferences.showTechnicalDetails)
+                                .font(.system(size: 13))
+                                .help("Display additional technical information in the progress view")
+                        }
                     }
                     
-                    Toggle("Show summary before starting backup", isOn: $preferences.showPreflightSummary)
-                        .help("Display a summary of what will be backed up before starting")
+                    Divider()
+                        .padding(.vertical, 8)
+                    
+                    // Safety Confirmations Section
+                    VStack(alignment: .leading, spacing: 16) {
+                        Text("Safety Confirmations")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(.primary)
+                        
+                        VStack(alignment: .leading, spacing: 10) {
+                            Toggle("Require confirmation for large backups", isOn: $preferences.requireConfirmationLargeBackup)
+                                .font(.system(size: 13))
+                                .help("Ask for confirmation before starting backups over the threshold")
+                            
+                            HStack(spacing: 12) {
+                                Text("Large backup threshold:")
+                                    .font(.system(size: 13))
+                                    .frame(width: 160, alignment: .trailing)
+                                
+                                TextField("", value: $preferences.largeBackupThresholdGB, format: .number)
+                                    .frame(width: 60)
+                                    .textFieldStyle(RoundedBorderTextFieldStyle())
+                                    .disabled(!preferences.requireConfirmationLargeBackup)
+                                
+                                Text("GB")
+                                    .font(.system(size: 13))
+                                
+                                Spacer()
+                            }
+                            
+                            Toggle("Show summary before starting backup", isOn: $preferences.showPreflightSummary)
+                                .font(.system(size: 13))
+                                .help("Display a summary of what will be backed up before starting")
+                        }
+                    }
+                    
+                    Spacer(minLength: 20)
+                    
+                    Divider()
+                        .padding(.vertical, 8)
+                    
+                    HStack {
+                        Spacer()
+                        Button("Reset to Defaults") {
+                            preferences.resetToDefaults()
+                        }
+                        .controlSize(.regular)
+                    }
                 }
-                .padding(.vertical, 8)
+                .padding(.horizontal, 80)
+                .padding(.top, 40)
             }
-            
-            Divider()
-            
-            HStack {
-                Spacer()
-                Button("Reset to Defaults") {
-                    preferences.resetToDefaults()
-                }
-                .buttonStyle(.bordered)
-            }
-            .padding(.top, 8)
         }
-        .padding()
+        .background(Color(NSColor.windowBackgroundColor))
     }
 }
 
