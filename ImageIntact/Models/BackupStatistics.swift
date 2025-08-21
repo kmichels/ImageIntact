@@ -215,11 +215,6 @@ class BackupStatistics: ObservableObject {
         var summary = "ImageIntact Backup Report\n"
         summary += "═══════════════════════════\n\n"
         
-        // Source information
-        if !sourcePath.isEmpty {
-            summary += "Source: \(sourcePath)\n"
-        }
-        
         // Overall stats
         summary += "Duration: \(formattedDuration)\n"
         summary += "Files Processed: \(totalFilesProcessed)/\(totalFilesInSource)\n"
