@@ -117,6 +117,36 @@ class DiskSpaceChecker {
     /// Get disk space information for a given URL
     private static func getDiskSpaceInfo(for url: URL) -> DiskSpaceInfo? {
         do {
+            // First try to get volume resource values (more accurate)
+            let values = try url.resourceValues(forKeys: [
+                .volumeTotalCapacityKey,
+                .volumeAvailableCapacityKey,
+                .volumeAvailableCapacityForImportantUsageKey
+            ])
+            
+            if let totalSpace = values.volumeTotalCapacity {
+                // Convert optional Ints to Int64
+                let importantUsage = values.volumeAvailableCapacityForImportantUsage.map { Int64($0) }
+                let regularCapacity = values.volumeAvailableCapacity.map { Int64($0) }
+                let availableSpace = importantUsage ?? regularCapacity ?? Int64(0)
+                
+                // For free space, use the same as available (macOS doesn't distinguish like it used to)
+                let freeSpace = availableSpace
+                let totalSpaceInt = Int64(totalSpace)
+                
+                let percentFree = (Double(freeSpace) / Double(totalSpaceInt)) * 100
+                let percentAvailable = percentFree
+                
+                return DiskSpaceInfo(
+                    totalSpace: totalSpaceInt,
+                    freeSpace: freeSpace,
+                    availableSpace: freeSpace,
+                    percentFree: percentFree,
+                    percentAvailable: percentAvailable
+                )
+            }
+            
+            // Fall back to the old method if resource values don't work
             let attributes = try FileManager.default.attributesOfFileSystem(forPath: url.path)
             
             guard let totalSpace = attributes[.systemSize] as? Int64,
@@ -125,12 +155,9 @@ class DiskSpaceChecker {
                 return nil
             }
             
-            // Available space is often different from free space (due to reserved space)
-            // Try to get available space, fall back to free space if not available
-            let availableSpace = (attributes[.systemFreeNodes] as? Int64) ?? freeSpace
-            
+            let availableSpace = freeSpace
             let percentFree = (Double(freeSpace) / Double(totalSpace)) * 100
-            let percentAvailable = (Double(availableSpace) / Double(totalSpace)) * 100
+            let percentAvailable = percentFree
             
             return DiskSpaceInfo(
                 totalSpace: totalSpace,

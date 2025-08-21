@@ -10,35 +10,54 @@ import SwiftUI
 struct PreferencesView: View {
     @StateObject private var preferences = PreferencesManager.shared
     @State private var selectedTab = "general"
+    @Environment(\.dismiss) private var dismiss
     
     var body: some View {
-        TabView(selection: $selectedTab) {
-            GeneralPreferencesView()
-                .tabItem {
-                    Label("General", systemImage: "gearshape")
-                }
-                .tag("general")
+        VStack(spacing: 0) {
+            TabView(selection: $selectedTab) {
+                GeneralPreferencesView()
+                    .tabItem {
+                        Label("General", systemImage: "gearshape")
+                    }
+                    .tag("general")
+                
+                PerformancePreferencesView()
+                    .tabItem {
+                        Label("Performance", systemImage: "cpu")
+                    }
+                    .tag("performance")
+                
+                LoggingPreferencesView()
+                    .tabItem {
+                        Label("Logging & Privacy", systemImage: "lock.shield")
+                    }
+                    .tag("logging")
+                
+                AdvancedPreferencesView()
+                    .tabItem {
+                        Label("Advanced", systemImage: "gearshape.2")
+                    }
+                    .tag("advanced")
+            }
+            .padding(.top, 10) // Standard macOS preferences window tab padding
             
-            PerformancePreferencesView()
-                .tabItem {
-                    Label("Performance", systemImage: "cpu")
-                }
-                .tag("performance")
+            // Close button at bottom
+            Divider()
             
-            LoggingPreferencesView()
-                .tabItem {
-                    Label("Logging & Privacy", systemImage: "lock.shield")
+            HStack {
+                Spacer()
+                
+                Button("Close") {
+                    dismiss()
                 }
-                .tag("logging")
-            
-            AdvancedPreferencesView()
-                .tabItem {
-                    Label("Advanced", systemImage: "gearshape.2")
-                }
-                .tag("advanced")
+                .controlSize(.regular)
+                .keyboardShortcut(.defaultAction)
+                .padding(.trailing, 20)
+                .padding(.vertical, 12)
+            }
+            .background(Color(NSColor.windowBackgroundColor))
         }
-        .padding(.top, 10) // Standard macOS preferences window tab padding
-        .frame(width: 650, height: 520) // Slightly taller to accommodate padding
+        .frame(width: 650, height: 560) // Slightly taller to accommodate close button
     }
 }
 

@@ -870,12 +870,26 @@ class BackupManager {
         
         // Get free space info if available
         var freeSpaceInfo = ""
-        if let url = destinationItems[index].url,
-           let spaceInfo = try? FileManager.default.attributesOfFileSystem(forPath: url.path),
-           let freeBytes = spaceInfo[.systemFreeSize] as? Int64 {
-            let formatter = ByteCountFormatter()
-            formatter.countStyle = .file
-            freeSpaceInfo = " • \(formatter.string(fromByteCount: freeBytes)) free"
+        if let url = destinationItems[index].url {
+            do {
+                let values = try url.resourceValues(forKeys: [.volumeAvailableCapacityKey, .volumeAvailableCapacityForImportantUsageKey])
+                // Use volumeAvailableCapacityForImportantUsage if available (more accurate for user data)
+                // Falls back to volumeAvailableCapacity if not
+                let importantUsage = values.volumeAvailableCapacityForImportantUsage.map { Int64($0) }
+                let regularCapacity = values.volumeAvailableCapacity.map { Int64($0) }
+                let availableBytes = importantUsage ?? regularCapacity ?? Int64(0)
+                let formatter = ByteCountFormatter()
+                formatter.countStyle = .file
+                freeSpaceInfo = " • \(formatter.string(fromByteCount: availableBytes)) free"
+            } catch {
+                // Fall back to the old method if resource values fail
+                if let spaceInfo = try? FileManager.default.attributesOfFileSystem(forPath: url.path),
+                   let freeBytes = spaceInfo[.systemFreeSize] as? Int64 {
+                    let formatter = ByteCountFormatter()
+                    formatter.countStyle = .file
+                    freeSpaceInfo = " • \(formatter.string(fromByteCount: freeBytes)) free"
+                }
+            }
         }
         
         // For network drives, don't show estimates - too many variables
