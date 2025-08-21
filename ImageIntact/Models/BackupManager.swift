@@ -459,6 +459,9 @@ class BackupManager {
         debugLog = []
         hasWrittenDebugLog = false
         
+        // Start preventing sleep
+        SleepPrevention.shared.startPreventingSleep(reason: "ImageIntact backup to \(destinations.count) destination(s)")
+        
         // Use the new queue-based backup system for parallel destination processing
         Task { [weak self] in
             await self?.performQueueBasedBackup(source: source, destinations: destinations)
@@ -469,6 +472,9 @@ class BackupManager {
         guard !shouldCancel else { return }  // Prevent multiple cancellations
         shouldCancel = true
         statusMessage = "Cancelling backup..."
+        
+        // Stop preventing sleep
+        SleepPrevention.shared.stopPreventingSleep()
         
         // Cancel orchestrator if using new system
         Task { @MainActor [weak self] in

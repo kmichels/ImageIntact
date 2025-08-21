@@ -153,11 +153,26 @@ extension BackupManager {
         // Complete statistics and show report
         statistics.completeBackup()
         
+        // Stop preventing sleep
+        SleepPrevention.shared.stopPreventingSleep()
+        
         // Show completion report if not cancelled
         if !shouldCancel {
+            // Send notification if enabled
+            if PreferencesManager.shared.showNotificationOnComplete {
+                NotificationManager.shared.sendBackupCompletionNotification(
+                    filesCopied: progressTracker.processedFiles,
+                    destinations: destinations.count,
+                    duration: statistics.duration ?? 0
+                )
+            }
+            
             // Small delay to ensure UI is ready
             try? await Task.sleep(nanoseconds: 100_000_000) // 0.1 second
             showCompletionReport = true
+        } else {
+            // Still stop sleep prevention even if cancelled
+            logInfo("Backup cancelled by user")
         }
     }
     
