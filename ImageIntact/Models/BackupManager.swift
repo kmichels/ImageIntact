@@ -1,6 +1,7 @@
 import SwiftUI
 import Darwin
 import CryptoKit
+import AppKit
 
 // MARK: - Backup Phase Enum
 enum BackupPhase: Int, Comparable {
@@ -347,6 +348,26 @@ class BackupManager {
             
             let isAccessible = FileManager.default.fileExists(atPath: url.path)
             
+            // Do an immediate space check if we know the backup size
+            if totalBytesToCopy > 0 {
+                let spaceCheck = DiskSpaceChecker.checkDestinationSpace(
+                    destination: url,
+                    requiredBytes: totalBytesToCopy
+                )
+                
+                if let error = spaceCheck.error {
+                    await MainActor.run {
+                        logError("Destination space issue: \(error)")
+                        // We'll show the warning but still allow selection
+                        // The actual backup will do a final check
+                    }
+                } else if let warning = spaceCheck.warning {
+                    await MainActor.run {
+                        logWarning("Destination space warning: \(warning)")
+                    }
+                }
+            }
+            
             if isAccessible {
                 if let driveInfo = DriveAnalyzer.analyzeDrive(at: url) {
                     await MainActor.run {
@@ -446,6 +467,40 @@ class BackupManager {
         }
 
         let destinations = destinationURLs.compactMap { $0 }
+        
+        // Check disk space for all destinations
+        let spaceChecks = DiskSpaceChecker.checkAllDestinations(
+            destinations: destinations,
+            requiredBytes: totalBytesToCopy
+        )
+        
+        let (canProceed, warnings, errors) = DiskSpaceChecker.evaluateSpaceChecks(spaceChecks)
+        
+        // If we have errors (insufficient space), show alert and abort
+        if !canProceed {
+            let alert = NSAlert()
+            alert.messageText = "Insufficient Disk Space"
+            alert.informativeText = errors.joined(separator: "\n\n")
+            alert.alertStyle = .critical
+            alert.addButton(withTitle: "OK")
+            alert.runModal()
+            return
+        }
+        
+        // If we have warnings (< 10% free after backup), show alert with option to proceed
+        if !warnings.isEmpty {
+            let alert = NSAlert()
+            alert.messageText = "Low Disk Space Warning"
+            alert.informativeText = warnings.joined(separator: "\n\n") + "\n\nDo you want to continue?"
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: "Continue")
+            alert.addButton(withTitle: "Cancel")
+            
+            let response = alert.runModal()
+            if response != .alertFirstButtonReturn {
+                return
+            }
+        }
 
         isProcessing = true
         statusMessage = "Preparing backup..."
