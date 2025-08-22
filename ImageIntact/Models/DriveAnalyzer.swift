@@ -191,7 +191,7 @@ class DriveAnalyzer {
         return isNetwork
     }
     
-    private static func getBSDName(for url: URL) -> String? {
+    static func getBSDName(for url: URL) -> String? {
         // Use DiskArbitration to get BSD name from mount point
         guard let session = DASessionCreate(kCFAllocatorDefault) else { 
             print("DriveAnalyzer: Failed to create DA session")
