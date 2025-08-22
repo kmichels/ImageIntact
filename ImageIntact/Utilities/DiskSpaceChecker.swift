@@ -70,14 +70,29 @@ class DiskSpaceChecker {
         }
         
         // Calculate total space needed (backup size + buffer)
-        let totalRequired = requiredBytes + additionalBuffer
+        // Use addingReportingOverflow to safely handle large values
+        let (totalRequired, overflow) = requiredBytes.addingReportingOverflow(additionalBuffer)
+        
+        // If overflow occurs, we definitely don't have enough space
+        if overflow {
+            return SpaceCheckResult(
+                destination: destination,
+                spaceInfo: spaceInfo,
+                requiredSpace: Int64.max,
+                hasEnoughSpace: false,
+                willHaveLessThan10PercentFree: true,
+                warning: nil,
+                error: "Required space exceeds maximum value"
+            )
+        }
         
         // Check if we have enough space
         let hasEnoughSpace = spaceInfo.availableSpace >= totalRequired
         
         // Calculate what the free space percentage will be after backup
-        let spaceAfterBackup = spaceInfo.freeSpace - requiredBytes
-        let percentFreeAfterBackup = (Double(spaceAfterBackup) / Double(spaceInfo.totalSpace)) * 100
+        // Handle potential underflow
+        let spaceAfterBackup = spaceInfo.freeSpace > requiredBytes ? spaceInfo.freeSpace - requiredBytes : 0
+        let percentFreeAfterBackup = spaceInfo.totalSpace > 0 ? (Double(spaceAfterBackup) / Double(spaceInfo.totalSpace)) * 100 : 0.0
         let willHaveLessThan10PercentFree = percentFreeAfterBackup < 10.0
         
         // Generate appropriate warnings/errors
