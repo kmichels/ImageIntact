@@ -24,6 +24,13 @@ class PreferencesManager: ObservableObject {
     @AppStorage("skipHiddenFiles") var skipHiddenFiles: Bool = true
     @AppStorage("defaultFileTypeFilter") var defaultFileTypeFilter: String = "all" // all, photos, raw, videos
     
+    // MARK: - Backup Confirmations
+    
+    @AppStorage("confirmLargeBackups") var confirmLargeBackups: Bool = true
+    @AppStorage("largeBackupFileThreshold") var largeBackupFileThreshold: Int = 1000 // files
+    @AppStorage("largeBackupSizeThresholdGB") var largeBackupSizeThresholdGB: Double = 10.0 // GB
+    @AppStorage("skipLargeBackupWarning") var skipLargeBackupWarning: Bool = false
+    
     // MARK: - Performance
     
     @AppStorage("enableVisionFramework") private var enableVisionFrameworkStorage: Bool?
@@ -58,8 +65,6 @@ class PreferencesManager: ObservableObject {
     
     @AppStorage("enableSmartDuplicateDetection") var enableSmartDuplicateDetection: Bool = false
     @AppStorage("showTechnicalDetails") var showTechnicalDetails: Bool = false
-    @AppStorage("requireConfirmationLargeBackup") var requireConfirmationLargeBackup: Bool = true
-    @AppStorage("largeBackupThresholdGB") var largeBackupThresholdGB: Int = 100
     @AppStorage("showPreflightSummary") var showPreflightSummary: Bool = false
     
     // MARK: - Helper Methods
@@ -92,9 +97,13 @@ class PreferencesManager: ObservableObject {
         // Advanced
         enableSmartDuplicateDetection = false
         showTechnicalDetails = false
-        requireConfirmationLargeBackup = true
-        largeBackupThresholdGB = 100
         showPreflightSummary = false
+        
+        // Backup Confirmations
+        confirmLargeBackups = true
+        largeBackupFileThreshold = 1000
+        largeBackupSizeThresholdGB = 10.0
+        skipLargeBackupWarning = false
     }
     
     func getDefaultFileTypeFilter() -> FileTypeFilter {

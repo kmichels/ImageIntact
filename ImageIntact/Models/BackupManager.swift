@@ -150,6 +150,19 @@ class BackupManager {
         self.destinationURLs = loadedURLs
         self.destinationItems = loadedURLs.map { DestinationItem(url: $0) }
         
+        // Initialize file type filter from preferences
+        let filterPref = PreferencesManager.shared.defaultFileTypeFilter
+        switch filterPref {
+        case "photos":
+            self.fileTypeFilter = .photosOnly
+        case "raw":
+            self.fileTypeFilter = .rawOnly
+        case "videos":
+            self.fileTypeFilter = .videosOnly
+        default:
+            self.fileTypeFilter = FileTypeFilter() // All files
+        }
+        
         // Load source URL and trigger scan if it exists
         if let savedSourceURL = BackupManager.loadBookmark(forKey: sourceKey) {
             // Test if we can actually access this bookmark

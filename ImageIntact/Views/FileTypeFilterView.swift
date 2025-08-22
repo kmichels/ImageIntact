@@ -130,10 +130,24 @@ struct FileTypeFilterView: View {
     private func clearFilter() {
         backupManager.fileTypeFilter = FileTypeFilter()
         selectedTypes = Set(backupManager.sourceFileTypes.keys)
+        
+        // Save preference
+        PreferencesManager.shared.defaultFileTypeFilter = "all"
     }
     
     private func applyPreset(_ preset: FileTypeFilter) {
         backupManager.fileTypeFilter = preset
+        
+        // Save preference based on preset type
+        if preset.isRawOnly {
+            PreferencesManager.shared.defaultFileTypeFilter = "raw"
+        } else if preset.isPhotosOnly {
+            PreferencesManager.shared.defaultFileTypeFilter = "photos"
+        } else if preset.isVideosOnly {
+            PreferencesManager.shared.defaultFileTypeFilter = "videos"
+        } else if preset.includedExtensions.isEmpty {
+            PreferencesManager.shared.defaultFileTypeFilter = "all"
+        }
         
         // Update selected types to match preset
         if preset.includedExtensions.isEmpty {
@@ -165,6 +179,9 @@ struct FileTypeFilterView: View {
             scanResults: backupManager.sourceFileTypes,
             selectedTypes: selectedTypes
         )
+        
+        // For custom filters, we don't update the default preference
+        // since it's specific to the current selection
     }
 }
 

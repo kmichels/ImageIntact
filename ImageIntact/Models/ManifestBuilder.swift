@@ -15,9 +15,98 @@ actor ManifestBuilder {
     /// Batch processor for optimized file operations
     private let batchProcessor = BatchFileProcessor()
     
+    /// Cache and temporary file patterns to exclude
+    private static let cachePatterns = [
+        // macOS system cache patterns
+        ".DS_Store",
+        ".Spotlight-V100",
+        ".Trashes",
+        ".fseventsd",
+        ".TemporaryItems",
+        ".VolumeIcon.icns",
+        ".DocumentRevisions-V100",
+        ".PKInstallSandboxManager",
+        ".PKInstallSandboxManager-SystemSoftware",
+        
+        // Adobe cache files
+        "Adobe Premiere Pro Video Previews",
+        "Adobe Premiere Pro Audio Previews", 
+        "Media Cache Files",
+        "Media Cache",
+        "CacheClip",
+        ".BridgeCache",
+        ".BridgeCacheT",
+        
+        // Photo editing app caches
+        "Lightroom Catalog Previews.lrdata",
+        "Lightroom Catalog Smart Previews.lrdata",
+        ".photoslibrary/database",
+        ".photoslibrary/private",
+        
+        // Development caches
+        "node_modules",
+        ".git",
+        "DerivedData",
+        "build",
+        ".build",
+        
+        // Thumbnail caches
+        "Thumbs.db",
+        ".thumbnails",
+        "thumbnail",
+        
+        // Temporary files
+        "~",
+        ".tmp",
+        ".temp",
+        ".cache",
+        ".lock"
+    ]
+    
     // MARK: - Initialization
     
     init() {}
+    
+    // MARK: - Helper Methods
+    
+    /// Check if a file or directory should be excluded as a cache/temporary file
+    private func isCacheFile(_ url: URL) -> Bool {
+        let path = url.path
+        let filename = url.lastPathComponent
+        
+        // Check exact filename matches
+        for pattern in Self.cachePatterns {
+            if filename == pattern {
+                return true
+            }
+        }
+        
+        // Check if path contains cache directories
+        for pattern in Self.cachePatterns {
+            if path.contains("/\(pattern)/") {
+                return true
+            }
+        }
+        
+        // Check for temporary file patterns
+        if filename.hasPrefix("~") || filename.hasPrefix(".") {
+            // Exception for legitimate hidden image files
+            let imageExtensions = ["jpg", "jpeg", "png", "gif", "tiff", "raw", "nef", "cr2", "arw"]
+            let ext = url.pathExtension.lowercased()
+            if imageExtensions.contains(ext) {
+                return false // Don't exclude hidden image files
+            }
+            return true // Exclude other hidden/temp files
+        }
+        
+        // Check for file extensions that indicate temp/cache
+        if filename.hasSuffix(".tmp") || filename.hasSuffix(".temp") || 
+           filename.hasSuffix(".cache") || filename.hasSuffix(".lock") {
+            return true
+        }
+        
+        return false
+    }
     
     // MARK: - Callbacks
     
@@ -47,10 +136,17 @@ actor ManifestBuilder {
         var filesToProcess: [(url: URL, relativePath: String, size: Int64)] = []
         
         let fileManager = FileManager.default
+        
+        // Set enumerator options based on preferences
+        var enumeratorOptions: FileManager.DirectoryEnumerationOptions = []
+        if PreferencesManager.shared.skipHiddenFiles {
+            enumeratorOptions.insert(.skipsHiddenFiles)
+        }
+        
         guard let enumerator = fileManager.enumerator(
             at: source,
             includingPropertiesForKeys: [.isRegularFileKey, .fileSizeKey],
-            options: [.skipsHiddenFiles]
+            options: enumeratorOptions
         ) else {
             return nil
         }
@@ -65,6 +161,14 @@ actor ManifestBuilder {
                 let resourceValues = try url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
                 
                 guard resourceValues.isRegularFile == true else { continue }
+                
+                // Skip cache and temporary files if preference is enabled
+                if PreferencesManager.shared.excludeCacheFiles && isCacheFile(url) {
+                    // Debug: log cache files being skipped
+                    print("🗑️ Skipping cache/temp file: \(url.lastPathComponent)")
+                    continue
+                }
+                
                 guard ImageFileType.isSupportedFile(url) else { 
                     // Debug: log skipped files
                     if url.pathExtension.lowercased() == "mp4" || url.pathExtension.lowercased() == "mov" {

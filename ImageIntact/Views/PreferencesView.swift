@@ -82,7 +82,7 @@ struct GeneralPreferencesView: View {
                             HStack(alignment: .center, spacing: 12) {
                                 Text("Default Source:")
                                     .font(.system(size: 13))
-                                    .frame(width: 140, alignment: .trailing)
+                                    .frame(alignment: .leading)
                                 
                                 Text(preferences.defaultSourcePath.isEmpty ? "Not set" : URL(fileURLWithPath: preferences.defaultSourcePath).lastPathComponent)
                                     .font(.system(size: 13))
@@ -90,6 +90,8 @@ struct GeneralPreferencesView: View {
                                     .frame(maxWidth: .infinity, alignment: .leading)
                                     .lineLimit(1)
                                     .truncationMode(.middle)
+                                
+                                Spacer()
                                 
                                 Button("Choose...") {
                                     selectSourceFolder()
@@ -107,7 +109,7 @@ struct GeneralPreferencesView: View {
                             HStack(alignment: .center, spacing: 12) {
                                 Text("Default Destination:")
                                     .font(.system(size: 13))
-                                    .frame(width: 140, alignment: .trailing)
+                                    .frame(alignment: .leading)
                                 
                                 Text(preferences.defaultDestinationPath.isEmpty ? "Not set" : URL(fileURLWithPath: preferences.defaultDestinationPath).lastPathComponent)
                                     .font(.system(size: 13))
@@ -115,6 +117,8 @@ struct GeneralPreferencesView: View {
                                     .frame(maxWidth: .infinity, alignment: .leading)
                                     .lineLimit(1)
                                     .truncationMode(.middle)
+                                
+                                Spacer()
                                 
                                 Button("Choose...") {
                                     selectDestinationFolder()
@@ -168,16 +172,15 @@ struct GeneralPreferencesView: View {
                         VStack(alignment: .leading, spacing: 10) {
                             Toggle("Exclude cache files by default", isOn: $preferences.excludeCacheFiles)
                                 .font(.system(size: 13))
-                                .help("Skip Lightroom previews, Capture One cache, and similar files")
+                                .help("Skip Adobe cache files, Lightroom previews, .DS_Store, thumbnails, and other temporary files")
                             
                             Toggle("Skip hidden files", isOn: $preferences.skipHiddenFiles)
                                 .font(.system(size: 13))
                                 .help("Ignore .DS_Store, ._* files, and other system files")
                             
-                            HStack(spacing: 12) {
+                            HStack(spacing: 6) {
                                 Text("Default file type filter:")
                                     .font(.system(size: 13))
-                                    .frame(width: 140, alignment: .trailing)
                                 
                                 Picker("", selection: $preferences.defaultFileTypeFilter) {
                                     Text("All Files").tag("all")
@@ -187,6 +190,7 @@ struct GeneralPreferencesView: View {
                                 }
                                 .pickerStyle(MenuPickerStyle())
                                 .frame(width: 150)
+                                .help("Default filter applied when starting a new backup")
                                 
                                 Spacer()
                             }
@@ -633,19 +637,35 @@ struct AdvancedPreferencesView: View {
                             .foregroundColor(.primary)
                         
                         VStack(alignment: .leading, spacing: 10) {
-                            Toggle("Require confirmation for large backups", isOn: $preferences.requireConfirmationLargeBackup)
+                            Toggle("Confirm before large backups", isOn: $preferences.confirmLargeBackups)
                                 .font(.system(size: 13))
                                 .help("Ask for confirmation before starting backups over the threshold")
                             
                             HStack(spacing: 12) {
-                                Text("Large backup threshold:")
+                                Text("File count threshold:")
                                     .font(.system(size: 13))
                                     .frame(width: 160, alignment: .trailing)
                                 
-                                TextField("", value: $preferences.largeBackupThresholdGB, format: .number)
-                                    .frame(width: 60)
+                                TextField("", value: $preferences.largeBackupFileThreshold, format: .number)
+                                    .frame(width: 80)
                                     .textFieldStyle(RoundedBorderTextFieldStyle())
-                                    .disabled(!preferences.requireConfirmationLargeBackup)
+                                    .disabled(!preferences.confirmLargeBackups)
+                                
+                                Text("files")
+                                    .font(.system(size: 13))
+                                
+                                Spacer()
+                            }
+                            
+                            HStack(spacing: 12) {
+                                Text("Size threshold:")
+                                    .font(.system(size: 13))
+                                    .frame(width: 160, alignment: .trailing)
+                                
+                                TextField("", value: $preferences.largeBackupSizeThresholdGB, format: .number)
+                                    .frame(width: 80)
+                                    .textFieldStyle(RoundedBorderTextFieldStyle())
+                                    .disabled(!preferences.confirmLargeBackups)
                                 
                                 Text("GB")
                                     .font(.system(size: 13))
