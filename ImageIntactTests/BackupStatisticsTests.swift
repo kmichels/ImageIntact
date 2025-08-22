@@ -257,10 +257,10 @@ class BackupStatisticsTests: XCTestCase {
         let summary = stats.generateSummary()
         
         // Check that summary contains key information
-        XCTAssertTrue(summary.contains("Backup Complete"), "Should contain 'Backup Complete'")
+        XCTAssertTrue(summary.contains("ImageIntact Backup Report"), "Should contain report header")
         XCTAssertTrue(summary.contains("Files Processed: 140"), "Should show files processed")
-        XCTAssertTrue(summary.contains("Failed: 10"), "Should show failed count")
-        XCTAssertTrue(summary.contains("Skipped: 5"), "Should show skipped count")
+        XCTAssertTrue(summary.contains("Files Failed: 10"), "Should show failed count")
+        XCTAssertTrue(summary.contains("Files Skipped: 5"), "Should show skipped count")
         XCTAssertTrue(summary.contains("Success Rate:"), "Should show success rate")
         XCTAssertTrue(summary.contains("JPEG"), "Should mention JPEG files")
         XCTAssertTrue(summary.contains("NEF"), "Should mention NEF files")
