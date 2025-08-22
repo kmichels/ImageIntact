@@ -510,18 +510,20 @@ struct LoggingPreferencesView: View {
                         VStack(alignment: .leading, spacing: 10) {
                             HStack(spacing: 12) {
                                 Button("View Backup History...") {
-                                    // TODO: Implement backup history viewer
-                                    logInfo("View Backup History clicked - not yet implemented")
+                                    // Feature planned for a future release
+                                    logInfo("Backup History viewer - planned for future release")
                                 }
                                 .controlSize(.small)
                                 .disabled(true)
+                                .help("View detailed history of all backups (coming soon)")
                                 
                                 Button("Export Backup Catalog...") {
-                                    // TODO: Implement catalog export
-                                    logInfo("Export Backup Catalog clicked - not yet implemented")
+                                    // Feature planned for a future release
+                                    logInfo("Catalog export - planned for future release")
                                 }
                                 .controlSize(.small)
                                 .disabled(true)
+                                .help("Export a catalog of all backed up files (coming soon)")
                             }
                             
                             HStack(spacing: 8) {

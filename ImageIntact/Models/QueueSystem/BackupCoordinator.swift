@@ -451,7 +451,9 @@ class BackupCoordinator: ObservableObject {
     // MARK: - Work Stealing (Future Enhancement)
     
     func enableWorkStealing() {
-        // TODO: Implement work stealing between queues
-        // Fast destinations can help slow ones
+        // Future enhancement: Implement work stealing between queues
+        // This would allow fast destinations to help slow ones complete
+        // their work, improving overall backup completion time
+        logInfo("Work stealing not yet implemented - planned for future release")
     }
 }
