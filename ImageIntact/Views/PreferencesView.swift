@@ -675,7 +675,7 @@ struct AdvancedPreferencesView: View {
                             
                             Toggle("Show summary before starting backup", isOn: $preferences.showPreflightSummary)
                                 .font(.system(size: 13))
-                                .help("Display a summary of what will be backed up before starting")
+                                .help("Display a summary of what will be backed up before starting. You can also toggle this directly from the summary dialog.")
                         }
                     }
                     

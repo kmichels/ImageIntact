@@ -608,7 +608,17 @@ class BackupManager {
             alert.addButton(withTitle: "Start Backup")
             alert.addButton(withTitle: "Cancel")
             
+            // Add "Show this summary before run" checkbox
+            alert.showsSuppressionButton = true
+            alert.suppressionButton?.title = "Show this summary before run"
+            alert.suppressionButton?.state = .on  // Checked by default
+            
             let response = alert.runModal()
+            
+            // Update preference based on checkbox state
+            // Note: suppression button logic is inverted - when unchecked, we disable the summary
+            PreferencesManager.shared.showPreflightSummary = (alert.suppressionButton?.state == .on)
+            
             if response != .alertFirstButtonReturn {
                 return
             }
