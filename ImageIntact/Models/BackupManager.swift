@@ -145,10 +145,32 @@ class BackupManager {
     
     // MARK: - Initialization
     init() {
-        // Load destinations first (only once)
-        let loadedURLs = BackupManager.loadDestinationBookmarks()
-        self.destinationURLs = loadedURLs
-        self.destinationItems = loadedURLs.map { DestinationItem(url: $0) }
+        // Check if we should restore last session
+        if PreferencesManager.shared.restoreLastSession {
+            // Load destinations from saved bookmarks
+            let loadedURLs = BackupManager.loadDestinationBookmarks()
+            self.destinationURLs = loadedURLs
+            self.destinationItems = loadedURLs.map { DestinationItem(url: $0) }
+            
+            // Analyze drives for loaded destinations
+            for (index, url) in loadedURLs.enumerated() where url != nil {
+                if let url = url, index < self.destinationItems.count {
+                    let itemID = self.destinationItems[index].id
+                    Task {
+                        if let driveInfo = DriveAnalyzer.analyzeDrive(at: url) {
+                            await MainActor.run { [weak self] in
+                                self?.destinationDriveInfo[itemID] = driveInfo
+                                logInfo("Drive analyzed on restore: \(driveInfo.deviceName)")
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            // Start with one empty destination slot
+            self.destinationURLs = [nil]
+            self.destinationItems = [DestinationItem(url: nil)]
+        }
         
         // Initialize file type filter from preferences
         let filterPref = PreferencesManager.shared.defaultFileTypeFilter
@@ -163,8 +185,9 @@ class BackupManager {
             self.fileTypeFilter = FileTypeFilter() // All files
         }
         
-        // Load source URL and trigger scan if it exists
-        if let savedSourceURL = BackupManager.loadBookmark(forKey: sourceKey) {
+        // Load source URL and trigger scan if it exists (only if restoring last session)
+        if PreferencesManager.shared.restoreLastSession,
+           let savedSourceURL = BackupManager.loadBookmark(forKey: sourceKey) {
             // Test if we can actually access this bookmark
             let canAccess = savedSourceURL.startAccessingSecurityScopedResource()
             if canAccess {
@@ -507,6 +530,82 @@ class BackupManager {
             alert.informativeText = warnings.joined(separator: "\n\n") + "\n\nDo you want to continue?"
             alert.alertStyle = .warning
             alert.addButton(withTitle: "Continue")
+            alert.addButton(withTitle: "Cancel")
+            
+            let response = alert.runModal()
+            if response != .alertFirstButtonReturn {
+                return
+            }
+        }
+        
+        // Show pre-flight summary if enabled
+        if PreferencesManager.shared.showPreflightSummary {
+            let alert = NSAlert()
+            alert.messageText = "Backup Summary"
+            
+            // Build the summary message
+            var message = "Ready to start backup:\n\n"
+            
+            // Source info
+            message += "📁 Source: \(source.lastPathComponent)\n"
+            message += "   Path: \(source.path)\n\n"
+            
+            // File summary
+            if let filteredSummary = getFilteredFilesSummary() {
+                message += "📊 Files to backup:\n"
+                if filteredSummary.willCopy != filteredSummary.total {
+                    message += "   \(filteredSummary.willCopy) of \(filteredSummary.total) files (filtered)\n"
+                    message += "   Types: \(filteredSummary.summary)\n\n"
+                } else {
+                    message += "   \(filteredSummary.total) files\n"
+                    message += "   Types: \(filteredSummary.summary)\n\n"
+                }
+            } else if !sourceFileTypes.isEmpty {
+                let totalFiles = sourceFileTypes.values.reduce(0, +)
+                message += "📊 Files to backup: \(totalFiles)\n"
+                message += "   Types: \(getFormattedFileTypeSummary())\n\n"
+            }
+            
+            // Size info
+            if sourceTotalBytes > 0 {
+                let formatter = ByteCountFormatter()
+                formatter.countStyle = .file
+                let sizeString = formatter.string(fromByteCount: sourceTotalBytes)
+                message += "💾 Total size: \(sizeString)\n\n"
+            }
+            
+            // Destination info
+            message += "📍 Destination\(destinations.count > 1 ? "s" : ""):\n"
+            for (index, dest) in destinations.enumerated() {
+                message += "   \(index + 1). \(dest.lastPathComponent)"
+                
+                // Add drive info if available
+                if index < destinationItems.count {
+                    let itemID = destinationItems[index].id
+                    if let driveInfo = destinationDriveInfo[itemID] {
+                        if !driveInfo.deviceName.isEmpty {
+                            message += " (\(driveInfo.deviceName))"
+                        }
+                    }
+                }
+                message += "\n"
+            }
+            
+            // Settings info
+            message += "\n⚙️ Settings:\n"
+            if PreferencesManager.shared.excludeCacheFiles {
+                message += "   • Cache files will be excluded\n"
+            }
+            if PreferencesManager.shared.skipHiddenFiles {
+                message += "   • Hidden files will be skipped\n"
+            }
+            if !fileTypeFilter.includedExtensions.isEmpty {
+                message += "   • File type filter is active\n"
+            }
+            
+            alert.informativeText = message
+            alert.alertStyle = .informational
+            alert.addButton(withTitle: "Start Backup")
             alert.addButton(withTitle: "Cancel")
             
             let response = alert.runModal()
