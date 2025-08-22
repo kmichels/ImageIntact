@@ -84,7 +84,10 @@ class SystemCapabilities {
         container = NSPersistentContainer(name: "SystemInfo", managedObjectModel: model)
         
         // Configure store
-        let storeURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        guard let appSupportURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
+            fatalError("Unable to locate Application Support directory")
+        }
+        let storeURL = appSupportURL
             .appendingPathComponent("ImageIntact", isDirectory: true)
             .appendingPathComponent("SystemInfo.sqlite")
         

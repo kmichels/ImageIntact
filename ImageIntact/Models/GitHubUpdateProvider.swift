@@ -13,7 +13,9 @@ class GitHubUpdateProvider: UpdateProvider {
     /// Check for updates via GitHub API
     func checkForUpdates(currentVersion: String) async throws -> AppUpdate? {
         // GitHub API endpoint for latest release
-        let url = URL(string: "https://api.github.com/repos/\(owner)/\(repo)/releases/latest")!
+        guard let url = URL(string: "https://api.github.com/repos/\(owner)/\(repo)/releases/latest") else {
+            throw UpdateError.invalidURL
+        }
         
         var request = URLRequest(url: url)
         request.setValue("application/vnd.github.v3+json", forHTTPHeaderField: "Accept")
@@ -122,7 +124,9 @@ class GitHubUpdateProvider: UpdateProvider {
         }
         
         // Move to Downloads folder
-        let downloadsURL = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first!
+        guard let downloadsURL = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first else {
+            throw UpdateError.downloadFailed(UpdateError.invalidResponse)
+        }
         let fileName = update.downloadURL.lastPathComponent
         let destinationURL = downloadsURL.appendingPathComponent(fileName)
         

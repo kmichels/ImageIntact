@@ -33,6 +33,7 @@ protocol UpdateProvider {
 enum UpdateError: LocalizedError {
     case networkError(Error)
     case invalidResponse
+    case invalidURL
     case noUpdatesAvailable
     case downloadFailed(Error)
     case installationFailed(Error)
@@ -44,6 +45,8 @@ enum UpdateError: LocalizedError {
             return "Network error: \(error.localizedDescription)"
         case .invalidResponse:
             return "Invalid response from update server"
+        case .invalidURL:
+            return "Invalid update server URL"
         case .noUpdatesAvailable:
             return "No updates available"
         case .downloadFailed(let error):

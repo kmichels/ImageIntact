@@ -80,7 +80,10 @@ class ApplicationLogger {
         container = NSPersistentContainer(name: "ApplicationLogs", managedObjectModel: model)
         
         // Configure store
-        let storeURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        guard let appSupportURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
+            fatalError("Unable to locate Application Support directory")
+        }
+        let storeURL = appSupportURL
             .appendingPathComponent("ImageIntact", isDirectory: true)
             .appendingPathComponent("ApplicationLogs.sqlite")
         

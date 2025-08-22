@@ -138,7 +138,8 @@ class DiskSpaceChecker {
             if statfs(url.path, &stat) == 0 {
                 let fsTypeName = withUnsafeBytes(of: stat.f_fstypename) { bytes in
                     let cString = bytes.bindMemory(to: CChar.self)
-                    return String(cString: cString.baseAddress!)
+                    guard let baseAddress = cString.baseAddress else { return "" }
+                    return String(cString: baseAddress)
                 }
                 // Common network filesystem types
                 return ["nfs", "smbfs", "afpfs", "webdav", "cifs"].contains(fsTypeName.lowercased())

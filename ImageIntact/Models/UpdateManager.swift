@@ -261,10 +261,13 @@ class MockUpdateProvider: UpdateProvider {
         try await Task.sleep(nanoseconds: 1_000_000_000)
         
         // Return a fake update
+        guard let testURL = URL(string: "https://example.com/test.dmg") else {
+            return nil
+        }
         return AppUpdate(
             version: "99.9.9",
             releaseNotes: "This is a test update for development purposes.\n\n• Feature 1\n• Feature 2\n• Bug fixes",
-            downloadURL: URL(string: "https://example.com/test.dmg")!,
+            downloadURL: testURL,
             publishedDate: Date(),
             minimumOSVersion: "14.0",
             fileSize: 10_000_000
