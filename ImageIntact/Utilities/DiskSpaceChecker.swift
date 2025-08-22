@@ -116,8 +116,50 @@ class DiskSpaceChecker {
     
     /// Get disk space information for a given URL
     private static func getDiskSpaceInfo(for url: URL) -> DiskSpaceInfo? {
+        // Check if this is a network volume
+        let isNetworkVolume: Bool = {
+            // Check if URL is on a network mount
+            var stat = statfs()
+            if statfs(url.path, &stat) == 0 {
+                let fsTypeName = withUnsafeBytes(of: stat.f_fstypename) { bytes in
+                    let cString = bytes.bindMemory(to: CChar.self)
+                    return String(cString: cString.baseAddress!)
+                }
+                // Common network filesystem types
+                return ["nfs", "smbfs", "afpfs", "webdav", "cifs"].contains(fsTypeName.lowercased())
+            }
+            return false
+        }()
+        
+        // For network volumes, use statfs which is more reliable
+        if isNetworkVolume {
+            var stat = statfs()
+            if statfs(url.path, &stat) == 0 {
+                let totalSpace = Int64(stat.f_blocks) * Int64(stat.f_bsize)
+                let availableSpace = Int64(stat.f_bavail) * Int64(stat.f_bsize)
+                let freeSpace = Int64(stat.f_bfree) * Int64(stat.f_bsize)
+                
+                // Some network volumes report 0 or extremely large values
+                // Validate the values are reasonable
+                if totalSpace > 0 && availableSpace >= 0 && freeSpace >= 0 {
+                    let percentFree = totalSpace > 0 ? (Double(freeSpace) / Double(totalSpace)) * 100 : 0
+                    let percentAvailable = totalSpace > 0 ? (Double(availableSpace) / Double(totalSpace)) * 100 : 0
+                    
+                    return DiskSpaceInfo(
+                        totalSpace: totalSpace,
+                        freeSpace: freeSpace,
+                        availableSpace: availableSpace,
+                        percentFree: percentFree,
+                        percentAvailable: percentAvailable
+                    )
+                }
+                // If values are unreasonable, fall through to try other methods
+                logInfo("Network volume \(url.path) reported unreliable space values, trying alternate methods")
+            }
+        }
+        
         do {
-            // First try to get volume resource values (more accurate)
+            // Try to get volume resource values (more accurate for local volumes)
             let values = try url.resourceValues(forKeys: [
                 .volumeTotalCapacityKey,
                 .volumeAvailableCapacityKey,

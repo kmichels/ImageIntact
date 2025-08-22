@@ -993,23 +993,44 @@ class BackupManager {
         // Get free space info if available
         var freeSpaceInfo = ""
         if let url = destinationItems[index].url {
-            do {
-                let values = try url.resourceValues(forKeys: [.volumeAvailableCapacityKey, .volumeAvailableCapacityForImportantUsageKey])
-                // Use volumeAvailableCapacityForImportantUsage if available (more accurate for user data)
-                // Falls back to volumeAvailableCapacity if not
-                let importantUsage = values.volumeAvailableCapacityForImportantUsage.map { Int64($0) }
-                let regularCapacity = values.volumeAvailableCapacity.map { Int64($0) }
-                let availableBytes = importantUsage ?? regularCapacity ?? Int64(0)
-                let formatter = ByteCountFormatter()
-                formatter.countStyle = .file
-                freeSpaceInfo = " • \(formatter.string(fromByteCount: availableBytes)) free"
-            } catch {
-                // Fall back to the old method if resource values fail
-                if let spaceInfo = try? FileManager.default.attributesOfFileSystem(forPath: url.path),
-                   let freeBytes = spaceInfo[.systemFreeSize] as? Int64 {
+            // For network drives, try different approaches
+            if driveInfo.connectionType == .network {
+                // Try statfs for network volumes
+                var stat = statfs()
+                if statfs(url.path, &stat) == 0 {
+                    let availableBytes = Int64(stat.f_bavail) * Int64(stat.f_bsize)
+                    if availableBytes > 0 {
+                        let formatter = ByteCountFormatter()
+                        formatter.countStyle = .file
+                        freeSpaceInfo = " • \(formatter.string(fromByteCount: availableBytes)) free"
+                    } else {
+                        // Network volume might not report space correctly
+                        freeSpaceInfo = ""  // Don't show misleading "Zero KB free"
+                    }
+                } else {
+                    // Can't determine space for network volume
+                    freeSpaceInfo = ""  // Don't show misleading info
+                }
+            } else {
+                // For local drives, use the standard approach
+                do {
+                    let values = try url.resourceValues(forKeys: [.volumeAvailableCapacityKey, .volumeAvailableCapacityForImportantUsageKey])
+                    // Use volumeAvailableCapacityForImportantUsage if available (more accurate for user data)
+                    // Falls back to volumeAvailableCapacity if not
+                    let importantUsage = values.volumeAvailableCapacityForImportantUsage.map { Int64($0) }
+                    let regularCapacity = values.volumeAvailableCapacity.map { Int64($0) }
+                    let availableBytes = importantUsage ?? regularCapacity ?? Int64(0)
                     let formatter = ByteCountFormatter()
                     formatter.countStyle = .file
-                    freeSpaceInfo = " • \(formatter.string(fromByteCount: freeBytes)) free"
+                    freeSpaceInfo = " • \(formatter.string(fromByteCount: availableBytes)) free"
+                } catch {
+                    // Fall back to the old method if resource values fail
+                    if let spaceInfo = try? FileManager.default.attributesOfFileSystem(forPath: url.path),
+                       let freeBytes = spaceInfo[.systemFreeSize] as? Int64 {
+                        let formatter = ByteCountFormatter()
+                        formatter.countStyle = .file
+                        freeSpaceInfo = " • \(formatter.string(fromByteCount: freeBytes)) free"
+                    }
                 }
             }
         }
