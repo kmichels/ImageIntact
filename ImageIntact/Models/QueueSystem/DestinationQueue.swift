@@ -256,6 +256,12 @@ actor DestinationQueue {
                                 checksum: task.checksum,
                                 metadata: ["reason": "Already exists with matching checksum"]
                             )
+                            
+                            // Also log to ApplicationLogger
+                            ApplicationLogger.shared.debug(
+                                "Skipped (already exists): \(task.sourceURL.path)",
+                                category: .backup
+                            )
                         }
                         return .skipped(reason: "Already exists with matching checksum")
                     }
@@ -286,6 +292,12 @@ actor DestinationQueue {
                         checksum: task.checksum,
                         duration: duration
                     )
+                    
+                    // Also log to ApplicationLogger with full file paths
+                    ApplicationLogger.shared.debug(
+                        "Copied file: \(task.sourceURL.path) -> \(destPath.path)",
+                        category: .backup
+                    )
                 }
                 
                 // Extra confirmation for videos
@@ -313,6 +325,12 @@ actor DestinationQueue {
                         fileSize: task.size,
                         error: error,
                         metadata: ["operation": "copy"]
+                    )
+                    
+                    // Also log to ApplicationLogger
+                    ApplicationLogger.shared.error(
+                        "Failed to copy \(task.sourceURL.path): \(error.localizedDescription)",
+                        category: .backup
                     )
                 }
                 
@@ -467,6 +485,12 @@ actor DestinationQueue {
                             checksum: task.checksum,
                             duration: duration
                         )
+                        
+                        // Also log to ApplicationLogger
+                        ApplicationLogger.shared.debug(
+                            "Verified: \(destPath.path)",
+                            category: .backup
+                        )
                     }
                     
                     // Notify coordinator of verification progress
@@ -491,6 +515,12 @@ actor DestinationQueue {
                                 "expectedChecksum": task.checksum,
                                 "actualChecksum": actualChecksum
                             ]
+                        )
+                        
+                        // Also log to ApplicationLogger
+                        ApplicationLogger.shared.error(
+                            "Verification failed for \(destPath.path): checksum mismatch",
+                            category: .backup
                         )
                     }
                 }

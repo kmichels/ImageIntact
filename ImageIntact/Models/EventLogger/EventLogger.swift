@@ -469,7 +469,7 @@ class EventLogger {
             let errors = events.filter { $0.severity == "error" }
             for error in errors.prefix(10) {  // Show first 10 errors
                 if let file = error.filePath {
-                    report += "• \(URL(fileURLWithPath: file).lastPathComponent)"
+                    report += "• \(file)"  // Show full path
                     if let msg = error.errorMessage {
                         report += ": \(msg)"
                     }
@@ -499,11 +499,11 @@ class EventLogger {
             report += "\n[\(time)] [\(severity.uppercased())] \(type): "
             
             if let file = event.filePath {
-                report += URL(fileURLWithPath: file).lastPathComponent
+                report += file  // Show full path
             }
             
             if let dest = event.destinationPath {
-                report += " -> \(URL(fileURLWithPath: dest).lastPathComponent)"
+                report += " -> \(dest)"  // Show full path
             }
             
             if let error = event.errorMessage {

@@ -83,6 +83,12 @@ class BackupOrchestrator {
             sessionID: sessionID
         )
         
+        // Also log to ApplicationLogger for debug output
+        ApplicationLogger.shared.info(
+            "Starting backup from \(source.path) to \(destinations.count) destination(s)",
+            category: .backup
+        )
+        
         // Cleanup on exit
         defer {
             currentCoordinator = nil
@@ -149,6 +155,20 @@ class BackupOrchestrator {
             "totalBytes": totalBytes,
             "destinationCount": destinations.count
         ])
+        
+        // Also log to ApplicationLogger for debug output
+        ApplicationLogger.shared.debug(
+            "Manifest built: \(manifest.count) files, \(ByteCountFormatter.string(fromByteCount: totalBytes, countStyle: .file))",
+            category: .backup
+        )
+        
+        // Log destination paths
+        for (index, dest) in destinations.enumerated() {
+            ApplicationLogger.shared.debug(
+                "Destination \(index + 1): \(dest.path)",
+                category: .backup
+            )
+        }
         
         // PHASE 3: Initialize progress tracking
         progressTracker.totalFiles = manifest.count
@@ -221,8 +241,24 @@ class BackupOrchestrator {
         
         if failedFiles.isEmpty {
             onStatusUpdate?("✅ Backup complete in \(timeString)")
+            ApplicationLogger.shared.info(
+                "Backup completed successfully in \(timeString)",
+                category: .backup
+            )
         } else {
             onStatusUpdate?("⚠️ Backup complete in \(timeString) with \(failedFiles.count) errors")
+            ApplicationLogger.shared.warning(
+                "Backup completed with \(failedFiles.count) errors in \(timeString)",
+                category: .backup
+            )
+            
+            // Log first few errors for debugging
+            for error in failedFiles.prefix(5) {
+                ApplicationLogger.shared.error(
+                    "Failed: \(error.file) -> \(error.destination): \(error.error)",
+                    category: .backup
+                )
+            }
         }
         
         return failedFiles

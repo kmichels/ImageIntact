@@ -26,15 +26,36 @@ class NotificationManager: NSObject {
         guard !hasRequestedAuthorization else { return }
         hasRequestedAuthorization = true
         
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { [weak self] granted, error in
-            self?.isAuthorized = granted
-            
-            if let error = error {
-                logError("Failed to request notification authorization: \(error)")
-            } else if granted {
-                logInfo("Notification authorization granted")
-            } else {
-                logInfo("Notification authorization denied by user")
+        // First check current authorization status
+        UNUserNotificationCenter.current().getNotificationSettings { [weak self] settings in
+            switch settings.authorizationStatus {
+            case .notDetermined:
+                // User hasn't been asked yet, request permission
+                UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { granted, error in
+                    self?.isAuthorized = granted
+                    
+                    if let error = error {
+                        logWarning("Failed to request notification authorization: \(error)")
+                    } else if granted {
+                        logInfo("Notification authorization granted")
+                    } else {
+                        logInfo("Notification authorization denied by user")
+                    }
+                }
+                
+            case .denied:
+                // User has explicitly denied permission
+                self?.isAuthorized = false
+                logInfo("Notifications are disabled (user denied permission)")
+                
+            case .authorized, .provisional, .ephemeral:
+                // User has granted permission
+                self?.isAuthorized = true
+                logInfo("Notifications are already authorized")
+                
+            @unknown default:
+                self?.isAuthorized = false
+                logInfo("Unknown notification authorization status")
             }
         }
         

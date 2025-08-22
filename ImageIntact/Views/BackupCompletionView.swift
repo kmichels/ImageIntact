@@ -11,7 +11,7 @@ struct BackupCompletionView: View {
     let statistics: BackupStatistics
     @Environment(\.dismiss) var dismiss
     @State private var showingCopyAlert = false
-    @State private var showingAnonymizeChoice = false
+    @State private var cachedReport: String = ""
     
     var body: some View {
         VStack(spacing: 0) {
@@ -49,12 +49,7 @@ struct BackupCompletionView: View {
             // Footer
             HStack {
                 Button("Copy Report") {
-                    // Check if user has path anonymization preference enabled
-                    if PreferencesManager.shared.anonymizePathsInExport {
-                        showingAnonymizeChoice = true
-                    } else {
-                        copyReportToClipboard(anonymize: false)
-                    }
+                    copyReportToClipboard()
                 }
                 .buttonStyle(.bordered)
                 
@@ -69,33 +64,23 @@ struct BackupCompletionView: View {
             .padding()
         }
         .frame(width: 450, height: 500)
+        .onAppear {
+            // Cache the report when view appears to prevent data loss
+            cachedReport = statistics.generateSummary()
+            print("📋 Cached report on appear: \(cachedReport.count) characters")
+        }
         .alert("Report Copied", isPresented: $showingCopyAlert) {
             Button("OK") { }
         } message: {
             Text("The backup report has been copied to your clipboard.")
         }
-        .confirmationDialog("Copy Report", isPresented: $showingAnonymizeChoice, titleVisibility: .visible) {
-            Button("Copy with Anonymized Paths") {
-                copyReportToClipboard(anonymize: true)
-            }
-            
-            Button("Copy with Original Paths") {
-                copyReportToClipboard(anonymize: false)
-            }
-            
-            Button("Cancel", role: .cancel) { }
-        } message: {
-            Text("Would you like to anonymize file paths for privacy?\n\nAnonymization replaces usernames and drive names with placeholders like [USER] and [VOLUME].")
-        }
     }
     
-    private func copyReportToClipboard(anonymize: Bool = false) {
-        var report = statistics.generateSummary()
+    private func copyReportToClipboard() {
+        // Use cached report if available, otherwise generate new one
+        let report = cachedReport.isEmpty ? statistics.generateSummary() : cachedReport
         
-        // Anonymize paths if requested
-        if anonymize {
-            report = PathAnonymizer.anonymizeInText(report)
-        }
+        print("📋 Copy Report - Report length: \(report.count) characters")
         
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(report, forType: .string)

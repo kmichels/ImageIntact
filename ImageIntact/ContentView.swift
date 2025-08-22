@@ -420,7 +420,7 @@ struct ContentView: View {
         // Get session data from Core Data
         let sessionID = backupManager.sessionID
         let eventLogger = EventLogger.shared
-        let logContent: String
+        var logContent: String
         var exportData: Data?
         
         if !sessionID.isEmpty {
@@ -440,11 +440,43 @@ struct ContentView: View {
             }
         }
         
+        // Check if user wants to anonymize paths
+        var shouldAnonymize = false
+        if PreferencesManager.shared.anonymizePathsInExport {
+            let alert = NSAlert()
+            alert.messageText = "Export Debug Log"
+            alert.informativeText = "Would you like to anonymize file paths in the exported log for privacy?\n\nThis will replace usernames and volume names with placeholders like [USER] and [VOLUME]."
+            alert.alertStyle = .informational
+            alert.addButton(withTitle: "Anonymize Paths")
+            alert.addButton(withTitle: "Keep Original Paths")
+            alert.addButton(withTitle: "Cancel")
+            
+            let response = alert.runModal()
+            if response == .alertFirstButtonReturn {
+                shouldAnonymize = true
+            } else if response == .alertThirdButtonReturn {
+                return // User cancelled
+            }
+        }
+        
+        // Apply anonymization if requested
+        if shouldAnonymize {
+            logContent = PathAnonymizer.anonymizeInText(logContent)
+            // For JSON, we need to parse, anonymize, and re-encode
+            if let jsonData = exportData {
+                if let jsonString = String(data: jsonData, encoding: .utf8) {
+                    let anonymizedJson = PathAnonymizer.anonymizeInText(jsonString)
+                    exportData = anonymizedJson.data(using: .utf8)
+                }
+            }
+        }
+        
         let savePanel = NSSavePanel()
         savePanel.title = "Export Debug Log"
         let dateFormatter = DateFormatter()
         dateFormatter.dateFormat = "yyyy-MM-dd_HH-mm-ss"
-        savePanel.nameFieldStringValue = "ImageIntact_Debug_\(dateFormatter.string(from: Date())).txt"
+        let suffix = shouldAnonymize ? "_anonymized" : ""
+        savePanel.nameFieldStringValue = "ImageIntact_Debug_\(dateFormatter.string(from: Date()))\(suffix).txt"
         savePanel.allowedContentTypes = [.plainText, .json]
         savePanel.canCreateDirectories = true
         
