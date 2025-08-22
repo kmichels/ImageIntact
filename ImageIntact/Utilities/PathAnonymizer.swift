@@ -145,42 +145,45 @@ class PathAnonymizer {
     ///   - options: Anonymization options
     /// - Returns: The log text with anonymized paths
     static func anonymizeInText(_ logText: String, options: Options = Options()) -> String {
-        var result = logText
-        
-        // First, find and replace obvious paths
-        let pathPattern = #"(/Users/[^\s\"'\]]+|/Volumes/[^\s\"'\]]+|~/[^\s\"'\]]+)"#
-        
-        do {
-            let regex = try NSRegularExpression(pattern: pathPattern, options: [])
-            let matches = regex.matches(in: result, options: [], range: NSRange(location: 0, length: result.utf16.count))
-            
-            // Process matches in reverse order to maintain string indices
-            for match in matches.reversed() {
-                if let range = Range(match.range, in: result) {
-                    let path = String(result[range])
-                    let anonymized = anonymize(path, options: options)
-                    result.replaceSubrange(range, with: anonymized)
-                }
+        // For very large texts, process line by line to avoid regex performance issues
+        if logText.count > 100_000 {
+            let lines = logText.components(separatedBy: .newlines)
+            let anonymizedLines = lines.map { line in
+                anonymizeLine(line, options: options)
             }
-        } catch {
-            logError("Failed to create regex for path anonymization: \(error)")
+            return anonymizedLines.joined(separator: "\n")
         }
         
-        // Also handle quoted paths
-        let quotedPathPattern = #"\"(/[^\"]+)\""#
-        do {
-            let regex = try NSRegularExpression(pattern: quotedPathPattern, options: [])
-            let matches = regex.matches(in: result, options: [], range: NSRange(location: 0, length: result.utf16.count))
-            
-            for match in matches.reversed() {
-                if let range = Range(match.range(at: 1), in: result) {
-                    let path = String(result[range])
-                    let anonymized = anonymize(path, options: options)
-                    result.replaceSubrange(range, with: anonymized)
+        // For smaller texts, process the whole string
+        return anonymizeLine(logText, options: options)
+    }
+    
+    /// Anonymize paths in a single line or small text
+    private static func anonymizeLine(_ text: String, options: Options) -> String {
+        var result = text
+        
+        // Simple replacements without complex regex
+        // Replace /Users/username patterns
+        if let range = result.range(of: "/Users/") {
+            let afterUsers = result[range.upperBound...]
+            if let nextSlash = afterUsers.firstIndex(of: "/") {
+                let username = String(afterUsers[..<nextSlash])
+                // Only replace if it looks like a username (not too long, no special chars)
+                if username.count < 50 && username.rangeOfCharacter(from: .alphanumerics.inverted.subtracting(CharacterSet(charactersIn: "._-"))) == nil {
+                    result = result.replacingOccurrences(of: "/Users/\(username)", with: "/Users/[USER]")
                 }
             }
-        } catch {
-            logError("Failed to create regex for quoted path anonymization: \(error)")
+        }
+        
+        // Replace /Volumes/name patterns
+        if let range = result.range(of: "/Volumes/") {
+            let afterVolumes = result[range.upperBound...]
+            if let nextSlash = afterVolumes.firstIndex(of: "/") {
+                let volumeName = String(afterVolumes[..<nextSlash])
+                if volumeName.count < 100 {
+                    result = result.replacingOccurrences(of: "/Volumes/\(volumeName)", with: "/Volumes/[VOLUME]")
+                }
+            }
         }
         
         return result
