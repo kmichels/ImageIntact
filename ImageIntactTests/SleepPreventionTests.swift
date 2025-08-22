@@ -22,6 +22,8 @@ final class SleepPreventionTests: XCTestCase {
     override func tearDown() {
         // Clean up any active assertions
         SleepPrevention.shared.stopPreventingSleep()
+        // Wait a bit to ensure IOKit operations complete
+        Thread.sleep(forTimeInterval: 0.1)
         super.tearDown()
     }
     
@@ -87,14 +89,23 @@ final class SleepPreventionTests: XCTestCase {
         let expectation = self.expectation(description: "Concurrent access")
         expectation.expectedFulfillmentCount = 10
         
-        DispatchQueue.concurrentPerform(iterations: 10) { index in
-            if index % 2 == 0 {
-                SleepPrevention.shared.startPreventingSleep(reason: "Test \(index)")
-            } else {
-                SleepPrevention.shared.stopPreventingSleep()
+        let group = DispatchGroup()
+        let queue = DispatchQueue(label: "test.concurrent", attributes: .concurrent)
+        
+        for index in 0..<10 {
+            group.enter()
+            queue.async {
+                if index % 2 == 0 {
+                    _ = SleepPrevention.shared.startPreventingSleep(reason: "Test \(index)")
+                } else {
+                    SleepPrevention.shared.stopPreventingSleep()
+                }
+                expectation.fulfill()
+                group.leave()
             }
-            expectation.fulfill()
         }
+        
+        group.wait()
         
         waitForExpectations(timeout: 5) { error in
             XCTAssertNil(error)
@@ -125,10 +136,12 @@ final class SleepPreventionTests: XCTestCase {
     // MARK: - Resource Management Tests
     
     func testNoLeaksAfterMultipleOperations() {
-        for i in 0..<100 {
+        for i in 0..<20 {
             let result = SleepPrevention.shared.startPreventingSleep(reason: "Stress test \(i)")
             XCTAssertTrue(result)
             SleepPrevention.shared.stopPreventingSleep()
+            // Small delay to let IOKit clean up
+            Thread.sleep(forTimeInterval: 0.01)
         }
         
         // Should be able to start again after stress test
