@@ -18,6 +18,10 @@ struct ImageIntactApp: App {
         // Initialize system capabilities detection on app launch
         _ = SystemCapabilities.shared
         ApplicationLogger.shared.info("🚀 ImageIntact starting on \(SystemCapabilities.shared.displayName)", category: .app)
+        
+        // Start drive monitoring
+        DriveMonitor.shared.startMonitoring()
+        ApplicationLogger.shared.info("📱 Drive monitoring started", category: .app)
     }
     
     var body: some Scene {

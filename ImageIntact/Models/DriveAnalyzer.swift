@@ -73,6 +73,15 @@ class DriveAnalyzer {
         let estimatedReadSpeed: Double // MB/s
         let checksumSpeed: Double = 100 // SHA-256 speed (conservative for mixed file sizes)
         
+        // Drive identification
+        let volumeUUID: String?
+        let hardwareSerial: String?
+        let deviceModel: String?
+        
+        // Drive capacity
+        let totalCapacity: Int64
+        let freeSpace: Int64
+        
         func estimateBackupTime(totalBytes: Int64) -> TimeInterval {
             // Use decimal MB to match user expectations
             let totalMB = Double(totalBytes) / (1000 * 1000)
@@ -132,6 +141,9 @@ class DriveAnalyzer {
     // MARK: - IOKit Detection
     
     static func analyzeDrive(at url: URL) -> DriveInfo? {
+        // Get volume attributes
+        let volumeAttributes = getVolumeAttributes(for: url)
+        
         // First check if it's a network volume
         if isNetworkVolume(url: url) {
             return DriveInfo(
@@ -141,7 +153,12 @@ class DriveAnalyzer {
                 deviceName: url.lastPathComponent,
                 protocolDetails: "Network Share",
                 estimatedWriteSpeed: ConnectionType.network.estimatedWriteSpeedMBps,
-                estimatedReadSpeed: ConnectionType.network.estimatedReadSpeedMBps
+                estimatedReadSpeed: ConnectionType.network.estimatedReadSpeedMBps,
+                volumeUUID: volumeAttributes.uuid,
+                hardwareSerial: nil,
+                deviceModel: nil,
+                totalCapacity: volumeAttributes.totalCapacity,
+                freeSpace: volumeAttributes.freeSpace
             )
         }
         
@@ -164,6 +181,7 @@ class DriveAnalyzer {
         // catch all SSDs (especially external ones)
         
         let protocolDetails = getProtocolDetails(bsdName: bsdName)
+        let hardwareInfo = getHardwareInfo(bsdName: bsdName)
         
         return DriveInfo(
             mountPath: url,
@@ -172,7 +190,12 @@ class DriveAnalyzer {
             deviceName: deviceName,
             protocolDetails: protocolDetails,
             estimatedWriteSpeed: writeSpeed,
-            estimatedReadSpeed: readSpeed
+            estimatedReadSpeed: readSpeed,
+            volumeUUID: volumeAttributes.uuid,
+            hardwareSerial: hardwareInfo.serial,
+            deviceModel: hardwareInfo.model,
+            totalCapacity: volumeAttributes.totalCapacity,
+            freeSpace: volumeAttributes.freeSpace
         )
     }
     
@@ -724,5 +747,84 @@ class DriveAnalyzer {
         }
         
         return details.isEmpty ? "Direct Attached" : details
+    }
+    
+    // MARK: - Volume Attributes
+    
+    private struct VolumeAttributes {
+        let uuid: String?
+        let totalCapacity: Int64
+        let freeSpace: Int64
+    }
+    
+    private static func getVolumeAttributes(for url: URL) -> VolumeAttributes {
+        var uuid: String?
+        var totalCapacity: Int64 = 0
+        var freeSpace: Int64 = 0
+        
+        // Get volume UUID and capacity info
+        do {
+            let resourceKeys: [URLResourceKey] = [
+                .volumeUUIDStringKey,
+                .volumeTotalCapacityKey,
+                .volumeAvailableCapacityKey
+            ]
+            
+            let resourceValues = try url.resourceValues(forKeys: Set(resourceKeys))
+            uuid = resourceValues.volumeUUIDString
+            totalCapacity = Int64(resourceValues.volumeTotalCapacity ?? 0)
+            freeSpace = Int64(resourceValues.volumeAvailableCapacity ?? 0)
+        } catch {
+            logError("Failed to get volume attributes: \(error)")
+        }
+        
+        return VolumeAttributes(uuid: uuid, totalCapacity: totalCapacity, freeSpace: freeSpace)
+    }
+    
+    // MARK: - Hardware Info
+    
+    private struct HardwareInfo {
+        let serial: String?
+        let model: String?
+    }
+    
+    private static func getHardwareInfo(bsdName: String) -> HardwareInfo {
+        var serial: String?
+        var model: String?
+        
+        // Get IOKit service for the device
+        let service = IOServiceGetMatchingService(
+            kIOMainPortDefault,
+            IOBSDNameMatching(kIOMainPortDefault, 0, bsdName)
+        )
+        
+        guard service != 0 else {
+            return HardwareInfo(serial: nil, model: nil)
+        }
+        
+        defer { IOObjectRelease(service) }
+        
+        // Try to get serial number and model
+        var properties: Unmanaged<CFMutableDictionary>?
+        let result = IORegistryEntryCreateCFProperties(
+            service,
+            &properties,
+            kCFAllocatorDefault,
+            0
+        )
+        
+        if result == KERN_SUCCESS, let props = properties?.takeRetainedValue() as? [String: Any] {
+            // Look for serial number
+            serial = props["Serial Number"] as? String ??
+                    props["USB Serial Number"] as? String ??
+                    props["Device Serial"] as? String
+            
+            // Look for model
+            model = props["Model"] as? String ??
+                   props["Device Model"] as? String ??
+                   props["Product Name"] as? String
+        }
+        
+        return HardwareInfo(serial: serial, model: model)
     }
 }

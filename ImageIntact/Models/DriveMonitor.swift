@@ -33,10 +33,10 @@ class DriveMonitor: ObservableObject {
     private let monitorQueue = DispatchQueue(label: "com.imageintact.drivemonitor", qos: .background)
     
     // Track drives by UUID for smart recognition
-    private var knownDrives: [String: DriveIdentity] = [:]
+    private var knownDrives: [String: DriveMetadata] = [:]
     
-    // MARK: - Drive Identity
-    struct DriveIdentity: Codable {
+    // MARK: - Drive Metadata
+    struct DriveMetadata: Codable {
         let uuid: String
         let serialNumber: String?
         let modelName: String?
@@ -223,7 +223,7 @@ class DriveMonitor: ObservableObject {
     
     // MARK: - Drive Identity Management
     
-    func identifyDrive(_ disk: DADisk) -> DriveIdentity? {
+    func identifyDrive(_ disk: DADisk) -> DriveMetadata? {
         guard let description = DADiskCopyDescription(disk) as? [String: Any] else {
             return nil
         }
@@ -253,7 +253,7 @@ class DriveMonitor: ObservableObject {
             return identity
         } else {
             // New drive
-            let identity = DriveIdentity(
+            let identity = DriveMetadata(
                 uuid: finalUUID,
                 serialNumber: serial,
                 modelName: model,
@@ -282,7 +282,7 @@ class DriveMonitor: ObservableObject {
             .appendingPathComponent("KnownDrives.json")
         
         if let data = try? Data(contentsOf: driveDataURL),
-           let drives = try? JSONDecoder().decode([String: DriveIdentity].self, from: data) {
+           let drives = try? JSONDecoder().decode([String: DriveMetadata].self, from: data) {
             self.knownDrives = drives
         }
     }

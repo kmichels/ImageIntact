@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<model type="com.apple.IDECoreDataModeler.DataModel" documentVersion="1.0" lastSavedToolsVersion="22758" systemVersion="24B83" minimumToolsVersion="Automatic" sourceLanguage="Swift" usedWithSwiftData="YES" userDefinedModelVersionIdentifier="">
+<model type="com.apple.IDECoreDataModeler.DataModel" documentVersion="1.0" lastSavedToolsVersion="23788.4" systemVersion="24G90" minimumToolsVersion="Automatic" sourceLanguage="Swift" usedWithSwiftData="YES" userDefinedModelVersionIdentifier="">
     <entity name="BackupEvent" representedClassName="BackupEvent" syncable="YES" codeGenerationType="class">
         <attribute name="checksum" optional="YES" attributeType="String"/>
         <attribute name="destinationPath" optional="YES" attributeType="String"/>
@@ -23,6 +23,29 @@
         <attribute name="status" attributeType="String" defaultValueString="running"/>
         <attribute name="toolVersion" optional="YES" attributeType="String"/>
         <attribute name="totalBytes" optional="YES" attributeType="Integer 64" defaultValueString="0" usesScalarValueType="YES"/>
+        <relationship name="drive" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="DriveIdentity" inverseName="backupSessions" inverseEntity="DriveIdentity"/>
         <relationship name="events" optional="YES" toMany="YES" deletionRule="Cascade" destinationEntity="BackupEvent" inverseName="session" inverseEntity="BackupEvent"/>
+    </entity>
+    <entity name="DriveIdentity" representedClassName="DriveIdentity" syncable="YES" codeGenerationType="class">
+        <attribute name="autoStartBackup" optional="YES" attributeType="Boolean" usesScalarValueType="YES"/>
+        <attribute name="capacity" optional="YES" attributeType="Integer 64" defaultValueString="0" usesScalarValueType="YES"/>
+        <attribute name="colorHex" optional="YES" attributeType="String"/>
+        <attribute name="deviceModel" optional="YES" attributeType="String"/>
+        <attribute name="emoji" optional="YES" attributeType="String"/>
+        <attribute name="firstSeen" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="hardwareSerial" optional="YES" attributeType="String"/>
+        <attribute name="healthStatus" optional="YES" attributeType="String"/>
+        <attribute name="id" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
+        <attribute name="isPreferredBackup" optional="YES" attributeType="Boolean" usesScalarValueType="YES"/>
+        <attribute name="lastHealthCheck" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="lastPortInfo" optional="YES" attributeType="String"/>
+        <attribute name="lastSeen" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="notes" optional="YES" attributeType="String"/>
+        <attribute name="physicalLocation" optional="YES" attributeType="String"/>
+        <attribute name="totalBackups" optional="YES" attributeType="Integer 32" defaultValueString="0" usesScalarValueType="YES"/>
+        <attribute name="totalBytesWritten" optional="YES" attributeType="Integer 64" defaultValueString="0" usesScalarValueType="YES"/>
+        <attribute name="userLabel" optional="YES" attributeType="String"/>
+        <attribute name="volumeUUID" optional="YES" attributeType="String"/>
+        <relationship name="backupSessions" optional="YES" toMany="YES" deletionRule="Nullify" destinationEntity="BackupSession" inverseName="drive" inverseEntity="BackupSession"/>
     </entity>
 </model>

@@ -259,7 +259,12 @@ class BackupManager {
                                 deviceName: url.lastPathComponent,
                                 protocolDetails: "Not Connected",
                                 estimatedWriteSpeed: 0,
-                                estimatedReadSpeed: 0
+                                estimatedReadSpeed: 0,
+                                volumeUUID: nil,
+                                hardwareSerial: nil,
+                                deviceModel: nil,
+                                totalCapacity: 0,
+                                freeSpace: 0
                             )
                             destinationDriveInfo[itemID] = unavailableInfo
                         }
@@ -421,7 +426,12 @@ class BackupManager {
                         deviceName: url.lastPathComponent,
                         protocolDetails: "Not Connected",
                         estimatedWriteSpeed: 0,
-                        estimatedReadSpeed: 0
+                        estimatedReadSpeed: 0,
+                        volumeUUID: nil,
+                        hardwareSerial: nil,
+                        deviceModel: nil,
+                        totalCapacity: 0,
+                        freeSpace: 0
                     )
                     destinationDriveInfo[itemID] = unavailableInfo
                     logInfo("Destination not accessible: \(url.lastPathComponent)")
