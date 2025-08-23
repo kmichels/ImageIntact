@@ -160,7 +160,10 @@ struct DriveStatusView: View {
     // MARK: - Methods
     
     private func loadDriveIdentity() {
-        driveIdentity = identityManager.findOrCreateDriveIdentity(for: driveInfo)
+        // Only try to load/create identity if Core Data is available
+        if let identity = identityManager.findOrCreateDriveIdentity(for: driveInfo) {
+            driveIdentity = identity
+        }
     }
     
     private func checkDriveHealth() {

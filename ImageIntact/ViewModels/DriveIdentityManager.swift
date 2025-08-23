@@ -25,13 +25,41 @@ class DriveIdentityManager: ObservableObject {
     
     // MARK: - Initialization
     private init() {
-        // Use the same container as EventLogger
+        // Use the same container as EventLogger with matching configuration
         container = NSPersistentContainer(name: "ImageIntactEvents")
+        
+        // Configure for performance and match EventLogger settings
+        if let description = container.persistentStoreDescriptions.first {
+            // Enable persistent history tracking (MUST match EventLogger)
+            description.setOption(true as NSNumber, 
+                                 forKey: NSPersistentHistoryTrackingKey)
+            
+            // Enable remote change notifications
+            description.setOption(true as NSNumber,
+                                 forKey: NSPersistentStoreRemoteChangeNotificationPostOptionKey)
+            
+            // Set SQLite pragmas for performance
+            description.setOption(["journal_mode": "WAL",
+                                   "synchronous": "NORMAL",
+                                   "cache_size": "10000"] as NSDictionary,
+                                 forKey: NSSQLitePragmasOption)
+            
+            // Enable automatic migration
+            description.setOption(true as NSNumber,
+                                 forKey: NSMigratePersistentStoresAutomaticallyOption)
+            description.setOption(true as NSNumber,
+                                 forKey: NSInferMappingModelAutomaticallyOption)
+        }
+        
         container.loadPersistentStores { _, error in
             if let error = error {
                 ApplicationLogger.shared.error("Failed to load Core Data: \(error)", category: .database)
             }
         }
+        
+        // Configure contexts
+        container.viewContext.automaticallyMergesChangesFromParent = true
+        container.viewContext.mergePolicy = NSMergeByPropertyObjectTrumpMergePolicy
         
         // Set up drive monitor subscriptions
         setupDriveMonitorSubscriptions()
@@ -83,7 +111,12 @@ class DriveIdentityManager: ObservableObject {
     }
     
     /// Find or create a drive identity
-    func findOrCreateDriveIdentity(for driveInfo: DriveAnalyzer.DriveInfo) -> DriveIdentity {
+    func findOrCreateDriveIdentity(for driveInfo: DriveAnalyzer.DriveInfo) -> DriveIdentity? {
+        // Check if Core Data is available
+        guard container.persistentStoreCoordinator.persistentStores.count > 0 else {
+            ApplicationLogger.shared.error("Core Data not available for drive identity", category: .database)
+            return nil
+        }
         // Try to find existing drive by UUID
         let request: NSFetchRequest<DriveIdentity> = DriveIdentity.fetchRequest()
         request.predicate = NSPredicate(format: "volumeUUID == %@", driveInfo.volumeUUID ?? "")
@@ -178,7 +211,10 @@ class DriveIdentityManager: ObservableObject {
     // MARK: - Event Handlers
     
     private func handleDriveConnected(_ driveInfo: DriveAnalyzer.DriveInfo) {
-        let identity = findOrCreateDriveIdentity(for: driveInfo)
+        guard let identity = findOrCreateDriveIdentity(for: driveInfo) else {
+            ApplicationLogger.shared.info("Drive connected (no identity): \(driveInfo.deviceName)", category: .app)
+            return
+        }
         
         // Check S.M.A.R.T. health
         if let healthReport = SMARTMonitor.getHealthReport(for: driveInfo.mountPath) {
@@ -213,6 +249,11 @@ class DriveIdentityManager: ObservableObject {
     // MARK: - Helper Methods
     
     private func saveContext() {
+        guard container.persistentStoreCoordinator.persistentStores.count > 0 else {
+            ApplicationLogger.shared.error("Cannot save: No persistent stores available", category: .database)
+            return
+        }
+        
         if container.viewContext.hasChanges {
             do {
                 try container.viewContext.save()

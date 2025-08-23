@@ -57,8 +57,14 @@ struct DestinationSection: View {
                             focusedField = .destination(index)
                         }
                         
-                        // Show drive analysis and time estimate
-                        if let estimate = backupManager.getDestinationEstimate(at: index) {
+                        // Show drive analysis with new DriveStatusView if we have drive info
+                        if let url = item.url, 
+                           let driveInfo = backupManager.destinationDriveInfo[item.id] {
+                            DriveStatusView(driveInfo: driveInfo)
+                                .padding(.leading, 12)
+                                .padding(.top, 4)
+                        } else if let estimate = backupManager.getDestinationEstimate(at: index) {
+                            // Fallback to old estimate display if no drive info
                             HStack(spacing: 8) {
                                 Text(estimate)
                                     .font(.system(size: 11))

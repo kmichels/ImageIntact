@@ -59,7 +59,7 @@ struct DriveCustomizationView: View {
                         Text("Custom Name:")
                             .frame(width: 100, alignment: .trailing)
                         TextField("My Backup Drive", text: $customName)
-                            .textFieldStyle(.roundedBorder)
+                            .textFieldStyle(.squareBorder)
                     }
                     
                     HStack {
@@ -102,7 +102,7 @@ struct DriveCustomizationView: View {
                         Text("Location:")
                             .frame(width: 100, alignment: .trailing)
                         TextField("Office, Home, Portable, etc.", text: $physicalLocation)
-                            .textFieldStyle(.roundedBorder)
+                            .textFieldStyle(.squareBorder)
                     }
                 }
                 
@@ -128,6 +128,8 @@ struct DriveCustomizationView: View {
                         TextEditor(text: $notes)
                             .font(.system(size: 12))
                             .frame(height: 60)
+                            .scrollContentBackground(.hidden)
+                            .background(Color.gray.opacity(0.05))
                             .overlay(
                                 RoundedRectangle(cornerRadius: 4)
                                     .stroke(Color.gray.opacity(0.3), lineWidth: 1)
