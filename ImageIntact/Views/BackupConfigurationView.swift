@@ -12,68 +12,27 @@ struct BackupConfigurationView: View {
     @StateObject private var presetManager = BackupPresetManager.shared
     @State private var showingPresetManagement = false
     @State private var showingCreatePreset = false
+    @State private var showingPresetSelection = false
     @State private var showFilterSheet = false
     @State private var selectedTypes: Set<ImageFileType> = []
     @State private var isInitialized = false
     
     var body: some View {
         HStack(spacing: 8) {
-            // Backup Presets Menu
-            Menu {
-                // Built-in presets section
-                Section("Built-in Presets") {
-                    ForEach(presetManager.presets.filter { $0.isBuiltIn }) { preset in
-                        Button(action: { applyPreset(preset) }) {
-                            Label(preset.name, systemImage: preset.icon)
-                        }
-                        .help(getPresetDescription(preset))
-                    }
-                }
-                
-                // Custom presets section
-                let customPresets = presetManager.presets.filter { !$0.isBuiltIn }
-                if !customPresets.isEmpty {
-                    Section("Custom Presets") {
-                        ForEach(customPresets) { preset in
-                            Button(action: { applyPreset(preset) }) {
-                                Label(preset.name, systemImage: preset.icon)
-                            }
-                        }
-                    }
-                }
-                
-                Divider()
-                
-                // Management options
-                Button(action: { showingCreatePreset = true }) {
-                    Label("Save Current Settings...", systemImage: "plus.circle")
-                }
-                
-                Button(action: { showingPresetManagement = true }) {
-                    Label("Manage Presets...", systemImage: "gear")
-                }
-                
-                Divider()
-                
-                // Reset to defaults
-                Button(action: resetToDefaults) {
-                    Label("Reset to Defaults", systemImage: "arrow.counterclockwise")
-                }
-                .foregroundColor(.orange)
-                
-            } label: {
+            // Backup Presets Button
+            Button(action: { showingPresetSelection = true }) {
                 HStack(spacing: 4) {
                     Image(systemName: presetManager.selectedPreset?.icon ?? "doc.text")
                         .font(.caption)
-                    Text(presetManager.selectedPreset?.name ?? "Backup Preset")
+                    Text(presetManager.selectedPreset?.name ?? "Select Preset")
                         .font(.caption)
                     Image(systemName: "chevron.down")
                         .font(.caption2)
                 }
             }
-            .menuStyle(.borderlessButton)
+            .buttonStyle(.plain)
             .fixedSize()
-            .help("Quick backup configuration presets")
+            .help("Select a backup preset configuration")
             
             // File Type Filter Menu
             Menu {
@@ -140,6 +99,12 @@ struct BackupConfigurationView: View {
             .help(isFilterActive ? "Current filter: \(filterDescription)" : "Click to set custom filter")
             
             Spacer()
+        }
+        .sheet(isPresented: $showingPresetSelection) {
+            PresetSelectionSheet(
+                backupManager: backupManager,
+                presetManager: presetManager
+            )
         }
         .sheet(isPresented: $showingCreatePreset) {
             CreatePresetSheet(
@@ -230,6 +195,25 @@ struct BackupConfigurationView: View {
             return "Fast exact mirror without verification. Quick duplication when speed matters most."
         default:
             return preset.isBuiltIn ? "Built-in preset" : "Custom preset"
+        }
+    }
+    
+    private func getPresetShortDescription(_ preset: BackupPreset) -> String {
+        switch preset.name {
+        case "Daily Workflow":
+            return "Photos • Incremental • Balanced"
+        case "Travel Backup":
+            return "RAW • Fast • Auto-start"
+        case "Client Delivery":
+            return "JPEG/TIFF • Mirror • Verified"
+        case "Archive Master":
+            return "All files • Archive • 3 destinations"
+        case "Video Project":
+            return "Videos • Incremental • Fast"
+        case "Quick Mirror":
+            return "All files • Mirror • No verify"
+        default:
+            return ""
         }
     }
     
