@@ -40,6 +40,13 @@ struct ContentView: View {
             ScrollViewReader { scrollProxy in
                 ScrollView {
                     VStack(alignment: .leading, spacing: 24) {
+                        // Preset selector
+                        BackupPresetView(backupManager: backupManager)
+                            .padding(.horizontal, 20)
+                        
+                        Divider()
+                            .padding(.horizontal, 20)
+                        
                         // Source Section
                         SourceFolderSection(backupManager: backupManager, focusedField: $focusedField)
                         
