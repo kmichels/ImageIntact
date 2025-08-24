@@ -15,12 +15,31 @@ struct DriveStatusView: View {
     @State private var showingCustomization = false
     
     var body: some View {
-        HStack(spacing: 8) {
-            // Drive emoji/icon
-            Text(driveIdentity?.emoji ?? "💾")
-                .font(.system(size: 16))
+        VStack(spacing: 0) {
+            // Warning banner for memory cards
+            if driveInfo.driveType == .cameraCard || driveInfo.driveType == .cardReader || driveInfo.driveType == .inCamera {
+                HStack(spacing: 4) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 11))
+                        .foregroundColor(.orange)
+                    Text("Memory cards are not recommended for backups - use for temporary transfer only")
+                        .font(.system(size: 11))
+                        .foregroundColor(.orange)
+                    Spacer()
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(Color.orange.opacity(0.1))
+                .cornerRadius(4)
+                .padding(.bottom, 4)
+            }
             
-            VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 8) {
+                // Drive emoji/icon
+                Text(driveIdentity?.emoji ?? "💾")
+                    .font(.system(size: 16))
+                
+                VStack(alignment: .leading, spacing: 2) {
                 // Drive name
                 HStack(spacing: 4) {
                     Text(displayName)
@@ -98,6 +117,7 @@ struct DriveStatusView: View {
             }
             .buttonStyle(.plain)
             .help("Customize drive settings")
+            }
         }
         .padding(.vertical, 4)
         .padding(.horizontal, 8)
@@ -203,6 +223,8 @@ struct ConnectionTypeBadge: View {
         case .thunderbolt3, .thunderbolt4, .thunderbolt5: return "bolt.fill"
         case .network: return "network"
         case .internalDrive: return "internaldrive"
+        case .sdCard: return "sdcard"
+        case .cfCard: return "sdcard.fill"
         case .unknown: return "questionmark.circle"
         }
     }
@@ -214,6 +236,7 @@ struct ConnectionTypeBadge: View {
         case .usb2: return .gray
         case .network: return .green
         case .internalDrive: return .orange
+        case .sdCard, .cfCard: return .mint
         case .unknown: return .gray
         }
     }

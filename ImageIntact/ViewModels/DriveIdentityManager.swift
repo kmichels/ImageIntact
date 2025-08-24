@@ -141,7 +141,7 @@ class DriveIdentityManager: ObservableObject {
             }
         }
         
-        // Create new drive identity
+        // Create new drive identity with smart defaults
         let newDrive = DriveIdentity(context: container.viewContext)
         newDrive.id = UUID()
         newDrive.volumeUUID = driveInfo.volumeUUID
@@ -152,8 +152,19 @@ class DriveIdentityManager: ObservableObject {
         newDrive.lastSeen = Date()
         newDrive.totalBackups = 0
         newDrive.totalBytesWritten = 0
+        
+        // Smart defaults based on drive type
+        newDrive.emoji = driveInfo.driveType.suggestedEmoji
+        if !driveInfo.driveType.suggestedLocation.isEmpty {
+            newDrive.physicalLocation = driveInfo.driveType.suggestedLocation
+        }
         newDrive.isPreferredBackup = false
-        newDrive.autoStartBackup = false
+        newDrive.autoStartBackup = false  // User can enable if they want
+        
+        // Add warning note for camera cards
+        if driveInfo.driveType == .cameraCard || driveInfo.driveType == .cardReader || driveInfo.driveType == .inCamera {
+            newDrive.notes = "⚠️ Camera memory card - not recommended for backups"
+        }
         
         saveContext()
         

@@ -17,6 +17,8 @@ class DriveAnalyzer {
         case thunderbolt5
         case internalDrive
         case network
+        case sdCard
+        case cfCard
         case unknown
         
         var displayName: String {
@@ -31,6 +33,8 @@ class DriveAnalyzer {
             case .thunderbolt5: return "Thunderbolt 5"
             case .internalDrive: return "Internal"
             case .network: return "Network"
+            case .sdCard: return "SD Card"
+            case .cfCard: return "CFexpress"
             case .unknown: return "Unknown"
             }
         }
@@ -53,6 +57,8 @@ class DriveAnalyzer {
             case .thunderbolt5: return 600  // ~600 MB/s
             case .internalDrive: return 300  // ~300 MB/s (average internal SSD)
             case .network: return 50   // ~50 MB/s (typical network)
+            case .sdCard: return 80    // ~80 MB/s (UHS-I SD card)
+            case .cfCard: return 150   // ~150 MB/s (CFexpress Type A)
             case .unknown: return 80   // Conservative estimate
             }
         }
@@ -60,6 +66,49 @@ class DriveAnalyzer {
         var estimatedReadSpeedMBps: Double {
             // Reads are typically slightly faster
             return estimatedWriteSpeedMBps * 1.1
+        }
+    }
+    
+    enum DriveType {
+        case portableSSD
+        case externalHDD
+        case cameraCard
+        case cardReader
+        case inCamera
+        case networkDrive
+        case internalDrive
+        case generic
+        
+        var suggestedLocation: String {
+            switch self {
+            case .portableSSD: return "Portable"
+            case .externalHDD: return "External Drive"
+            case .cameraCard, .cardReader: return "Memory Card"
+            case .inCamera: return "In Camera"
+            case .networkDrive: return "Network"
+            case .internalDrive: return "Internal"
+            case .generic: return ""
+            }
+        }
+        
+        var suggestedEmoji: String {
+            switch self {
+            case .portableSSD: return "💾"
+            case .externalHDD: return "🗄️"
+            case .cameraCard, .cardReader, .inCamera: return "📷"
+            case .networkDrive: return "☁️"
+            case .internalDrive: return "💻"
+            case .generic: return "💾"
+            }
+        }
+        
+        var autoBackupRecommended: Bool {
+            switch self {
+            case .cameraCard, .cardReader, .inCamera:
+                return false  // Don't auto-backup to camera cards
+            default:
+                return true
+            }
         }
     }
     
@@ -81,6 +130,9 @@ class DriveAnalyzer {
         // Drive capacity
         let totalCapacity: Int64
         let freeSpace: Int64
+        
+        // Smart detection
+        let driveType: DriveType
         
         func estimateBackupTime(totalBytes: Int64) -> TimeInterval {
             // Use decimal MB to match user expectations
@@ -158,7 +210,8 @@ class DriveAnalyzer {
                 hardwareSerial: nil,
                 deviceModel: nil,
                 totalCapacity: volumeAttributes.totalCapacity,
-                freeSpace: volumeAttributes.freeSpace
+                freeSpace: volumeAttributes.freeSpace,
+                driveType: .networkDrive
             )
         }
         
@@ -183,9 +236,34 @@ class DriveAnalyzer {
         let protocolDetails = getProtocolDetails(bsdName: bsdName)
         let hardwareInfo = getHardwareInfo(bsdName: bsdName)
         
+        // Smart drive type detection
+        let driveType = detectDriveType(
+            deviceName: deviceName,
+            deviceModel: hardwareInfo.model,
+            connectionType: connectionType,
+            isSSD: isSSD,
+            capacity: volumeAttributes.totalCapacity,
+            bsdName: bsdName
+        )
+        
+        // Override connection type for memory cards
+        var finalConnectionType = connectionType
+        if driveType == .cameraCard || driveType == .cardReader {
+            // Check if it's SD or CFexpress based on size and model
+            if let model = hardwareInfo.model?.lowercased() {
+                if model.contains("cfexpress") || model.contains("cfe") {
+                    finalConnectionType = .cfCard
+                } else if model.contains("sd") || volumeAttributes.totalCapacity <= 512_000_000_000 {
+                    finalConnectionType = .sdCard
+                }
+            } else if volumeAttributes.totalCapacity <= 512_000_000_000 {
+                finalConnectionType = .sdCard
+            }
+        }
+        
         return DriveInfo(
             mountPath: url,
-            connectionType: connectionType,
+            connectionType: finalConnectionType,
             isSSD: isSSD,
             deviceName: deviceName,
             protocolDetails: protocolDetails,
@@ -195,7 +273,8 @@ class DriveAnalyzer {
             hardwareSerial: hardwareInfo.serial,
             deviceModel: hardwareInfo.model,
             totalCapacity: volumeAttributes.totalCapacity,
-            freeSpace: volumeAttributes.freeSpace
+            freeSpace: volumeAttributes.freeSpace,
+            driveType: driveType
         )
     }
     
@@ -747,6 +826,117 @@ class DriveAnalyzer {
         }
         
         return details.isEmpty ? "Direct Attached" : details
+    }
+    
+    // MARK: - Smart Drive Type Detection
+    
+    private static func detectDriveType(
+        deviceName: String,
+        deviceModel: String?,
+        connectionType: ConnectionType,
+        isSSD: Bool,
+        capacity: Int64,
+        bsdName: String
+    ) -> DriveType {
+        let lowerName = deviceName.lowercased()
+        let lowerModel = deviceModel?.lowercased() ?? ""
+        
+        // Check for camera brands (drive is still in camera)
+        let camerabrands = ["canon", "nikon", "sony", "fujifilm", "fuji", "olympus", "panasonic", "leica", "hasselblad", "pentax"]
+        for brand in camerabrands {
+            if lowerName.contains(brand) || lowerModel.contains(brand) {
+                return .inCamera
+            }
+        }
+        
+        // Check for memory card keywords
+        let cardKeywords = ["sd card", "sdxc", "sdhc", "cfexpress", "cfe", "compactflash", "cf card", "memory card", "memstick"]
+        for keyword in cardKeywords {
+            if lowerName.contains(keyword) || lowerModel.contains(keyword) {
+                return .cameraCard
+            }
+        }
+        
+        // Check for card reader keywords
+        let readerKeywords = ["card reader", "cardreader", "sd reader", "cf reader", "multi-card", "multicard"]
+        for keyword in readerKeywords {
+            if lowerName.contains(keyword) || lowerModel.contains(keyword) {
+                return .cardReader
+            }
+        }
+        
+        // Check for memory card manufacturers
+        let cardManufacturers = ["sandisk", "lexar", "prograde", "angelbird", "delkin", "sony tough", "transcend"]
+        for manufacturer in cardManufacturers {
+            if lowerModel.contains(manufacturer) {
+                // Check if it's small enough to be a card (under 2TB)
+                if capacity <= 2_000_000_000_000 {
+                    return .cameraCard
+                }
+            }
+        }
+        
+        // Size-based detection for cards (32GB to 1TB typically)
+        if capacity >= 32_000_000_000 && capacity <= 1_000_000_000_000 {
+            // Common card sizes: 32, 64, 128, 256, 512 GB, 1TB
+            let gbSize = capacity / 1_000_000_000
+            let commonCardSizes: [Int64] = [32, 64, 128, 256, 512, 1024]
+            for size in commonCardSizes {
+                if gbSize >= size - 5 && gbSize <= size + 5 { // Allow some tolerance
+                    // Likely a memory card if it's one of these exact sizes
+                    if connectionType == .usb2 || connectionType == .usb30 {
+                        return .cardReader
+                    }
+                }
+            }
+        }
+        
+        // Check for portable SSD keywords
+        let portableSSDKeywords = ["t5", "t7", "t9", "extreme pro", "extreme portable", "portable ssd", "nvme", "thunderbolt"]
+        for keyword in portableSSDKeywords {
+            if lowerName.contains(keyword) || lowerModel.contains(keyword) {
+                return .portableSSD
+            }
+        }
+        
+        // Check for known portable drive manufacturers
+        let portableDriveManufacturers = ["samsung portable", "sandisk extreme", "lacie", "g-drive", "g drive", "wd passport", "wd my passport", "seagate backup"]
+        for manufacturer in portableDriveManufacturers {
+            if lowerModel.contains(manufacturer) {
+                return isSSD ? .portableSSD : .externalHDD
+            }
+        }
+        
+        // Check by connection type and other properties
+        switch connectionType {
+        case .internalDrive:
+            return .internalDrive
+        case .network:
+            return .networkDrive
+        case .thunderbolt3, .thunderbolt4, .thunderbolt5:
+            // Thunderbolt drives are typically high-performance portable SSDs
+            if isSSD {
+                return .portableSSD
+            }
+        case .usb30, .usb31Gen1, .usb31Gen2, .usb32Gen2x2:
+            // USB 3.x drives could be portable
+            if isSSD && capacity <= 4_000_000_000_000 { // 4TB or less
+                return .portableSSD
+            } else if !isSSD {
+                return .externalHDD
+            }
+        default:
+            break
+        }
+        
+        // Default based on connection and type
+        if connectionType == .internalDrive {
+            return .internalDrive
+        } else if isSSD {
+            return .portableSSD
+        } else {
+            return .externalHDD
+        }
     }
     
     // MARK: - Volume Attributes

@@ -52,76 +52,96 @@ struct DriveCustomizationView: View {
             
             Divider()
             
-            // Form
-            Form {
-                Section("Identification") {
-                    HStack {
-                        Text("Custom Name:")
-                            .frame(width: 100, alignment: .trailing)
-                        TextField("My Backup Drive", text: $customName)
-                            .textFieldStyle(.squareBorder)
-                    }
-                    
-                    HStack {
-                        Text("Icon:")
-                            .frame(width: 100, alignment: .trailing)
+            // Custom form layout without Form wrapper
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    // Identification Section
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Identification")
+                            .font(.headline)
                         
-                        Button(action: { showingEmojiPicker.toggle() }) {
-                            Text(selectedEmoji)
-                                .font(.system(size: 24))
-                                .frame(width: 40, height: 40)
-                                .background(Color.gray.opacity(0.1))
-                                .cornerRadius(8)
+                        HStack {
+                            Text("Custom Name:")
+                                .frame(width: 100, alignment: .trailing)
+                            TextField("My Backup Drive", text: $customName)
+                                .textFieldStyle(.roundedBorder)
                         }
-                        .buttonStyle(.plain)
                         
-                        if showingEmojiPicker {
-                            ScrollView(.horizontal, showsIndicators: false) {
-                                HStack(spacing: 8) {
-                                    ForEach(availableEmojis, id: \.self) { emoji in
-                                        Button(action: {
-                                            selectedEmoji = emoji
-                                            showingEmojiPicker = false
-                                        }) {
-                                            Text(emoji)
-                                                .font(.system(size: 20))
-                                                .frame(width: 32, height: 32)
-                                                .background(selectedEmoji == emoji ? Color.accentColor.opacity(0.2) : Color.gray.opacity(0.1))
-                                                .cornerRadius(6)
-                                        }
-                                        .buttonStyle(.plain)
-                                    }
-                                }
-                                .padding(.horizontal, 4)
+                        HStack(alignment: .center) {
+                            Text("Icon:")
+                                .frame(width: 100, alignment: .trailing)
+                            
+                            Button(action: { showingEmojiPicker.toggle() }) {
+                                Text(selectedEmoji)
+                                    .font(.system(size: 24))
+                                    .frame(width: 40, height: 40)
+                                    .background(Color.gray.opacity(0.1))
+                                    .cornerRadius(8)
                             }
-                            .frame(height: 40)
+                            .buttonStyle(.plain)
+                            
+                            if showingEmojiPicker {
+                                ScrollView(.horizontal, showsIndicators: false) {
+                                    HStack(spacing: 8) {
+                                        ForEach(availableEmojis, id: \.self) { emoji in
+                                            Button(action: {
+                                                selectedEmoji = emoji
+                                                showingEmojiPicker = false
+                                            }) {
+                                                Text(emoji)
+                                                    .font(.system(size: 20))
+                                                    .frame(width: 32, height: 32)
+                                                    .background(selectedEmoji == emoji ? Color.accentColor.opacity(0.2) : Color.gray.opacity(0.1))
+                                                    .cornerRadius(6)
+                                            }
+                                            .buttonStyle(.plain)
+                                        }
+                                    }
+                                    .padding(.horizontal, 4)
+                                }
+                                .frame(height: 40)
+                            }
+                            
+                            Spacer()
+                        }
+                        
+                        HStack {
+                            Text("Location:")
+                                .frame(width: 100, alignment: .trailing)
+                            TextField("Office, Home, Portable, etc.", text: $physicalLocation)
+                                .textFieldStyle(.roundedBorder)
                         }
                     }
+                    .padding()
+                    .background(Color.gray.opacity(0.05))
+                    .cornerRadius(8)
                     
-                    HStack {
-                        Text("Location:")
-                            .frame(width: 100, alignment: .trailing)
-                        TextField("Office, Home, Portable, etc.", text: $physicalLocation)
-                            .textFieldStyle(.squareBorder)
+                    // Preferences Section
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Preferences")
+                            .font(.headline)
+                        
+                        Toggle(isOn: $isPreferred) {
+                            Text("Preferred Backup Drive")
+                                .help("This drive will be suggested first when selecting backup destinations")
+                        }
+                        .toggleStyle(.checkbox)
+                        
+                        Toggle(isOn: $autoStart) {
+                            Text("Auto-start Backup When Connected")
+                                .help("Automatically begin backup when this drive is connected")
+                        }
+                        .toggleStyle(.checkbox)
                     }
-                }
-                
-                Section("Preferences") {
-                    Toggle(isOn: $isPreferred) {
-                        Text("Preferred Backup Drive")
-                            .help("This drive will be suggested first when selecting backup destinations")
-                    }
-                    .toggleStyle(.checkbox)
+                    .padding()
+                    .background(Color.gray.opacity(0.05))
+                    .cornerRadius(8)
                     
-                    Toggle(isOn: $autoStart) {
-                        Text("Auto-start Backup When Connected")
-                            .help("Automatically begin backup when this drive is connected")
-                    }
-                    .toggleStyle(.checkbox)
-                }
-                
-                Section("Notes") {
-                    VStack(alignment: .leading) {
+                    // Notes Section
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Notes")
+                            .font(.headline)
+                        
                         Text("Additional Notes:")
                             .font(.system(size: 12, weight: .medium))
                         
@@ -129,57 +149,69 @@ struct DriveCustomizationView: View {
                             .font(.system(size: 12))
                             .frame(height: 60)
                             .scrollContentBackground(.hidden)
-                            .background(Color.gray.opacity(0.05))
+                            .background(Color.white)
                             .overlay(
                                 RoundedRectangle(cornerRadius: 4)
                                     .stroke(Color.gray.opacity(0.3), lineWidth: 1)
                             )
                     }
-                }
-                
-                // Drive Statistics
-                Section("Statistics") {
-                    HStack {
-                        Text("First Seen:")
-                            .frame(width: 100, alignment: .trailing)
-                            .foregroundColor(.secondary)
-                        Text(formatDate(drive.firstSeen))
-                    }
+                    .padding()
+                    .background(Color.gray.opacity(0.05))
+                    .cornerRadius(8)
                     
-                    HStack {
-                        Text("Last Seen:")
-                            .frame(width: 100, alignment: .trailing)
-                            .foregroundColor(.secondary)
-                        Text(formatDate(drive.lastSeen))
-                    }
-                    
-                    HStack {
-                        Text("Total Backups:")
-                            .frame(width: 100, alignment: .trailing)
-                            .foregroundColor(.secondary)
-                        Text("\(drive.totalBackups)")
-                    }
-                    
-                    HStack {
-                        Text("Data Written:")
-                            .frame(width: 100, alignment: .trailing)
-                            .foregroundColor(.secondary)
-                        Text(formatBytes(drive.totalBytesWritten))
-                    }
-                    
-                    if let healthStatus = drive.healthStatus {
+                    // Statistics Section
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Statistics")
+                            .font(.headline)
+                        
                         HStack {
-                            Text("Health Status:")
+                            Text("First Seen:")
                                 .frame(width: 100, alignment: .trailing)
                                 .foregroundColor(.secondary)
-                            Text(healthStatus)
+                            Text(formatDate(drive.firstSeen))
+                            Spacer()
+                        }
+                        
+                        HStack {
+                            Text("Last Seen:")
+                                .frame(width: 100, alignment: .trailing)
+                                .foregroundColor(.secondary)
+                            Text(formatDate(drive.lastSeen))
+                            Spacer()
+                        }
+                        
+                        HStack {
+                            Text("Total Backups:")
+                                .frame(width: 100, alignment: .trailing)
+                                .foregroundColor(.secondary)
+                            Text("\(drive.totalBackups)")
+                            Spacer()
+                        }
+                        
+                        HStack {
+                            Text("Data Written:")
+                                .frame(width: 100, alignment: .trailing)
+                                .foregroundColor(.secondary)
+                            Text(formatBytes(drive.totalBytesWritten))
+                            Spacer()
+                        }
+                        
+                        if let healthStatus = drive.healthStatus {
+                            HStack {
+                                Text("Health Status:")
+                                    .frame(width: 100, alignment: .trailing)
+                                    .foregroundColor(.secondary)
+                                Text(healthStatus)
+                                Spacer()
+                            }
                         }
                     }
+                    .padding()
+                    .background(Color.gray.opacity(0.05))
+                    .cornerRadius(8)
                 }
+                .padding()
             }
-            .formStyle(.grouped)
-            .scrollContentBackground(.hidden)
-            .padding()
             
             Divider()
             

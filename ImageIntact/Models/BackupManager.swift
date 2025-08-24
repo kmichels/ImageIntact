@@ -264,7 +264,8 @@ class BackupManager {
                                 hardwareSerial: nil,
                                 deviceModel: nil,
                                 totalCapacity: 0,
-                                freeSpace: 0
+                                freeSpace: 0,
+                                driveType: .generic
                             )
                             destinationDriveInfo[itemID] = unavailableInfo
                         }
@@ -431,7 +432,8 @@ class BackupManager {
                         hardwareSerial: nil,
                         deviceModel: nil,
                         totalCapacity: 0,
-                        freeSpace: 0
+                        freeSpace: 0,
+                        driveType: .generic
                     )
                     destinationDriveInfo[itemID] = unavailableInfo
                     logInfo("Destination not accessible: \(url.lastPathComponent)")
