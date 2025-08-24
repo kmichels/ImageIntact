@@ -14,7 +14,12 @@ struct DestinationSection: View {
                 
                 Spacer()
                 
-                if backupManager.destinationItems.count < 4 {
+                // Only show Add button if we have less than 4 destinations AND no blank destinations
+                // OR if we have no destinations at all
+                let hasBlankDestination = backupManager.destinationItems.contains { $0.url == nil }
+                let canAddDestination = backupManager.destinationItems.count < 4 && !hasBlankDestination
+                
+                if canAddDestination {
                     Button(action: {
                         showingAddPicker = true
                     }) {
@@ -110,11 +115,17 @@ struct DestinationSection: View {
             switch result {
             case .success(let urls):
                 if let url = urls.first {
-                    // Add new destination
-                    backupManager.addDestination()
-                    // Set the URL for the newly added destination
-                    let newIndex = backupManager.destinationItems.count - 1
-                    backupManager.setDestination(url, at: newIndex)
+                    // Check if there's a blank destination to fill first
+                    if let blankIndex = backupManager.destinationItems.firstIndex(where: { $0.url == nil }) {
+                        // Fill the blank destination
+                        backupManager.setDestination(url, at: blankIndex)
+                    } else {
+                        // No blank destinations, add a new one
+                        backupManager.addDestination()
+                        // Set the URL for the newly added destination
+                        let newIndex = backupManager.destinationItems.count - 1
+                        backupManager.setDestination(url, at: newIndex)
+                    }
                 }
             case .failure(let error):
                 print("Failed to select destination: \(error)")
