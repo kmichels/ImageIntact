@@ -39,19 +39,18 @@ struct ContentView: View {
             // Main content - ScrollView for everything except header and bottom buttons
             ScrollViewReader { scrollProxy in
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 24) {
-                        // Preset selector
-                        BackupPresetView(backupManager: backupManager)
-                            .padding(.horizontal, 20)
-                        
-                        Divider()
-                            .padding(.horizontal, 20)
+                    VStack(alignment: .leading, spacing: 0) {
+                        // Add consistent top padding
+                        Color.clear.frame(height: 20)
                         
                         // Source Section
                         SourceFolderSection(backupManager: backupManager, focusedField: $focusedField)
                         
+                        // Consistent spacing between sections
+                        Color.clear.frame(height: 20)
                         Divider()
                             .padding(.horizontal, 20)
+                        Color.clear.frame(height: 20)
                         
                         // Destinations Section
                         DestinationSection(backupManager: backupManager, focusedField: $focusedField)

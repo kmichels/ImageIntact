@@ -61,12 +61,12 @@ struct FileTypeFilterView: View {
                     applyPreset(.videosOnly)
                 }
             } label: {
-                Label("Presets", systemImage: "line.3.horizontal.decrease.circle")
+                Label("Filters", systemImage: "line.3.horizontal.decrease.circle")
                     .font(.caption)
             }
             .menuStyle(.borderlessButton)
             .fixedSize()
-            .help("Quick filter presets")
+            .help("Quick file type filters")
         }
         .sheet(isPresented: $showFilterSheet) {
             FileTypeSelectionSheet(

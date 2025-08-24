@@ -34,6 +34,7 @@ struct DestinationSection: View {
                 }
             }
             
+            // Inner content - indented
             VStack(spacing: 8) {
                 ForEach(Array(backupManager.destinationItems.enumerated()), id: \.element.id) { index, item in
                     VStack(alignment: .leading, spacing: 4) {
@@ -62,11 +63,11 @@ struct DestinationSection: View {
                             focusedField = .destination(index)
                         }
                         
-                        // Show drive analysis with new DriveStatusView if we have drive info
+                        // Show drive analysis with new DriveStatusView if we have drive info - indented further
                         if let _ = item.url, 
                            let driveInfo = backupManager.destinationDriveInfo[item.id] {
                             DriveStatusView(driveInfo: driveInfo)
-                                .padding(.leading, 12)
+                                .padding(.leading, 20)
                                 .padding(.top, 4)
                         } else if let estimate = backupManager.getDestinationEstimate(at: index) {
                             // Fallback to old estimate display if no drive info
@@ -100,11 +101,12 @@ struct DestinationSection: View {
                                     }
                                 }
                             }
-                            .padding(.leading, 12)
+                            .padding(.leading, 20)
                         }
                     }
                 }
             }
+            .padding(.leading, 20)
         }
         .padding(.horizontal, 20)
         .fileImporter(
