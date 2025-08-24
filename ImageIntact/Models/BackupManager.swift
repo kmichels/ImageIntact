@@ -1127,85 +1127,27 @@ extension BackupManager {
         return try calculateNativeChecksum(for: fileURL, shouldCancel: shouldCancel)
     }
     
-    // Native Swift checksum using CryptoKit - more reliable than external commands
+    // Native Swift checksum using CryptoKit - now with optimized implementation
     nonisolated private static func calculateNativeChecksum(for fileURL: URL, shouldCancel: Bool = false) throws -> String {
-        return try autoreleasepool {
-            // Check file size first
-            let attributes = try FileManager.default.attributesOfItem(atPath: fileURL.path)
-            let size = attributes[.size] as? Int64 ?? 0
-            
-            if size == 0 {
-                return "empty-file-0-bytes"
-            }
-            
-            // For large files, use streaming to avoid memory issues
-            if size > 10_000_000 { // 10MB - stream to prevent memory pressure
-                return try calculateStreamingChecksum(for: fileURL, size: size, shouldCancel: shouldCancel)
-            }
-            
-            // Check cancellation
-            if shouldCancel {
-                throw NSError(domain: "ImageIntact", code: 6, userInfo: [NSLocalizedDescriptionKey: "Checksum cancelled by user"])
-            }
-            
-            // For smaller files, read entire file
-            do {
-                let fileData = try Data(contentsOf: fileURL, options: .mappedIfSafe)
-                let hash = SHA256.hash(data: fileData)
-                let hashString = hash.compactMap { String(format: "%02x", $0) }.joined()
-                return hashString
-            } catch {
-                // Fall back to file size-based checksum if file can't be read
+        // Use the optimized checksum implementation for better performance
+        do {
+            return try OptimizedChecksum.sha256(for: fileURL, shouldCancel: { shouldCancel })
+        } catch {
+            // Fall back to size-based checksum if file can't be read
+            if let attributes = try? FileManager.default.attributesOfItem(atPath: fileURL.path),
+               let size = attributes[.size] as? Int64 {
                 let sizeHash = String(format: "%016x", size)
                 return "size:\(sizeHash)"
             }
+            throw error
         }
     }
     
-    // Streaming checksum for large files
+    // Legacy streaming checksum - kept for compatibility but not used
+    // The optimized implementation in OptimizedChecksum.swift is now used instead
     nonisolated private static func calculateStreamingChecksum(for fileURL: URL, size: Int64, shouldCancel: Bool = false) throws -> String {
-        return try autoreleasepool {
-            guard let inputStream = InputStream(url: fileURL) else {
-                throw NSError(domain: "ImageIntact", code: 8, userInfo: [NSLocalizedDescriptionKey: "Cannot open file stream"])
-            }
-            
-            inputStream.open()
-            defer { inputStream.close() }
-            
-            var hasher = SHA256()
-            let bufferSize = 1024 * 1024 // 1MB buffer
-            let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: bufferSize)
-            defer { buffer.deallocate() }
-            
-            var totalBytesRead: Int64 = 0
-            
-            while inputStream.hasBytesAvailable {
-                // Wrap each iteration in its own autoreleasepool for very large files
-                try autoreleasepool {
-                    // Check for cancellation
-                    if shouldCancel {
-                        throw NSError(domain: "ImageIntact", code: 6, userInfo: [NSLocalizedDescriptionKey: "Checksum cancelled by user"])
-                    }
-                    
-                    let bytesRead = inputStream.read(buffer, maxLength: bufferSize)
-                    if bytesRead < 0 {
-                        // Stream error
-                        throw NSError(domain: "ImageIntact", code: 9, userInfo: [NSLocalizedDescriptionKey: "Stream read error: \(inputStream.streamError?.localizedDescription ?? "unknown")"])
-                    } else if bytesRead == 0 {
-                        // End of stream
-                        return
-                    } else {
-                        // Add bytes to hasher
-                        hasher.update(data: Data(bytes: buffer, count: bytesRead))
-                        totalBytesRead += Int64(bytesRead)
-                    }
-                }
-            }
-            
-            let hash = hasher.finalize()
-            let hashString = hash.compactMap { String(format: "%02x", $0) }.joined()
-            return hashString
-        }
+        // This method is no longer called - OptimizedChecksum handles all streaming
+        return try OptimizedChecksum.sha256(for: fileURL, shouldCancel: { shouldCancel })
     }
     
     // MARK: - Formatting Helpers
