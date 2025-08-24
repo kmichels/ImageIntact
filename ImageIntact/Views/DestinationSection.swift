@@ -58,7 +58,7 @@ struct DestinationSection: View {
                         }
                         
                         // Show drive analysis with new DriveStatusView if we have drive info
-                        if let url = item.url, 
+                        if let _ = item.url, 
                            let driveInfo = backupManager.destinationDriveInfo[item.id] {
                             DriveStatusView(driveInfo: driveInfo)
                                 .padding(.leading, 12)
