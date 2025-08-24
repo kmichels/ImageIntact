@@ -369,6 +369,7 @@
 				DEAD_CODE_STRIPPING = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
+				EXTRACT_APPINTENTS_METADATA = NO;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = ImageIntact;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.photography";
@@ -398,6 +399,7 @@
 				DEAD_CODE_STRIPPING = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
+				EXTRACT_APPINTENTS_METADATA = NO;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = ImageIntact;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.photography";
