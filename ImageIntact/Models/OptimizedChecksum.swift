@@ -13,42 +13,59 @@ final class ChecksumBufferPool {
     static let shared = ChecksumBufferPool()
     
     private let lock = NSLock()
-    private var availableBuffers: [UnsafeMutableRawBufferPointer] = []
-    private let bufferSize: Int
-    private let maxPoolSize = 4 // Keep up to 4 buffers in pool
-    
-    init(bufferSize: Int = 1024 * 1024) { // Default 1MB
-        self.bufferSize = bufferSize
-    }
+    private var buffersBySize: [Int: [UnsafeMutableRawBufferPointer]] = [:]
+    private let maxBuffersPerSize = 2 // Keep up to 2 buffers of each size
     
     deinit {
         // Clean up all buffers
-        for buffer in availableBuffers {
-            buffer.deallocate()
+        for (_, buffers) in buffersBySize {
+            for buffer in buffers {
+                buffer.deallocate()
+            }
         }
     }
     
-    func acquire() -> UnsafeMutableRawBufferPointer {
+    func acquire(size: Int) -> UnsafeMutableRawBufferPointer {
         lock.lock()
         defer { lock.unlock() }
         
-        if let buffer = availableBuffers.popLast() {
+        // Get or create buffer array for this size
+        if var buffers = buffersBySize[size], !buffers.isEmpty {
+            let buffer = buffers.removeLast()
+            buffersBySize[size] = buffers
             return buffer
         } else {
-            // Allocate new buffer
-            return UnsafeMutableRawBufferPointer.allocate(byteCount: bufferSize, alignment: 16)
+            // Allocate new buffer with requested size
+            return UnsafeMutableRawBufferPointer.allocate(byteCount: size, alignment: 16)
         }
     }
     
-    func release(_ buffer: UnsafeMutableRawBufferPointer) {
+    func release(_ buffer: UnsafeMutableRawBufferPointer, size: Int) {
         lock.lock()
         defer { lock.unlock() }
         
-        if availableBuffers.count < maxPoolSize {
-            availableBuffers.append(buffer)
+        // Store buffer for reuse if we have room
+        var buffers = buffersBySize[size] ?? []
+        if buffers.count < maxBuffersPerSize {
+            buffers.append(buffer)
+            buffersBySize[size] = buffers
         } else {
-            // Pool is full, deallocate
+            // Pool is full for this size, deallocate
             buffer.deallocate()
+        }
+    }
+    
+    /// Clean up unused buffers to free memory
+    func cleanupUnusedBuffers() {
+        lock.lock()
+        defer { lock.unlock() }
+        
+        // Deallocate all stored buffers
+        for (size, buffers) in buffersBySize {
+            for buffer in buffers {
+                buffer.deallocate()
+            }
+            buffersBySize[size] = []
         }
     }
 }
@@ -108,50 +125,56 @@ public struct OptimizedChecksum {
     
     /// Optimized streaming checksum for large files
     private static func calculateOptimizedStreamingChecksum(for fileURL: URL, fileSize: Int64, shouldCancel: @escaping () -> Bool) throws -> String {
-        // Determine optimal chunk size
-        let chunkSize = optimalChunkSize(for: fileSize)
-        
-        // Get buffer from pool
-        let bufferPool = ChecksumBufferPool(bufferSize: chunkSize)
-        let buffer = bufferPool.acquire()
-        defer { bufferPool.release(buffer) }
-        
-        // Open file handle for reading
-        let fileHandle = try FileHandle(forReadingFrom: fileURL)
-        defer { try? fileHandle.close() }
-        
-        var hasher = SHA256()
-        var totalBytesRead: Int64 = 0
-        
-        // Read and hash in chunks
-        while totalBytesRead < fileSize {
-            // Check cancellation
-            if shouldCancel() {
-                throw ChecksumError.cancelled
+        // Wrap in autoreleasepool for better memory management
+        return try autoreleasepool {
+            // Determine optimal chunk size
+            let chunkSize = optimalChunkSize(for: fileSize)
+            
+            // Use shared buffer pool instance with appropriate size
+            let buffer = ChecksumBufferPool.shared.acquire(size: chunkSize)
+            defer { ChecksumBufferPool.shared.release(buffer, size: chunkSize) }
+            
+            // Open file handle for reading
+            let fileHandle = try FileHandle(forReadingFrom: fileURL)
+            defer { try? fileHandle.close() }
+            
+            var hasher = SHA256()
+            var totalBytesRead: Int64 = 0
+            
+            // Read and hash in chunks
+            while totalBytesRead < fileSize {
+                // Wrap each chunk in its own autoreleasepool for very large files
+                try autoreleasepool {
+                    // Check cancellation
+                    if shouldCancel() {
+                        throw ChecksumError.cancelled
+                    }
+                    
+                    // Calculate how much to read
+                    let remainingBytes = fileSize - totalBytesRead
+                    let bytesToRead = Int(min(Int64(chunkSize), remainingBytes))
+                    
+                    // Read directly into buffer
+                    let bytesRead = try readIntoBuffer(fileHandle: fileHandle, buffer: buffer, maxLength: bytesToRead)
+                    
+                    if bytesRead == 0 {
+                        // End of file reached
+                        return
+                    }
+                    
+                    // Update hasher directly with buffer pointer (no Data allocation)
+                    buffer.withUnsafeBytes { bytes in
+                        let uint8Bytes = bytes.bindMemory(to: UInt8.self)
+                        hasher.update(bufferPointer: UnsafeRawBufferPointer(start: uint8Bytes.baseAddress, count: bytesRead))
+                    }
+                    
+                    totalBytesRead += Int64(bytesRead)
+                }
             }
             
-            // Calculate how much to read
-            let remainingBytes = fileSize - totalBytesRead
-            let bytesToRead = Int(min(Int64(chunkSize), remainingBytes))
-            
-            // Read directly into buffer
-            let bytesRead = try readIntoBuffer(fileHandle: fileHandle, buffer: buffer, maxLength: bytesToRead)
-            
-            if bytesRead == 0 {
-                break // End of file
-            }
-            
-            // Update hasher directly with buffer pointer (no Data allocation)
-            buffer.withUnsafeBytes { bytes in
-                let uint8Bytes = bytes.bindMemory(to: UInt8.self)
-                hasher.update(bufferPointer: UnsafeRawBufferPointer(start: uint8Bytes.baseAddress, count: bytesRead))
-            }
-            
-            totalBytesRead += Int64(bytesRead)
+            let hash = hasher.finalize()
+            return hash.hexString
         }
-        
-        let hash = hasher.finalize()
-        return hash.hexString
     }
     
     /// Optimized file reading directly into buffer

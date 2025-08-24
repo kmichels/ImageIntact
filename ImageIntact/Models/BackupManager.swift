@@ -741,6 +741,9 @@ class BackupManager {
             self.overallStatusText = ""
             // Keep scanProgress - it shows the file type summary
             
+            // Clean up checksum buffer pool
+            ChecksumBufferPool.shared.cleanupUnusedBuffers()
+            
             autoreleasepool { }
             logInfo("Deep memory cleanup completed", category: .performance)
         }
