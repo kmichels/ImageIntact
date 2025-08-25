@@ -64,11 +64,27 @@ struct DestinationSection: View {
                         }
                         
                         // Show drive analysis with new DriveStatusView if we have drive info - indented further
-                        if let _ = item.url, 
+                        if let destinationURL = item.url, 
                            let driveInfo = backupManager.destinationDriveInfo[item.id] {
-                            DriveStatusView(driveInfo: driveInfo)
-                                .padding(.leading, 20)
-                                .padding(.top, 4)
+                            VStack(alignment: .leading, spacing: 4) {
+                                DriveStatusView(driveInfo: driveInfo)
+                                
+                                // Show organized path if we have an organization name
+                                if !backupManager.organizationName.isEmpty {
+                                    HStack(spacing: 4) {
+                                        Image(systemName: "folder")
+                                            .font(.system(size: 10))
+                                            .foregroundColor(.secondary)
+                                        Text("→ \(destinationURL.lastPathComponent)/\(backupManager.organizationName)/")
+                                            .font(.system(size: 11))
+                                            .foregroundColor(.secondary)
+                                            .lineLimit(1)
+                                            .help("Files will be organized in this folder")
+                                    }
+                                }
+                            }
+                            .padding(.leading, 20)
+                            .padding(.top, 4)
                         } else if let estimate = backupManager.getDestinationEstimate(at: index) {
                             // Fallback to old estimate display if no drive info
                             HStack(spacing: 8) {

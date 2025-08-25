@@ -118,6 +118,9 @@ class BackupManager {
     var excludeCacheFiles = true  // Default to excluding cache files
     var fileTypeFilter = FileTypeFilter()  // Default to no filtering (all files)
     
+    // Backup organization
+    var organizationName: String = ""  // Custom folder name for organizing backups
+    
     // UI state for completion report
     var showCompletionReport = false
     
@@ -310,10 +313,45 @@ class BackupManager {
         scanProgress = ""
         progressTracker.sourceTotalBytes = 0
         
+        // Auto-generate organization name from source path
+        organizationName = extractSmartFolderName(from: url)
+        
         // Start background scan for image files
         Task { [weak self] in
             await self?.scanSourceFolder(url)
         }
+    }
+    
+    /// Extracts a smart folder name from the source URL
+    /// Examples:
+    /// - ~/Downloads → "Downloads"
+    /// - /Volumes/Card01/DCIM → "Card01"
+    /// - ~/Pictures/2025/Q3/Clients/Johnson → "Johnson"
+    private func extractSmartFolderName(from url: URL) -> String {
+        let pathComponents = url.pathComponents
+        
+        // If it's a volume, use the volume name
+        if pathComponents.count > 2 && pathComponents[1] == "Volumes" {
+            return pathComponents[2]  // Volume name
+        }
+        
+        // Skip generic folder names
+        let genericNames = ["files", "images", "photos", "pictures", "dcim", "documents"]
+        
+        // Work backwards through path components to find a meaningful name
+        for component in pathComponents.reversed() {
+            let lowercased = component.lowercased()
+            // Skip empty, hidden, or generic names
+            if !component.isEmpty && 
+               !component.hasPrefix(".") && 
+               !genericNames.contains(lowercased) &&
+               component != "/" {
+                return component
+            }
+        }
+        
+        // Fallback to last component
+        return url.lastPathComponent
     }
     
     func setDestination(_ url: URL, at index: Int) {

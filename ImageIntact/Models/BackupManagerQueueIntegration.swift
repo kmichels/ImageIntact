@@ -88,6 +88,7 @@ extension BackupManager {
             driveInfo: destinationDriveInfo,
             destinationItemIDs: destinationItemIDs,
             filter: fileTypeFilter,
+            organizationName: organizationName,
             sessionID: sessionID
         )
         

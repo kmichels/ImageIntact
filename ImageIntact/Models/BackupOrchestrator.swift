@@ -65,6 +65,7 @@ class BackupOrchestrator {
         driveInfo: [UUID: DriveAnalyzer.DriveInfo],
         destinationItemIDs: [UUID],
         filter: FileTypeFilter = FileTypeFilter(),
+        organizationName: String = "",
         sessionID: String? = nil
     ) async -> [(file: String, destination: String, error: String)] {
         
@@ -286,7 +287,8 @@ class BackupOrchestrator {
         await coordinator.startBackup(
             source: source,
             destinations: destinations,
-            manifest: manifest
+            manifest: manifest,
+            organizationName: organizationName
         )
         
         // Wait for monitoring to complete

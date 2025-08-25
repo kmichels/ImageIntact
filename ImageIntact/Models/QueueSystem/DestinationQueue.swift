@@ -4,6 +4,7 @@ import Darwin
 /// Manages the backup queue for a single destination
 actor DestinationQueue {
     let destination: URL
+    let organizationName: String  // Folder name for organizing backups
     let queue: PriorityQueue
     let throughputMonitor: ThroughputMonitor
     private let batchProcessor = BatchFileProcessor()
@@ -49,8 +50,9 @@ actor DestinationQueue {
     private let maxWorkers = 4  // Reduced from 8 to prevent resource exhaustion
     private let maxMemoryUsageMB = 750  // Increased from 500MB - more appropriate for modern systems
     
-    init(destination: URL) {
+    init(destination: URL, organizationName: String = "") {
         self.destination = destination
+        self.organizationName = organizationName
         self.queue = PriorityQueue()
         self.throughputMonitor = ThroughputMonitor()
     }
@@ -223,7 +225,15 @@ actor DestinationQueue {
     // MARK: - File Processing
     
     private func processFileTask(_ task: FileTask) async -> CopyResult {
-        let destPath = destination.appendingPathComponent(task.relativePath)
+        // If we have an organization name, add it to the path
+        let destPath: URL
+        if !organizationName.isEmpty {
+            destPath = destination
+                .appendingPathComponent(organizationName)
+                .appendingPathComponent(task.relativePath)
+        } else {
+            destPath = destination.appendingPathComponent(task.relativePath)
+        }
         let destDir = destPath.deletingLastPathComponent()
         let startTime = Date()
         

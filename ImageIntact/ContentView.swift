@@ -46,6 +46,17 @@ struct ContentView: View {
                         // Source Section
                         SourceFolderSection(backupManager: backupManager, focusedField: $focusedField)
                         
+                        // Organization Section - only show if source is selected
+                        if backupManager.sourceURL != nil {
+                            // Consistent spacing between sections
+                            Color.clear.frame(height: 20)
+                            Divider()
+                                .padding(.horizontal, 20)
+                            Color.clear.frame(height: 20)
+                            
+                            OrganizationSection(backupManager: backupManager)
+                        }
+                        
                         // Consistent spacing between sections
                         Color.clear.frame(height: 20)
                         Divider()

@@ -33,7 +33,7 @@ class BackupCoordinator: ObservableObject {
     
     // MARK: - Main Entry Point
     
-    func startBackup(source: URL, destinations: [URL], manifest: [FileManifestEntry]) async {
+    func startBackup(source: URL, destinations: [URL], manifest: [FileManifestEntry], organizationName: String = "") async {
         guard !isRunning else { return }
         
         isRunning = true
@@ -48,9 +48,9 @@ class BackupCoordinator: ObservableObject {
         // Create tasks with smart priority
         let tasks = createFileTasks(from: manifest)
         
-        // Create a queue for each destination
+        // Create a queue for each destination with organization name
         for destination in destinations {
-            let queue = DestinationQueue(destination: destination)
+            let queue = DestinationQueue(destination: destination, organizationName: organizationName)
             let destName = destination.lastPathComponent  // Capture once
             
             // Set up callbacks before adding to array to avoid retain issues
