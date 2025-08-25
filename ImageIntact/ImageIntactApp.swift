@@ -139,6 +139,30 @@ struct ImageIntactApp: App {
                 
             }
             
+            // Add Debug menu (only in debug builds)
+            #if DEBUG
+            CommandMenu("Debug") {
+                Button("Test Update Flow") {
+                    NotificationCenter.default.post(name: NSNotification.Name("TestUpdateFlow"), object: nil)
+                }
+                .keyboardShortcut("u", modifiers: [.command, .shift, .option])
+                
+                Divider()
+                
+                Button("Enable Test Mode") {
+                    UpdateManager.testMode = true
+                    UpdateManager.mockVersion = "1.0.0"
+                    print("🧪 Test mode enabled with version 1.0.0")
+                }
+                
+                Button("Disable Test Mode") {
+                    UpdateManager.testMode = false
+                    UpdateManager.mockVersion = nil
+                    print("🧪 Test mode disabled")
+                }
+            }
+            #endif
+            
             // Add Help menu
             CommandMenu("Help") {
                 Button("ImageIntact Help") {

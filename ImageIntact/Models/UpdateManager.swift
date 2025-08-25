@@ -22,12 +22,22 @@ class UpdateManager {
     var showUpdateSheet = false
     var updateCheckResult: UpdateCheckResult = .checking
     
+    // MARK: - Test Mode Properties
+    static var testMode = false
+    static var mockVersion: String?
+    var isTestMode: Bool { UpdateManager.testMode }
+    
     private var updateProvider: UpdateProvider
     private var settings = UpdateSettings.load()
     private var downloadTask: Task<Void, Never>?
     
-    /// Get current app version from Info.plist
+    /// Get current app version from Info.plist (or mock version in test mode)
     var currentVersion: String {
+        // Check for test mode mock version
+        if UpdateManager.testMode, let mockVersion = UpdateManager.mockVersion {
+            print("🧪 TEST MODE: Reporting mock version \(mockVersion)")
+            return mockVersion
+        }
         return Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0"
     }
     
@@ -35,6 +45,35 @@ class UpdateManager {
         // Default to GitHub provider, but allow injection for testing
         self.updateProvider = provider ?? GitHubUpdateProvider()
         print("UpdateManager initialized with \(updateProvider.providerName)")
+        
+        // Check for test mode from launch arguments
+        checkForTestMode()
+    }
+    
+    /// Check launch arguments and environment for test mode
+    private func checkForTestMode() {
+        let arguments = ProcessInfo.processInfo.arguments
+        let environment = ProcessInfo.processInfo.environment
+        
+        // Check for test mode flag
+        if arguments.contains("--test-update") || environment["IMAGEINTACT_TEST_UPDATE"] == "1" {
+            UpdateManager.testMode = true
+            print("🧪 TEST MODE ACTIVATED")
+            
+            // Check for mock version
+            if let index = arguments.firstIndex(of: "--mock-version"),
+               index + 1 < arguments.count {
+                UpdateManager.mockVersion = arguments[index + 1]
+                print("🧪 Mock version set to: \(arguments[index + 1])")
+            } else if let mockVersion = environment["IMAGEINTACT_MOCK_VERSION"] {
+                UpdateManager.mockVersion = mockVersion
+                print("🧪 Mock version set to: \(mockVersion)")
+            } else {
+                // Default mock version if test mode but no version specified
+                UpdateManager.mockVersion = "1.0.0"
+                print("🧪 Using default mock version: 1.0.0")
+            }
+        }
     }
     
     // MARK: - Public Methods
@@ -157,8 +196,8 @@ class UpdateManager {
                 
                 print("✅ Update downloaded successfully to: \(localURL)")
                 
-                // Open the DMG
-                NSWorkspace.shared.open(localURL)
+                // Mount and open the DMG
+                await self.mountAndOpenDMG(at: localURL)
                 
                 // Dismiss sheets
                 await MainActor.run { [weak self] in
@@ -197,6 +236,58 @@ class UpdateManager {
         settings = updatedSettings
         showUpdateSheet = false
         availableUpdate = nil
+    }
+    
+    // MARK: - DMG Handling
+    
+    /// Mount a DMG and open it in Finder
+    private func mountAndOpenDMG(at url: URL) async {
+        print("💿 Mounting DMG: \(url.lastPathComponent)")
+        
+        do {
+            // Use hdiutil to mount the DMG
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/hdiutil")
+            process.arguments = ["attach", url.path, "-autoopen"]
+            
+            let pipe = Pipe()
+            process.standardOutput = pipe
+            process.standardError = pipe
+            
+            try process.run()
+            process.waitUntilExit()
+            
+            if process.terminationStatus == 0 {
+                print("✅ DMG mounted successfully")
+                
+                // Read output to find mount point
+                let data = pipe.fileHandleForReading.readDataToEndOfFile()
+                if let output = String(data: data, encoding: .utf8) {
+                    print("Mount output: \(output)")
+                    
+                    // Extract mount point (usually /Volumes/ImageIntact-X.X.X)
+                    let lines = output.components(separatedBy: .newlines)
+                    for line in lines {
+                        if line.contains("/Volumes/") {
+                            let components = line.components(separatedBy: .whitespaces)
+                            if let volumePath = components.last {
+                                print("📂 Opening mounted volume: \(volumePath)")
+                                // Open the mounted volume in Finder
+                                NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: volumePath)
+                            }
+                        }
+                    }
+                }
+            } else {
+                print("❌ Failed to mount DMG (exit code: \(process.terminationStatus))")
+                // Fallback: just open the DMG file
+                NSWorkspace.shared.open(url)
+            }
+        } catch {
+            print("❌ Error mounting DMG: \(error)")
+            // Fallback: just open the DMG file
+            NSWorkspace.shared.open(url)
+        }
     }
     
     // MARK: - Settings Management

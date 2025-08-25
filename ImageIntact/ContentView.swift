@@ -19,6 +19,22 @@ struct ContentView: View {
         VStack(spacing: 0) {
             // Header - following HIG for window headers
             VStack(spacing: 4) {
+                // Test mode indicator
+                if updateManager.isTestMode {
+                    HStack {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundColor(.orange)
+                        Text("TEST MODE - Mock Version: \(updateManager.currentVersion)")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundColor(.orange)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 4)
+                    .background(Color.orange.opacity(0.1))
+                    .cornerRadius(6)
+                    .padding(.top, 8)
+                }
+                
                 Text("ImageIntact")
                     .font(.system(size: 20, weight: .semibold))
                 
@@ -168,6 +184,17 @@ struct ContentView: View {
     
     // MARK: - Menu Commands
     func setupMenuCommands() {
+        // Debug menu - Test Update Flow
+        NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("TestUpdateFlow"),
+            object: nil,
+            queue: .main
+        ) { _ in
+            Task {
+                await testUpdateFlow()
+            }
+        }
+        
         NotificationCenter.default.addObserver(
             forName: NSNotification.Name("SelectSourceFolder"),
             object: nil,
@@ -484,6 +511,32 @@ struct ContentView: View {
                 alert.alertStyle = .warning
                 alert.addButton(withTitle: "OK")
                 alert.runModal()
+            }
+        }
+    }
+    
+    // MARK: - Test Update Flow
+    func testUpdateFlow() async {
+        print("🧪 Test Update Flow triggered")
+        
+        // Enable test mode temporarily if not already enabled
+        let wasInTestMode = UpdateManager.testMode
+        if !wasInTestMode {
+            UpdateManager.testMode = true
+            UpdateManager.mockVersion = "1.0.0"
+            print("🧪 Temporarily enabled test mode with version 1.0.0")
+        }
+        
+        // Trigger update check
+        await updateManager.performUpdateCheck(isManual: true)
+        
+        // Restore previous test mode state after a delay
+        if !wasInTestMode {
+            Task {
+                try? await Task.sleep(nanoseconds: 5_000_000_000) // 5 seconds
+                UpdateManager.testMode = false
+                UpdateManager.mockVersion = nil
+                print("🧪 Test mode disabled")
             }
         }
     }

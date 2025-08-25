@@ -130,25 +130,52 @@ class GitHubUpdateProvider: UpdateProvider {
             throw UpdateError.downloadFailed(UpdateError.invalidResponse)
         }
         
-        // Move to Downloads folder
-        guard let downloadsURL = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first else {
-            print("❌ Could not find Downloads folder")
-            throw UpdateError.downloadFailed(UpdateError.invalidResponse)
-        }
-        
+        // For sandboxed apps, we need to use the user's actual Downloads folder, not the sandbox container
+        // First try to get the actual Downloads folder
         let fileName = update.downloadURL.lastPathComponent
-        let destinationURL = downloadsURL.appendingPathComponent(fileName)
+        let destinationURL: URL
         
-        print("💾 Moving download to: \(destinationURL.path)")
+        // Check if we're sandboxed
+        let isSandboxed = ProcessInfo.processInfo.environment["APP_SANDBOX_CONTAINER_ID"] != nil
         
-        // Remove existing file if present
-        if FileManager.default.fileExists(atPath: destinationURL.path) {
-            print("🗑️ Removing existing file at destination")
-            try? FileManager.default.removeItem(at: destinationURL)
+        if isSandboxed {
+            // For sandboxed apps, keep the file in temp directory and return that
+            // The system will handle opening it from there
+            print("📦 App is sandboxed, keeping download in temp location")
+            
+            // Create a better temp location with the actual filename
+            let tempDir = FileManager.default.temporaryDirectory
+            destinationURL = tempDir.appendingPathComponent(fileName)
+            
+            // Remove existing file if present
+            if FileManager.default.fileExists(atPath: destinationURL.path) {
+                print("🗑️ Removing existing file at destination")
+                try? FileManager.default.removeItem(at: destinationURL)
+            }
+            
+            // Move to temp with proper name
+            try FileManager.default.moveItem(at: localURL, to: destinationURL)
+            print("💾 Download saved to temp: \(destinationURL.path)")
+        } else {
+            // Non-sandboxed, use actual Downloads folder
+            guard let downloadsURL = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first else {
+                print("❌ Could not find Downloads folder")
+                throw UpdateError.downloadFailed(UpdateError.invalidResponse)
+            }
+            
+            destinationURL = downloadsURL.appendingPathComponent(fileName)
+            
+            print("💾 Moving download to: \(destinationURL.path)")
+            
+            // Remove existing file if present
+            if FileManager.default.fileExists(atPath: destinationURL.path) {
+                print("🗑️ Removing existing file at destination")
+                try? FileManager.default.removeItem(at: destinationURL)
+            }
+            
+            // Move downloaded file
+            try FileManager.default.moveItem(at: localURL, to: destinationURL)
         }
-        
-        // Move downloaded file
-        try FileManager.default.moveItem(at: localURL, to: destinationURL)
         
         print("✅ Download complete: \(destinationURL.path)")
         
