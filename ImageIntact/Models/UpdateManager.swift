@@ -351,11 +351,28 @@ class UpdateManager {
     /// Show download complete alert
     private func showDownloadCompleteAlert(at url: URL) {
         let alert = NSAlert()
-        alert.messageText = "Download Complete"
-        alert.informativeText = "The update has been downloaded to:\n\n\(url.path)\n\nThe DMG will now open. Please drag ImageIntact to your Applications folder to complete the update."
+        alert.messageText = "Update Ready to Install"
+        
+        var message = "The update has been downloaded and the installer will now open.\n\n"
+        message += "⚠️ IMPORTANT: Before installing:\n"
+        message += "1. Quit ImageIntact (Cmd+Q)\n"
+        message += "2. Drag the new ImageIntact to Applications\n"
+        message += "3. Replace the existing version when prompted\n\n"
+        
+        if UpdateManager.testMode {
+            message += "🧪 TEST MODE: This is a test download.\n"
+            message += "Location: \(url.path)"
+        }
+        
+        alert.informativeText = message
         alert.alertStyle = .informational
-        alert.addButton(withTitle: "OK")
-        alert.runModal()
+        alert.addButton(withTitle: "Open Installer")
+        alert.addButton(withTitle: "Cancel")
+        
+        if alert.runModal() == .alertFirstButtonReturn {
+            // User clicked "Open Installer"
+            // The DMG mounting happens in the calling function
+        }
     }
 }
 
