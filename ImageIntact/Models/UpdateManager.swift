@@ -16,7 +16,6 @@ class UpdateManager {
     // MARK: - Published Properties
     var isCheckingForUpdates = false
     var availableUpdate: AppUpdate?
-    var showUpdateAlert = false
     var downloadProgress: Double = 0.0
     var isDownloadingUpdate = false
     var lastError: UpdateError?
@@ -103,11 +102,12 @@ class UpdateManager {
                 
                 print("Update available: v\(update.version)")
                 availableUpdate = update
-                if isManual {
-                    updateCheckResult = .updateAvailable(update)
-                } else {
-                    // For automatic checks, use the old alert system
-                    showUpdateAlert = true
+                updateCheckResult = .updateAvailable(update)
+                
+                // Always show the update sheet for consistency
+                if !isManual {
+                    // For auto-check, show the sheet with the update
+                    showUpdateSheet = true
                 }
             } else {
                 print("No updates available (current: v\(currentVersion))")
@@ -137,7 +137,6 @@ class UpdateManager {
         // Ensure the update sheet is visible to show progress
         await MainActor.run { [weak self] in
             self?.showUpdateSheet = true
-            self?.showUpdateAlert = false  // Dismiss alert if showing
             self?.updateCheckResult = .downloading(progress: 0.0)
         }
         
@@ -164,7 +163,6 @@ class UpdateManager {
                 // Dismiss sheets
                 await MainActor.run { [weak self] in
                     guard let self = self else { return }
-                    self.showUpdateAlert = false
                     self.showUpdateSheet = false
                     self.isDownloadingUpdate = false
                     
@@ -197,7 +195,7 @@ class UpdateManager {
         var updatedSettings = settings
         updatedSettings.skipVersion(version)
         settings = updatedSettings
-        showUpdateAlert = false
+        showUpdateSheet = false
         availableUpdate = nil
     }
     

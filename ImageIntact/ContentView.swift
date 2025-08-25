@@ -147,46 +147,6 @@ struct ContentView: View {
         .sheet(isPresented: $backupManager.showCompletionReport) {
             BackupCompletionView(statistics: backupManager.statistics)
         }
-        .alert("Update Available", isPresented: $updateManager.showUpdateAlert, presenting: updateManager.availableUpdate) { update in
-            Button("Download & Install") {
-                // Close alert and show download progress sheet
-                updateManager.showUpdateAlert = false
-                updateManager.showUpdateSheet = true
-                updateManager.updateCheckResult = .updateAvailable(update)
-                Task {
-                    await updateManager.downloadUpdate(update)
-                }
-            }
-            .keyboardShortcut(.defaultAction)
-            
-            Button("Later") { 
-                updateManager.showUpdateAlert = false
-            }
-            .keyboardShortcut(.cancelAction)
-            
-            Button("Skip This Version") {
-                updateManager.skipVersion(update.version)
-            }
-        } message: { update in
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Version \(update.version) is now available!")
-                    .fontWeight(.medium)
-                
-                // Show release notes (truncated if too long)
-                let notes = update.releaseNotes
-                let truncatedNotes = notes.count > 500 ? 
-                    String(notes.prefix(500)) + "..." : notes
-                Text(truncatedNotes)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                
-                if let fileSize = update.fileSize {
-                    Text("Download size: \(formatFileSize(fileSize))")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                }
-            }
-        }
         .sheet(isPresented: $updateManager.showUpdateSheet) {
             UpdateStatusSheet(
                 result: updateManager.updateCheckResult,
