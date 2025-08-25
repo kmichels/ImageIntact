@@ -133,21 +133,30 @@ class UpdateManager {
         
         isDownloadingUpdate = true
         downloadProgress = 0.0
-        updateCheckResult = .downloading(progress: 0.0)
+        
+        // Ensure the update sheet is visible to show progress
+        await MainActor.run { [weak self] in
+            self?.showUpdateSheet = true
+            self?.showUpdateAlert = false  // Dismiss alert if showing
+            self?.updateCheckResult = .downloading(progress: 0.0)
+        }
         
         downloadTask = Task { [weak self] in
             guard let self = self else { return }
             do {
-                print("Downloading update v\(update.version)...")
+                print("🔄 Starting download of update v\(update.version)...")
+                print("📦 Download URL: \(update.downloadURL)")
+                
                 let localURL = try await self.updateProvider.downloadUpdate(update) { progress in
                     Task { @MainActor [weak self] in
                         guard let self = self else { return }
                         self.downloadProgress = progress
                         self.updateCheckResult = .downloading(progress: progress)
+                        print("📊 Download progress: \(Int(progress * 100))%")
                     }
                 }
                 
-                print("Update downloaded to: \(localURL)")
+                print("✅ Update downloaded successfully to: \(localURL)")
                 
                 // Open the DMG
                 NSWorkspace.shared.open(localURL)

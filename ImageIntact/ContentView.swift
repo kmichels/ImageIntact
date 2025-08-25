@@ -149,6 +149,10 @@ struct ContentView: View {
         }
         .alert("Update Available", isPresented: $updateManager.showUpdateAlert, presenting: updateManager.availableUpdate) { update in
             Button("Download & Install") {
+                // Close alert and show download progress sheet
+                updateManager.showUpdateAlert = false
+                updateManager.showUpdateSheet = true
+                updateManager.updateCheckResult = .updateAvailable(update)
                 Task {
                     await updateManager.downloadUpdate(update)
                 }
