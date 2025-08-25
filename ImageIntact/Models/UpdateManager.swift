@@ -80,6 +80,15 @@ class UpdateManager {
     
     /// Check for updates (called on app launch if auto-check enabled)
     func checkForUpdates() {
+        // In test mode, always check for updates regardless of last check time
+        if UpdateManager.testMode {
+            print("🧪 Test mode: Forcing update check on launch")
+            Task {
+                await performUpdateCheck()
+            }
+            return
+        }
+        
         guard settings.shouldCheckForUpdates() else {
             print("Skipping automatic update check")
             return
@@ -105,7 +114,10 @@ class UpdateManager {
         
         defer {
             isCheckingForUpdates = false
-            settings.markUpdateCheck()
+            // Don't mark update check in test mode so it always checks
+            if !UpdateManager.testMode {
+                settings.markUpdateCheck()
+            }
         }
         
         // Add a small delay so the user sees the checking state
