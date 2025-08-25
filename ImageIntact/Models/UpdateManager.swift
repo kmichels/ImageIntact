@@ -52,6 +52,8 @@ class UpdateManager {
     
     /// Check launch arguments and environment for test mode
     private func checkForTestMode() {
+        #if DEBUG
+        // Only check for test mode in debug builds
         let arguments = ProcessInfo.processInfo.arguments
         let environment = ProcessInfo.processInfo.environment
         
@@ -74,6 +76,11 @@ class UpdateManager {
                 print("🧪 Using default mock version: 1.0.0")
             }
         }
+        #else
+        // In release builds, never enable test mode
+        UpdateManager.testMode = false
+        UpdateManager.mockVersion = nil
+        #endif
     }
     
     // MARK: - Public Methods

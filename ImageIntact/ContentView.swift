@@ -19,7 +19,8 @@ struct ContentView: View {
         VStack(spacing: 0) {
             // Header - following HIG for window headers
             VStack(spacing: 4) {
-                // Test mode indicator
+                // Test mode indicator (only in debug builds)
+                #if DEBUG
                 if updateManager.isTestMode {
                     HStack {
                         Image(systemName: "exclamationmark.triangle.fill")
@@ -34,6 +35,7 @@ struct ContentView: View {
                     .cornerRadius(6)
                     .padding(.top, 8)
                 }
+                #endif
                 
                 Text("ImageIntact")
                     .font(.system(size: 20, weight: .semibold))
