@@ -165,6 +165,27 @@ struct ContentView: View {
         .sheet(isPresented: $backupManager.showCompletionReport) {
             BackupCompletionView(statistics: backupManager.statistics)
         }
+        .sheet(isPresented: $backupManager.showMigrationDialog) {
+            if let firstPlan = backupManager.pendingMigrationPlans.first {
+                MigrationConfirmationView(
+                    plan: firstPlan,
+                    destinationName: firstPlan.destinationURL.lastPathComponent,
+                    isPresented: $backupManager.showMigrationDialog,
+                    onMigrate: {
+                        // Migration completed, continue backup
+                        Task {
+                            await backupManager.continueBackupAfterMigration()
+                        }
+                    },
+                    onSkip: {
+                        // Skip migration, continue backup
+                        Task {
+                            await backupManager.continueBackupAfterMigration()
+                        }
+                    }
+                )
+            }
+        }
         .sheet(isPresented: $updateManager.showUpdateSheet) {
             UpdateStatusSheet(
                 result: updateManager.updateCheckResult,

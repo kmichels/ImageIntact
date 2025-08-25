@@ -20,11 +20,24 @@ extension BackupManager {
         // Reset state
         isProcessing = true
         shouldCancel = false
-        statusMessage = "Initializing smart backup system..."
+        statusMessage = "Checking for existing backups..."
         failedFiles = []
         sessionID = UUID().uuidString
         logEntries = []
         debugLog = []
+        
+        // Check for migration if organization is enabled
+        if !organizationName.isEmpty {
+            await checkForMigration(source: source, destinations: destinations)
+            
+            // If migration dialog is shown, wait for user decision
+            if showMigrationDialog && !pendingMigrationPlans.isEmpty {
+                print("⏸️ Waiting for migration decision...")
+                // The actual backup will be triggered after migration dialog closes
+                isProcessing = false
+                return
+            }
+        }
         
         // Start statistics tracking
         statistics.startBackup(sourceFiles: sourceFileTypes, filter: fileTypeFilter)
@@ -373,5 +386,59 @@ extension BackupManager {
         }
         
         return parts.joined(separator: ", ")
+    }
+    
+    // MARK: - Migration Support
+    
+    /// Check if migration is needed for organizing existing files
+    @MainActor
+    private func checkForMigration(source: URL, destinations: [URL]) async {
+        print("🔍 Checking for migration opportunities...")
+        
+        pendingMigrationPlans.removeAll()
+        
+        // Build a quick manifest for checking
+        let manifestBuilder = ManifestBuilder()
+        guard let manifest = await manifestBuilder.build(
+            source: source,
+            shouldCancel: { false },
+            filter: fileTypeFilter
+        ) else {
+            print("❌ Could not build manifest for migration check")
+            return
+        }
+        
+        let detector = BackupMigrationDetector()
+        
+        // Check each destination for migration needs
+        for (index, destination) in destinations.enumerated() {
+            if let plan = await detector.checkForMigrationNeeded(
+                source: source,
+                destination: destination,
+                organizationName: organizationName,
+                manifest: manifest
+            ) {
+                print("📦 Migration needed for \(destination.lastPathComponent): \(plan.fileCount) files")
+                pendingMigrationPlans.append(plan)
+            }
+        }
+        
+        // Show migration dialog if needed
+        if !pendingMigrationPlans.isEmpty {
+            showMigrationDialog = true
+        }
+    }
+    
+    /// Continue backup after migration decision
+    @MainActor
+    func continueBackupAfterMigration() async {
+        print("📦 Continuing backup after migration...")
+        showMigrationDialog = false
+        
+        // Re-run the backup now that migration is handled
+        if let source = sourceURL {
+            let destinations = destinationItems.compactMap { $0.url }
+            await performQueueBasedBackup(source: source, destinations: destinations)
+        }
     }
 }

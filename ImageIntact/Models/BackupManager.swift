@@ -124,6 +124,10 @@ class BackupManager {
     // UI state for completion report
     var showCompletionReport = false
     
+    // Migration state
+    var showMigrationDialog = false
+    var pendingMigrationPlans: [BackupMigrationDetector.MigrationPlan] = []
+    
     // MARK: - Constants
     let sourceKey = "sourceBookmark"
     let destinationKeys = ["dest1Bookmark", "dest2Bookmark", "dest3Bookmark", "dest4Bookmark"]
